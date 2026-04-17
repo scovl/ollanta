@@ -1,4 +1,4 @@
-.PHONY: build test lint fmt clean
+.PHONY: build test lint fmt clean run
 
 PKGS := \
 	github.com/user/ollanta/ollantacore/... \
@@ -31,3 +31,17 @@ fmt:
 
 clean:
 	go clean $(PKGS)
+
+# Run the scanner against a project. Override with:
+#   make run PROJECT_DIR=D:\projects\myapp PROJECT_KEY=myapp
+PROJECT_DIR ?= .
+PROJECT_KEY ?= $(notdir $(abspath $(PROJECT_DIR)))
+PORT        ?= 7777
+
+run:
+	go run github.com/user/ollanta/ollantascanner/cmd/ollanta \
+		-project-dir "$(PROJECT_DIR)" \
+		-project-key "$(PROJECT_KEY)" \
+		-format all \
+		-serve \
+		-port $(PORT)

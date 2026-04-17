@@ -5,7 +5,6 @@ package treesitter
 
 import (
 	"fmt"
-	"sync"
 
 	"github.com/user/ollanta/ollantacore/domain"
 	"github.com/user/ollanta/ollantaparser"
@@ -52,20 +51,13 @@ func (s *TreeSitterSensor) Analyze(path string, source []byte, lang string, acti
 
 	analyzers := s.registry.FindByLanguage(lang)
 
-	var (
-		mu     sync.Mutex
-		issues []*domain.Issue
-		wg     sync.WaitGroup
-	)
+	var issues []*domain.Issue
 
 	for _, a := range analyzers {
 		if activeRules != nil && !activeRules[a.Key()] {
 			continue
 		}
-		a := a
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		func(a ollantarules.Analyzer) {
 			defer func() {
 				if r := recover(); r != nil {
 					_ = r // isolate panicking rules so one bad rule doesn't abort the sensor
@@ -81,13 +73,8 @@ func (s *TreeSitterSensor) Analyze(path string, source []byte, lang string, acti
 				Grammar:    grammar,
 			}
 			found := a.Check(ctx)
-			if len(found) > 0 {
-				mu.Lock()
-				issues = append(issues, found...)
-				mu.Unlock()
-			}
-		}()
+			issues = append(issues, found...)
+		}(a)
 	}
-	wg.Wait()
 	return issues, nil
 }

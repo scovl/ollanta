@@ -30,6 +30,8 @@ type ScanOptions struct {
 	ProjectKey string
 	Format     string // "summary" | "json" | "sarif" | "all"
 	Debug      bool
+	Serve      bool // open local web UI after scan
+	Port       int  // port for -serve (default 7777)
 }
 
 // ParseFlags parses args (typically os.Args[1:]) into ScanOptions.
@@ -43,6 +45,8 @@ func ParseFlags(args []string) (*ScanOptions, error) {
 	projectKey := fs.String("project-key", "", "Project identifier (default: directory base name)")
 	format := fs.String("format", "all", "Output format: summary, json, sarif, all")
 	debug := fs.Bool("debug", false, "Enable debug output")
+	serve := fs.Bool("serve", false, "Open interactive web UI after scan")
+	port := fs.Int("port", 7777, "Port for -serve")
 
 	if err := fs.Parse(args); err != nil {
 		return nil, err
@@ -59,6 +63,8 @@ func ParseFlags(args []string) (*ScanOptions, error) {
 		ProjectDir: *projectDir,
 		Format:     *format,
 		Debug:      *debug,
+		Serve:      *serve,
+		Port:       *port,
 	}
 
 	for _, s := range strings.Split(*sources, ",") {

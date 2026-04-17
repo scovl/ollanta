@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/user/ollanta/ollantascanner/scan"
+	"github.com/user/ollanta/ollantascanner/server"
 )
 
 func main() {
@@ -24,6 +25,8 @@ func main() {
 	}
 
 	scan.PrintSummary(r)
+
+	reportPath := server.ReportPath(opts.ProjectDir)
 
 	switch opts.Format {
 	case "json":
@@ -50,4 +53,12 @@ func main() {
 			fmt.Println("SARIF saved to", path)
 		}
 	}
+
+	if opts.Serve {
+		if err := server.Serve(reportPath, opts.Port); err != nil {
+			fmt.Fprintln(os.Stderr, "server error:", err)
+			os.Exit(1)
+		}
+	}
 }
+

@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ollanta Report</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <div class="header-inner">
+      <div class="logo">🔍 Ollanta</div>
+      <div class="header-meta">
+        <span id="project-key" class="project-key"></span>
+        <span class="sep">·</span>
+        <span id="scan-date"></span>
+        <span class="sep">·</span>
+        <span id="scan-version"></span>
+        <span class="sep">·</span>
+        <span id="elapsed"></span>
+      </div>
+    </div>
+  </header>
+
+  <main id="app">
+    <!-- Measures -->
+    <section class="section">
+      <h2>Overview</h2>
+      <div id="measures" class="measures-grid"></div>
+      <div id="by-lang" class="by-lang"></div>
+    </section>
+
+    <!-- Issues -->
+    <section class="section">
+      <div class="toolbar">
+        <h2>Issues <span id="issue-count" class="count-badge"></span></h2>
+        <div class="filters">
+          <input id="search" type="search" placeholder="Search file, message, rule…" />
+          <select id="filter-severity">
+            <option value="all">All severities</option>
+            <option value="blocker">Blocker</option>
+            <option value="critical">Critical</option>
+            <option value="major">Major</option>
+            <option value="minor">Minor</option>
+            <option value="info">Info</option>
+          </select>
+          <select id="filter-type">
+            <option value="all">All types</option>
+            <option value="BUG">Bug</option>
+            <option value="CODE_SMELL">Code Smell</option>
+            <option value="VULNERABILITY">Vulnerability</option>
+          </select>
+          <select id="filter-rule">
+            <option value="all">All rules</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th data-sort="severity" class="sort-asc">Severity</th>
+              <th data-sort="type">Type</th>
+              <th data-sort="rule_key">Rule</th>
+              <th data-sort="component_path">File</th>
+              <th data-sort="message">Message</th>
+            </tr>
+          </thead>
+          <tbody id="issue-tbody">
+            <tr><td colspan="5" class="empty">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

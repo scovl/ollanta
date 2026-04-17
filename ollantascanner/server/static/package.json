@@ -1,0 +1,12 @@
+{
+  "name": "ollanta-ui",
+  "private": true,
+  "scripts": {
+    "build": "esbuild src/main.ts --bundle --outfile=dist/app.js --minify --target=es2020",
+    "dev": "esbuild src/main.ts --bundle --outfile=dist/app.js --watch"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "typescript": "^5.8.0"
+  }
+}
