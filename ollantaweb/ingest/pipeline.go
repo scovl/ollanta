@@ -13,6 +13,7 @@ import (
 	"github.com/scovl/ollanta/ollantaengine/tracking"
 	"github.com/scovl/ollanta/ollantastore/postgres"
 	"github.com/scovl/ollanta/ollantastore/search"
+	"github.com/scovl/ollanta/ollantaweb/breaker"
 )
 
 // IngestMetadata mirrors the Metadata field of report.Report for JSON decoding.
@@ -62,6 +63,8 @@ type Pipeline struct {
 	measures *postgres.MeasureRepository
 	indexer  *search.MeilisearchIndexer
 	worker   *Worker
+	dbBreaker  *breaker.Breaker
+	msBreaker  *breaker.Breaker
 }
 
 // NewPipeline creates an ingest pipeline with all required dependencies.
@@ -75,12 +78,14 @@ func NewPipeline(
 	worker *Worker,
 ) *Pipeline {
 	return &Pipeline{
-		projects: projects,
-		scans:    scans,
-		issues:   issues,
-		measures: measures,
-		indexer:  indexer,
-		worker:   worker,
+		projects:  projects,
+		scans:     scans,
+		issues:    issues,
+		measures:  measures,
+		indexer:   indexer,
+		worker:    worker,
+		dbBreaker: breaker.New(5, 30*time.Second, 1),
+		msBreaker: breaker.New(5, 30*time.Second, 1),
 	}
 }
 
@@ -103,12 +108,23 @@ func (p *Pipeline) Ingest(ctx context.Context, req *IngestRequest) (*IngestResul
 		Key:  req.Metadata.ProjectKey,
 		Name: req.Metadata.ProjectKey,
 	}
-	if err := p.projects.Upsert(ctx, project); err != nil {
+	if err := pipelineSteps.upsertProject.run(ctx, func(ctx context.Context) error {
+		return p.dbBreaker.Do(func() error {
+			return p.projects.Upsert(ctx, project)
+		})
+	}); err != nil {
 		return nil, fmt.Errorf("upsert project: %w", err)
 	}
 
 	// ── 2. Fetch previous scan for tracking ──────────────────────────────────
-	prevScan, _ := p.scans.GetLatest(ctx, project.ID)
+	var prevScan *postgres.Scan
+	_ = pipelineSteps.fetchPrevScan.run(ctx, func(ctx context.Context) error {
+		return p.dbBreaker.Do(func() error {
+			var err error
+			prevScan, err = p.scans.GetLatest(ctx, project.ID)
+			return err
+		})
+	})
 
 	// ── 3. Issue tracking ────────────────────────────────────────────────────
 	var prevIssues []*domain.Issue
@@ -160,7 +176,11 @@ func (p *Pipeline) Ingest(ctx context.Context, req *IngestRequest) (*IngestResul
 		NewIssues:            trackResult.NewCount(),
 		ClosedIssues:         trackResult.ClosedCount(),
 	}
-	if err := p.scans.Create(ctx, scan); err != nil {
+	if err := pipelineSteps.insertScan.run(ctx, func(ctx context.Context) error {
+		return p.dbBreaker.Do(func() error {
+			return p.scans.Create(ctx, scan)
+		})
+	}); err != nil {
 		return nil, fmt.Errorf("create scan: %w", err)
 	}
 
@@ -169,13 +189,21 @@ func (p *Pipeline) Ingest(ctx context.Context, req *IngestRequest) (*IngestResul
 	for i, iss := range req.Issues {
 		issueRows[i] = domainToIssueRow(iss, scan.ID, project.ID)
 	}
-	if err := p.issues.BulkInsert(ctx, issueRows); err != nil {
+	if err := pipelineSteps.bulkInsIssues.run(ctx, func(ctx context.Context) error {
+		return p.dbBreaker.Do(func() error {
+			return p.issues.BulkInsert(ctx, issueRows)
+		})
+	}); err != nil {
 		return nil, fmt.Errorf("bulk insert issues: %w", err)
 	}
 
 	// ── 7. Bulk insert measures ──────────────────────────────────────────────
 	measureRows := buildMeasureRows(req.Measures, scan.ID, project.ID)
-	if err := p.measures.BulkInsert(ctx, measureRows); err != nil {
+	if err := pipelineSteps.bulkInsMeasures.run(ctx, func(ctx context.Context) error {
+		return p.dbBreaker.Do(func() error {
+			return p.measures.BulkInsert(ctx, measureRows)
+		})
+	}); err != nil {
 		return nil, fmt.Errorf("bulk insert measures: %w", err)
 	}
 
