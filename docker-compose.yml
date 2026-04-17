@@ -1,0 +1,58 @@
+# docker-compose.yml
+#
+# Usage examples:
+#
+#   # Scan the current directory and open the web UI on http://localhost:7777
+#   docker compose up
+#
+#   # Scan a specific project
+#   PROJECT_DIR=/path/to/myapp PROJECT_KEY=myapp docker compose up
+#
+#   # One-shot scan (no UI server, just write the report files)
+#   docker compose run --rm scan-only
+#
+# The report is written to <PROJECT_DIR>/.ollanta/
+# The web UI is available at http://localhost:7777 while the container is running.
+
+name: ollanta
+
+services:
+
+  # ── serve: scan + interactive web UI ────────────────────────────────────────
+  serve:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ollanta:local
+    volumes:
+      - type: bind
+        source: ${PROJECT_DIR:-.}
+        target: /project
+    ports:
+      - "${PORT:-7777}:7777"
+    environment:
+      - PROJECT_KEY=${PROJECT_KEY:-project}
+    command:
+      - -project-dir=/project
+      - -project-key=${PROJECT_KEY:-project}
+      - -format=all
+      - -serve
+      - -bind=0.0.0.0
+      - -port=7777
+    restart: "no"
+
+  # ── scan-only: one-shot, no server, exits after writing the report ───────────
+  scan-only:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ollanta:local
+    volumes:
+      - type: bind
+        source: ${PROJECT_DIR:-.}
+        target: /project
+    command:
+      - -project-dir=/project
+      - -project-key=${PROJECT_KEY:-project}
+      - -format=all
+    restart: "no"
