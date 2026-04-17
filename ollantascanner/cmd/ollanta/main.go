@@ -66,12 +66,13 @@ func main() {
 	}
 
 	if opts.Server != "" {
-		result, err := pushReport(opts.Server, r)
+		result, err := pushReport(opts.Server, opts.ServerToken, r)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "warning: server push failed: %v\n", err)
 		} else {
+			toInt := func(v interface{}) int { f, _ := v.(float64); return int(f) }
 			fmt.Printf("Server: gate=%s new=%d closed=%d\n",
-				result["gate_status"], result["new_issues"], result["closed_issues"])
+				result["gate_status"], toInt(result["new_issues"]), toInt(result["closed_issues"]))
 			if gs, _ := result["gate_status"].(string); gs == "ERROR" {
 				os.Exit(1)
 			}
@@ -80,13 +81,22 @@ func main() {
 }
 
 // pushReport POSTs the scan report to the given server URL and returns the parsed response body.
-func pushReport(serverURL string, r *report.Report) (map[string]interface{}, error) {
+func pushReport(serverURL, token string, r *report.Report) (map[string]interface{}, error) {
 	body, err := json.Marshal(r)
 	if err != nil {
 		return nil, fmt.Errorf("marshal report: %w", err)
 	}
 
-	resp, err := http.Post(serverURL+"/api/v1/scans", "application/json", bytes.NewReader(body)) //nolint:noctx
+	req, err := http.NewRequest(http.MethodPost, serverURL+"/api/v1/scans", bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("build request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+
+	resp, err := http.DefaultClient.Do(req) //nolint:noctx
 	if err != nil {
 		return nil, fmt.Errorf("post: %w", err)
 	}

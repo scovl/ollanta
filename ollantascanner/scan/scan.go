@@ -33,7 +33,8 @@ type ScanOptions struct {
 	Serve      bool   // open local web UI after scan
 	Port       int    // port for -serve (default 7777)
 	Bind       string // bind address for -serve (default 127.0.0.1)
-	Server     string // URL of ollantaweb server for push mode (empty = disabled)
+	Server      string // URL of ollantaweb server for push mode (empty = disabled)
+	ServerToken string // Bearer token for authenticating with ollantaweb
 }
 
 // ParseFlags parses args (typically os.Args[1:]) into ScanOptions.
@@ -50,7 +51,8 @@ func ParseFlags(args []string) (*ScanOptions, error) {
 	serve := fs.Bool("serve", false, "Open interactive web UI after scan")
 	port := fs.Int("port", 7777, "Port for -serve")
 	bind := fs.String("bind", "127.0.0.1", "Bind address for -serve (use 0.0.0.0 inside Docker)")
-	serverURL := fs.String("server", "", "URL of ollantaweb server to push results to (e.g. http://localhost:8080)")
+	serverURL   := fs.String("server", "", "URL of ollantaweb server to push results to (e.g. http://localhost:8080)")
+	serverToken := fs.String("server-token", "", "API token for authenticating with ollantaweb (Bearer)")
 
 	if err := fs.Parse(args); err != nil {
 		return nil, err
@@ -70,7 +72,8 @@ func ParseFlags(args []string) (*ScanOptions, error) {
 		Serve:      *serve,
 		Port:       *port,
 		Bind:       *bind,
-		Server:     *serverURL,
+		Server:      *serverURL,
+		ServerToken: *serverToken,
 	}
 
 	for _, s := range strings.Split(*sources, ",") {

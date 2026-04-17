@@ -1,18 +1,27 @@
 # docker-compose.yml
 #
-# Usage examples:
+# Scanner usage:
 #
 #   # Scan the current directory and open the web UI on http://localhost:7777
-#   docker compose up
+#   docker compose up serve
 #
 #   # Scan a specific project
-#   PROJECT_DIR=/path/to/myapp PROJECT_KEY=myapp docker compose up
+#   PROJECT_DIR=/path/to/myapp PROJECT_KEY=myapp docker compose up serve
 #
 #   # One-shot scan (no UI server, just write the report files)
 #   docker compose run --rm scan-only
 #
-# The report is written to <PROJECT_DIR>/.ollanta/
-# The web UI is available at http://localhost:7777 while the container is running.
+#   # Scan and push results to the centralized server
+#   docker compose run --rm push
+#
+# Server usage:
+#
+#   # Start PostgreSQL + Meilisearch + ollantaweb API
+#   docker compose --profile server up -d
+#
+# Reports are written to <PROJECT_DIR>/.ollanta/
+# Scanner UI available at http://localhost:7777
+# API server available at http://localhost:8080
 
 name: ollanta
 
@@ -23,7 +32,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: ollanta:local
     volumes:
       - type: bind
         source: ${PROJECT_DIR:-.}
@@ -41,12 +49,11 @@ services:
       - -port=7777
     restart: "no"
 
-  # ── scan-only: one-shot, no server, exits after writing the report ───────────
+  # ── scan-only: one-shot, no server, exits after writing the report ──────────
   scan-only:
     build:
       context: .
       dockerfile: Dockerfile
-    image: ollanta:local
     volumes:
       - type: bind
         source: ${PROJECT_DIR:-.}
@@ -56,3 +63,82 @@ services:
       - -project-key=${PROJECT_KEY:-project}
       - -format=all
     restart: "no"
+
+  # ── push: scan and push results to ollantaweb ──────────────────────────────
+  push:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - type: bind
+        source: ${PROJECT_DIR:-.}
+        target: /project
+    command:
+      - -project-dir=/project
+      - -project-key=${PROJECT_KEY:-project}
+      - -format=all
+      - -server=${OLLANTA_SERVER:-http://ollantaweb:8080}
+      - -server-token=${OLLANTA_TOKEN:-}
+    restart: "no"
+    profiles: ["push"]
+
+  # ── postgres: data store ────────────────────────────────────────────────────
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ollanta
+      POSTGRES_USER: ollanta
+      POSTGRES_PASSWORD: ${PG_PASSWORD:-ollanta_dev}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ollanta"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    profiles: ["server"]
+
+  # ── meilisearch: full-text search engine ────────────────────────────────────
+  meilisearch:
+    image: getmeili/meilisearch:v1.13
+    environment:
+      MEILI_MASTER_KEY: ${MEILI_KEY:-ollanta_dev_key}
+      MEILI_ENV: development
+    volumes:
+      - msdata:/meili_data
+    ports:
+      - "7700:7700"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:7700/health || exit 1"]
+      interval: 5s
+      timeout: 5s
+      start_period: 15s
+      retries: 12
+    profiles: ["server"]
+
+  # ── ollantaweb: centralized API server ──────────────────────────────────────
+  ollantaweb:
+    build:
+      context: .
+      dockerfile: ollantaweb/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      meilisearch:
+        condition: service_started
+    environment:
+      OLLANTA_ADDR: ":8080"
+      OLLANTA_DATABASE_URL: "postgres://ollanta:${PG_PASSWORD:-ollanta_dev}@postgres:5432/ollanta?sslmode=disable"
+      OLLANTA_MEILISEARCH_URL: "http://meilisearch:7700"
+      OLLANTA_MEILISEARCH_KEY: "${MEILI_KEY:-ollanta_dev_key}"
+      OLLANTA_LOG_LEVEL: "info"
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    profiles: ["server"]
+
+volumes:
+  pgdata:
+  msdata:

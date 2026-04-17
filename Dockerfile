@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 
 # ── Stage 1: builder ──────────────────────────────────────────────────────────
-# golang:1.21-bookworm already ships gcc, so CGO works out of the box.
+# golang:1.21-bookworm ships gcc, so CGO works out of the box for tree-sitter.
 FROM golang:1.21-bookworm AS builder
 
 WORKDIR /src
@@ -11,11 +11,13 @@ COPY go.work go.work.sum* ./
 
 # Copy each module's dependency manifests before the source so that
 # `go mod download` is only re-run when dependencies actually change.
-COPY ollantacore/go.mod                       ollantacore/
-COPY ollantaengine/go.mod                     ollantaengine/
-COPY ollantaparser/go.mod ollantaparser/go.sum ollantaparser/
-COPY ollantarules/go.mod                      ollantarules/
+COPY ollantacore/go.mod                          ollantacore/
+COPY ollantaengine/go.mod                        ollantaengine/
+COPY ollantaparser/go.mod  ollantaparser/go.sum  ollantaparser/
+COPY ollantarules/go.mod                         ollantarules/
 COPY ollantascanner/go.mod ollantascanner/go.sum ollantascanner/
+COPY ollantastore/go.mod   ollantastore/go.sum   ollantastore/
+COPY ollantaweb/go.mod     ollantaweb/go.sum     ollantaweb/
 
 # Download all modules (BuildKit cache keeps this layer warm across builds).
 RUN --mount=type=cache,target=/root/go/pkg/mod \
@@ -24,7 +26,7 @@ RUN --mount=type=cache,target=/root/go/pkg/mod \
 # Copy the rest of the source tree.
 COPY . .
 
-# Compile a fully-static binary so the runtime image needs no C libs.
+# Compile the scanner binary with CGO (required by go-tree-sitter).
 # -trimpath removes local build paths from the binary.
 RUN --mount=type=cache,target=/root/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
@@ -37,7 +39,6 @@ RUN --mount=type=cache,target=/root/go/pkg/mod \
 
 
 # ── Stage 2: runtime ─────────────────────────────────────────────────────────
-# distroless/static-debian12 is the minimal base for fully-static binaries.
 FROM gcr.io/distroless/static-debian12:nonroot
 
 LABEL org.opencontainers.image.source="https://github.com/scovl/ollanta"
@@ -48,7 +49,6 @@ COPY --from=builder /ollanta /usr/local/bin/ollanta
 # /project is the default mount point for the directory being scanned.
 VOLUME ["/project"]
 
-# The report is written to /project/.ollanta/ by default.
 # Expose the UI port (only active when -serve is passed).
 EXPOSE 7777
 
