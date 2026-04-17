@@ -4,9 +4,9 @@
 package defaults
 
 import (
-	ollantarules "github.com/user/ollanta/ollantarules"
-	gorules "github.com/user/ollanta/ollantarules/languages/golang/rules"
-	tsrules "github.com/user/ollanta/ollantarules/languages/treesitter"
+	ollantarules "github.com/scovl/ollanta/ollantarules"
+	gorules "github.com/scovl/ollanta/ollantarules/languages/golang/rules"
+	tsrules "github.com/scovl/ollanta/ollantarules/languages/treesitter"
 )
 
 // NewRegistry returns a Registry pre-loaded with all built-in rules.

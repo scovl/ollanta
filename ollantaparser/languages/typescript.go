@@ -2,7 +2,7 @@ package languages
 
 import (
 	typescript "github.com/smacker/go-tree-sitter/typescript/typescript"
-	ollantaparser "github.com/user/ollanta/ollantaparser"
+	ollantaparser "github.com/scovl/ollanta/ollantaparser"
 )
 
 // TypeScript is the tree-sitter grammar for .ts / .tsx files.

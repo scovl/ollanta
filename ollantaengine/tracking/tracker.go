@@ -6,7 +6,7 @@ package tracking
 import (
 	"fmt"
 
-	"github.com/user/ollanta/ollantacore/domain"
+	"github.com/scovl/ollanta/ollantacore/domain"
 )
 
 // IssuePair links a current issue to its matched previous counterpart.

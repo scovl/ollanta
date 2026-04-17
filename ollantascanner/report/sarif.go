@@ -130,7 +130,7 @@ func toSARIF(r *Report) *sarifLog {
 			Tool: sarifTool{Driver: sarifDriver{
 				Name:           "Ollanta",
 				Version:        Version,
-				InformationURI: "https://github.com/user/ollanta",
+				InformationURI: "https://github.com/scovl/ollanta",
 				Rules:          rules,
 			}},
 			Results: results,

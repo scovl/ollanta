@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/user/ollanta/ollantacore/constants"
+	"github.com/scovl/ollanta/ollantacore/constants"
 )
 
 // defaultExcludedDirs lists directory names that are never descended into.

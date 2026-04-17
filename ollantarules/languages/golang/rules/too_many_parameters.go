@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"go/ast"
 
-	"github.com/user/ollanta/ollantacore/domain"
-	ollantarules "github.com/user/ollanta/ollantarules"
+	"github.com/scovl/ollanta/ollantacore/domain"
+	ollantarules "github.com/scovl/ollanta/ollantarules"
 )
 
 // TooManyParameters flags Go functions whose parameter count exceeds a configurable limit.

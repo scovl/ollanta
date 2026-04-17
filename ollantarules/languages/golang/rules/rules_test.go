@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/user/ollanta/ollantacore/constants"
-	ollantarules "github.com/user/ollanta/ollantarules"
-	"github.com/user/ollanta/ollantarules/languages/golang/rules"
+	"github.com/scovl/ollanta/ollantacore/constants"
+	ollantarules "github.com/scovl/ollanta/ollantarules"
+	"github.com/scovl/ollanta/ollantarules/languages/golang/rules"
 )
 
 // moduleRoot resolves the ollantarules module root relative to this test file.

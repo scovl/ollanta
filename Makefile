@@ -1,11 +1,11 @@
 .PHONY: build test lint fmt clean run
 
 PKGS := \
-	github.com/user/ollanta/ollantacore/... \
-	github.com/user/ollanta/ollantaparser/... \
-	github.com/user/ollanta/ollantarules/... \
-	github.com/user/ollanta/ollantascanner/... \
-	github.com/user/ollanta/ollantaengine/...
+	github.com/scovl/ollanta/ollantacore/... \
+	github.com/scovl/ollanta/ollantaparser/... \
+	github.com/scovl/ollanta/ollantarules/... \
+	github.com/scovl/ollanta/ollantascanner/... \
+	github.com/scovl/ollanta/ollantaengine/...
 
 DIRS := ollantacore ollantaparser ollantarules ollantascanner ollantaengine
 
@@ -39,7 +39,7 @@ PROJECT_KEY ?= $(notdir $(abspath $(PROJECT_DIR)))
 PORT        ?= 7777
 
 run:
-	go run github.com/user/ollanta/ollantascanner/cmd/ollanta \
+	go run github.com/scovl/ollanta/ollantascanner/cmd/ollanta \
 		-project-dir "$(PROJECT_DIR)" \
 		-project-key "$(PROJECT_KEY)" \
 		-format all \

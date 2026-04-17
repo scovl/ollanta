@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/user/ollanta/ollantaengine/qualitygate"
+	"github.com/scovl/ollanta/ollantaengine/qualitygate"
 )
 
 // ── Condition ──────────────────────────────────────────────────────────────

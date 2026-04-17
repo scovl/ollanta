@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/user/ollanta/ollantacore/domain"
+	"github.com/scovl/ollanta/ollantacore/domain"
 )
 
 func TestNewIssue_RequiredFields(t *testing.T) {

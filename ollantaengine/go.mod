@@ -1,7 +1,7 @@
-module github.com/user/ollanta/ollantaengine
+module github.com/scovl/ollanta/ollantaengine
 
 go 1.21
 
-require github.com/user/ollanta/ollantacore v0.0.0
+require github.com/scovl/ollanta/ollantacore v0.0.0
 
-replace github.com/user/ollanta/ollantacore => ../ollantacore
+replace github.com/scovl/ollanta/ollantacore => ../ollantacore

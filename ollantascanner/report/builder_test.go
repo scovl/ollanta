@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/user/ollanta/ollantacore/domain"
-	"github.com/user/ollanta/ollantascanner/discovery"
-	"github.com/user/ollanta/ollantascanner/report"
+	"github.com/scovl/ollanta/ollantacore/domain"
+	"github.com/scovl/ollanta/ollantascanner/discovery"
+	"github.com/scovl/ollanta/ollantascanner/report"
 )
 
 func sampleFiles() []discovery.DiscoveredFile {

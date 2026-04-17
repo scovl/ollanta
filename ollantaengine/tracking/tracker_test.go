@@ -5,8 +5,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/user/ollanta/ollantacore/domain"
-	"github.com/user/ollanta/ollantaengine/tracking"
+	"github.com/scovl/ollanta/ollantacore/domain"
+	"github.com/scovl/ollanta/ollantaengine/tracking"
 )
 
 // ── helpers ────────────────────────────────────────────────────────────────

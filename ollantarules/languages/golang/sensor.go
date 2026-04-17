@@ -8,9 +8,9 @@ import (
 	"go/token"
 	"sync"
 
-	"github.com/user/ollanta/ollantacore/constants"
-	"github.com/user/ollanta/ollantacore/domain"
-	ollantarules "github.com/user/ollanta/ollantarules"
+	"github.com/scovl/ollanta/ollantacore/constants"
+	"github.com/scovl/ollanta/ollantacore/domain"
+	ollantarules "github.com/scovl/ollanta/ollantarules"
 )
 
 // GoSensor parses Go source files with go/parser and dispatches them to all

@@ -4,7 +4,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/user/ollanta/ollantacore/domain"
+	"github.com/scovl/ollanta/ollantacore/domain"
 )
 
 func TestComponent_DefaultValues(t *testing.T) {

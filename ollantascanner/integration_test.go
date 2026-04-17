@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/user/ollanta/ollantascanner/scan"
+	"github.com/scovl/ollanta/ollantascanner/scan"
 )
 
 // writeFile is a helper that creates a file with the given content in dir.

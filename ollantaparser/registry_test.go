@@ -3,8 +3,8 @@ package ollantaparser_test
 import (
 	"testing"
 
-	"github.com/user/ollanta/ollantaparser"
-	"github.com/user/ollanta/ollantaparser/languages"
+	"github.com/scovl/ollanta/ollantaparser"
+	"github.com/scovl/ollanta/ollantaparser/languages"
 )
 
 func TestRegistry_Register_ForExtension(t *testing.T) {

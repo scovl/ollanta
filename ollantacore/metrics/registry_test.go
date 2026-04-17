@@ -3,7 +3,7 @@ package metrics_test
 import (
 	"testing"
 
-	"github.com/user/ollanta/ollantacore/metrics"
+	"github.com/scovl/ollanta/ollantacore/metrics"
 )
 
 func TestAll_Returns17Metrics(t *testing.T) {

@@ -5,8 +5,8 @@ import (
 	"go/ast"
 	"go/token"
 
-	"github.com/user/ollanta/ollantacore/domain"
-	ollantarules "github.com/user/ollanta/ollantarules"
+	"github.com/scovl/ollanta/ollantacore/domain"
+	ollantarules "github.com/scovl/ollanta/ollantarules"
 )
 
 // FunctionNestingDepth flags Go functions where control flow is nested deeper than

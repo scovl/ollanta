@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/user/ollanta/ollantacore/domain"
-	ollantarules "github.com/user/ollanta/ollantarules"
+	"github.com/scovl/ollanta/ollantacore/domain"
+	ollantarules "github.com/scovl/ollanta/ollantarules"
 )
 
 // TodoComment flags TODO, FIXME, HACK, and XXX comment markers left in production code.

@@ -6,8 +6,8 @@ import (
 	"go/token"
 	"strconv"
 
-	"github.com/user/ollanta/ollantacore/domain"
-	ollantarules "github.com/user/ollanta/ollantarules"
+	"github.com/scovl/ollanta/ollantacore/domain"
+	ollantarules "github.com/scovl/ollanta/ollantarules"
 )
 
 // NoLargeFunctions detects Go functions and methods that exceed a configurable

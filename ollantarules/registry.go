@@ -1,6 +1,6 @@
 package ollantarules
 
-import "github.com/user/ollanta/ollantacore/domain"
+import "github.com/scovl/ollanta/ollantacore/domain"
 
 // Registry holds the set of registered Analyzer rules and provides lookup methods.
 type Registry struct {

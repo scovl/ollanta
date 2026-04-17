@@ -3,7 +3,7 @@ package domain_test
 import (
 	"testing"
 
-	"github.com/user/ollanta/ollantacore/domain"
+	"github.com/scovl/ollanta/ollantacore/domain"
 )
 
 func TestMeasure_NumericValue(t *testing.T) {

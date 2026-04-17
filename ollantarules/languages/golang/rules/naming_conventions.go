@@ -7,8 +7,8 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/user/ollanta/ollantacore/domain"
-	ollantarules "github.com/user/ollanta/ollantarules"
+	"github.com/scovl/ollanta/ollantacore/domain"
+	ollantarules "github.com/scovl/ollanta/ollantarules"
 )
 
 // NamingConventions detects Go identifiers that violate standard naming conventions:

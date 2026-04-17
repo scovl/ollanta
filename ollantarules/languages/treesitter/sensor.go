@@ -6,9 +6,9 @@ package treesitter
 import (
 	"fmt"
 
-	"github.com/user/ollanta/ollantacore/domain"
-	"github.com/user/ollanta/ollantaparser"
-	ollantarules "github.com/user/ollanta/ollantarules"
+	"github.com/scovl/ollanta/ollantacore/domain"
+	"github.com/scovl/ollanta/ollantaparser"
+	ollantarules "github.com/scovl/ollanta/ollantarules"
 )
 
 // TreeSitterSensor parses source files with ollantaparser (tree-sitter) and

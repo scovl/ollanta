@@ -2,8 +2,10 @@ go 1.21
 
 use (
 	./ollantacore
+	./ollantaengine
 	./ollantaparser
 	./ollantarules
 	./ollantascanner
-	./ollantaengine
+	./ollantastore
+	./ollantaweb
 )

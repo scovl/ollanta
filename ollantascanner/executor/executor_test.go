@@ -7,12 +7,12 @@ import (
 	"strings"
 	"testing"
 
-	parlanguages "github.com/user/ollanta/ollantaparser/languages"
-	"github.com/user/ollanta/ollantarules/defaults"
-	gosensor "github.com/user/ollanta/ollantarules/languages/golang"
-	tssensor "github.com/user/ollanta/ollantarules/languages/treesitter"
-	"github.com/user/ollanta/ollantascanner/discovery"
-	"github.com/user/ollanta/ollantascanner/executor"
+	parlanguages "github.com/scovl/ollanta/ollantaparser/languages"
+	"github.com/scovl/ollanta/ollantarules/defaults"
+	gosensor "github.com/scovl/ollanta/ollantarules/languages/golang"
+	tssensor "github.com/scovl/ollanta/ollantarules/languages/treesitter"
+	"github.com/scovl/ollanta/ollantascanner/discovery"
+	"github.com/scovl/ollanta/ollantascanner/executor"
 )
 
 func newExecutor() *executor.Executor {

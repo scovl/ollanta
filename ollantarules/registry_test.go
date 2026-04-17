@@ -3,8 +3,8 @@ package ollantarules_test
 import (
 	"testing"
 
-	"github.com/user/ollanta/ollantarules"
-	"github.com/user/ollanta/ollantarules/defaults"
+	"github.com/scovl/ollanta/ollantarules"
+	"github.com/scovl/ollanta/ollantarules/defaults"
 )
 
 func TestRegistry_All(t *testing.T) {

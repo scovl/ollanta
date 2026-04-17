@@ -3,7 +3,7 @@ package ollantarules
 import (
 	"fmt"
 
-	"github.com/user/ollanta/ollantacore/domain"
+	"github.com/scovl/ollanta/ollantacore/domain"
 )
 
 // ThresholdDef defines a single threshold condition (MetricHunter pattern from OSA).

@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/user/ollanta/ollantascanner/discovery"
+	"github.com/scovl/ollanta/ollantascanner/discovery"
 )
 
 func TestDiscover_GoFiles(t *testing.T) {

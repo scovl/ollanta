@@ -3,8 +3,8 @@ package treesitter
 import (
 	"fmt"
 
-	"github.com/user/ollanta/ollantacore/domain"
-	ollantarules "github.com/user/ollanta/ollantarules"
+	"github.com/scovl/ollanta/ollantacore/domain"
+	ollantarules "github.com/scovl/ollanta/ollantarules"
 )
 
 // BroadExceptPY detects Python except clauses that catch Exception (or any base

@@ -4,9 +4,9 @@ import (
 	"strings"
 	"testing"
 
-	parlanguages "github.com/user/ollanta/ollantaparser/languages"
-	"github.com/user/ollanta/ollantarules/defaults"
-	"github.com/user/ollanta/ollantarules/languages/treesitter"
+	parlanguages "github.com/scovl/ollanta/ollantaparser/languages"
+	"github.com/scovl/ollanta/ollantarules/defaults"
+	"github.com/scovl/ollanta/ollantarules/languages/treesitter"
 )
 
 func defaultSensor() *treesitter.TreeSitterSensor {

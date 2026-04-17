@@ -5,8 +5,8 @@ import (
 	"go/ast"
 	"go/token"
 
-	"github.com/user/ollanta/ollantacore/domain"
-	ollantarules "github.com/user/ollanta/ollantarules"
+	"github.com/scovl/ollanta/ollantacore/domain"
+	ollantarules "github.com/scovl/ollanta/ollantarules"
 )
 
 // MagicNumber flags numeric literals used directly in code outside of constant

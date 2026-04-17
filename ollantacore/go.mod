@@ -1,3 +1,3 @@
-module github.com/user/ollanta/ollantacore
+module github.com/scovl/ollanta/ollantacore
 
 go 1.21

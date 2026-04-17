@@ -3,8 +3,8 @@ package ollantarules_test
 import (
 	"testing"
 
-	"github.com/user/ollanta/ollantacore/domain"
-	ollantarules "github.com/user/ollanta/ollantarules"
+	"github.com/scovl/ollanta/ollantacore/domain"
+	ollantarules "github.com/scovl/ollanta/ollantarules"
 )
 
 func makeComponent(name string, compType string, metrics map[string]float64) *domain.Component {

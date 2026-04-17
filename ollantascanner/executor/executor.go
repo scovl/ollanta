@@ -9,10 +9,10 @@ import (
 	"runtime"
 	"sync"
 
-	"github.com/user/ollanta/ollantacore/domain"
-	gosensor "github.com/user/ollanta/ollantarules/languages/golang"
-	tssensor "github.com/user/ollanta/ollantarules/languages/treesitter"
-	"github.com/user/ollanta/ollantascanner/discovery"
+	"github.com/scovl/ollanta/ollantacore/domain"
+	gosensor "github.com/scovl/ollanta/ollantarules/languages/golang"
+	tssensor "github.com/scovl/ollanta/ollantarules/languages/treesitter"
+	"github.com/scovl/ollanta/ollantascanner/discovery"
 )
 
 // Executor routes files to GoSensor or TreeSitterSensor based on language and

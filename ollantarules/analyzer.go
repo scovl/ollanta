@@ -8,8 +8,8 @@ import (
 	"go/ast"
 	"go/token"
 
-	"github.com/user/ollanta/ollantacore/domain"
-	"github.com/user/ollanta/ollantaparser"
+	"github.com/scovl/ollanta/ollantacore/domain"
+	"github.com/scovl/ollanta/ollantaparser"
 )
 
 // Analyzer is the plugin interface that every analysis rule must satisfy.

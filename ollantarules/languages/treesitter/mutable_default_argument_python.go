@@ -3,8 +3,8 @@ package treesitter
 import (
 	"fmt"
 
-	"github.com/user/ollanta/ollantacore/domain"
-	ollantarules "github.com/user/ollanta/ollantarules"
+	"github.com/scovl/ollanta/ollantacore/domain"
+	ollantarules "github.com/scovl/ollanta/ollantarules"
 )
 
 // MutableDefaultArgumentPY detects Python function definitions that use a mutable

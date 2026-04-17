@@ -4,7 +4,7 @@
 // to the project root.
 package summarizer
 
-import "github.com/user/ollanta/ollantacore/domain"
+import "github.com/scovl/ollanta/ollantacore/domain"
 
 // CumSum propagates each metric in metricKeys up the Component tree by summing child
 // values into their parent. Leaf values are left unchanged; every ancestor receives the

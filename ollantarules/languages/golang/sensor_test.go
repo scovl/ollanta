@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/user/ollanta/ollantarules/defaults"
-	gosensor "github.com/user/ollanta/ollantarules/languages/golang"
+	"github.com/scovl/ollanta/ollantarules/defaults"
+	gosensor "github.com/scovl/ollanta/ollantarules/languages/golang"
 )
 
 func TestGoSensor_Language(t *testing.T) {

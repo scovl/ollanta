@@ -1,8 +1,8 @@
-module github.com/user/ollanta/ollantarules
+module github.com/scovl/ollanta/ollantarules
 
 go 1.21
 
 replace (
-	github.com/user/ollanta/ollantacore => ../ollantacore
-	github.com/user/ollanta/ollantaparser => ../ollantaparser
+	github.com/scovl/ollanta/ollantacore => ../ollantacore
+	github.com/scovl/ollanta/ollantaparser => ../ollantaparser
 )
