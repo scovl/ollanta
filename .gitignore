@@ -16,6 +16,11 @@ go.work.sum
 *.swp
 *.swo
 draft/
+openspec/
+
+# GitHub Copilot prompts and skills
+.github/prompts/
+.github/skills/
 
 # TypeScript / Node (ollantascanner/server/static)
 ollantascanner/server/static/node_modules/

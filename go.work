@@ -1,6 +1,9 @@
 go 1.21
 
 use (
+	./adapter
+	./application
+	./domain
 	./ollantacore
 	./ollantaengine
 	./ollantaparser
