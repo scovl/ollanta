@@ -19,7 +19,4 @@ draft/
 
 # TypeScript / Node (ollantascanner/server/static)
 ollantascanner/server/static/node_modules/
-ollantascanner/server/static/dist/app.js
-
-# Docker
-.dockerignore
+# dist/app.js is a pre-built bundle committed alongside source; do not ignore it

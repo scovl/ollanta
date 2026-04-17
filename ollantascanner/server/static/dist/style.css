@@ -121,6 +121,47 @@ select:focus { border-color: var(--accent); }
   margin-left: 8px;
 }
 
+/* Severity summary bar */
+.sev-bar {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.sev-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 20px;
+  border: 1px solid transparent;
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color .15s, color .15s, background .15s;
+}
+.sev-chip:hover { border-color: var(--chip-color); color: var(--text); }
+.sev-chip.active { border-color: var(--chip-color); background: var(--chip-bg); color: var(--text); }
+.chip-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.chip-count {
+  background: rgba(255,255,255,.1);
+  border-radius: 10px;
+  padding: 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text);
+  min-width: 20px;
+  text-align: center;
+}
+.sev-chip.active .chip-count { background: var(--chip-color); }
+
+/* Row severity highlight */
+tbody tr.sev-row { border-left: 3px solid var(--row-sev-color, transparent); }
+tbody tr.sev-row td:first-child { padding-left: 11px; }
+tbody tr.sev-row:hover { background: var(--row-sev-bg, var(--surface2)); }
+
 /* Table */
 .table-wrap {
   background: var(--surface);

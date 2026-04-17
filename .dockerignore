@@ -1,0 +1,16 @@
+.git/
+.ollanta/
+.vscode/
+.idea/
+draft/
+*.exe
+*.out
+*.test
+*.prof
+*.swp
+*.swo
+ollantascanner/server/static/node_modules/
+task01.md
+task02.md
+task03.md
+task04.md
