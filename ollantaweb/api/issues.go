@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
@@ -102,4 +103,46 @@ func (h *IssuesHandler) Facets(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	jsonOK(w, http.StatusOK, facets)
+}
+
+// Transition handles POST /api/v1/issues/{id}/transition.
+// Allowed resolutions: false_positive, wont_fix, confirmed, fixed, "" (reopen).
+func (h *IssuesHandler) Transition(w http.ResponseWriter, r *http.Request) {
+	id, err := parseID(r, "id")
+	if err != nil {
+		jsonError(w, http.StatusBadRequest, "invalid issue id")
+		return
+	}
+
+	var req struct {
+		Resolution string `json:"resolution"`
+		Comment    string `json:"comment"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+
+	// Determine target status from resolution.
+	toStatus := "closed"
+	if req.Resolution == "" {
+		toStatus = "open" // reopen
+	}
+
+	user := UserFromContext(r.Context())
+	var userID int64
+	if user != nil {
+		userID = user.ID
+	}
+
+	if err := h.issues.Transition(r.Context(), id, userID, toStatus, req.Resolution, req.Comment); err != nil {
+		if errors.Is(err, postgres.ErrNotFound) {
+			jsonError(w, http.StatusNotFound, "issue not found")
+			return
+		}
+		jsonError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }

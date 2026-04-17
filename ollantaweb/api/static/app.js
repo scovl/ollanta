@@ -14,6 +14,11 @@ let state = {
   issueFilter: { severity: 'all', type: 'all', search: '' },
   loading: false,
   loadingIssues: false,
+  projectTab: 'issues',  // 'issues' | 'gate' | 'webhooks' | 'profiles'
+  gateData: null,        // null = not loaded yet
+  webhooksData: null,    // null = not loaded yet
+  profilesData: null,    // null = not loaded yet
+  newCodePeriod: null,
 };
 
 // ── Storage ───────────────────────────────────────────────────────────────────
@@ -219,6 +224,11 @@ async function loadProject(key) {
   state.issuesTotal    = 0;
   state.issueOffset    = 0;
   state.issueFilter    = { severity: 'all', type: 'all', search: '' };
+  state.projectTab     = 'issues';
+  state.gateData       = null;
+  state.webhooksData   = null;
+  state.profilesData   = null;
+  state.newCodePeriod  = null;
   state.loading        = true;
   render();
 
@@ -286,8 +296,29 @@ function renderProjectDetail() {
   const s = state.currentScan;
   const gateCls = !s ? '' : s.gate_status === 'OK' ? 'badge-ok' : s.gate_status === 'WARN' ? 'badge-warn' : 'badge-error';
   const gateBadge = s && s.gate_status ? `<span class="badge ${gateCls}">${escHtml(s.gate_status)}</span>` : '';
-
   const desc = [p.description, (p.tags || []).filter(Boolean).join(', ')].filter(Boolean).join(' · ');
+
+  const tab = state.projectTab;
+  const tabs = ['issues','gate','webhooks','profiles'];
+  const tabLabels = { issues: 'Issues', gate: 'Quality Gate', webhooks: 'Webhooks', profiles: 'Profiles' };
+  const tabsHtml = `<div class="proj-tabs">${tabs.map(t =>
+    `<button class="tab-btn${t===tab?' active':''}" data-tab="${t}">${tabLabels[t]}</button>`
+  ).join('')}</div>`;
+
+  let tabContent = '';
+  if (tab === 'issues') {
+    tabContent = (s ? renderScanMetrics(s) : `
+      <div class="empty-state">
+        <div class="empty-icon">🔬</div>
+        <p>No scans yet for this project.<br>Run <code>ollanta</code> to submit a scan.</p>
+      </div>`) + `<div id="issues-section"></div>`;
+  } else if (tab === 'gate') {
+    tabContent = renderGateTab();
+  } else if (tab === 'webhooks') {
+    tabContent = renderWebhooksTab();
+  } else if (tab === 'profiles') {
+    tabContent = renderProfilesTab();
+  }
 
   return `
     ${backBtn}
@@ -295,14 +326,8 @@ function renderProjectDetail() {
       <h2>${escHtml(p.name || p.key)} ${gateBadge}</h2>
       <p>${escHtml(p.key)}${desc ? ' — ' + escHtml(desc) : ''}</p>
     </div>
-
-    ${s ? renderScanMetrics(s) : `
-      <div class="empty-state">
-        <div class="empty-icon">🔬</div>
-        <p>No scans yet for this project.<br>Run <code>ollanta</code> to submit a scan.</p>
-      </div>`}
-
-    <div id="issues-section"></div>`;
+    ${tabsHtml}
+    ${tabContent}`;
 }
 
 // ── Issues rendering ─────────────────────────────────────────────────────────
@@ -376,12 +401,27 @@ function buildIssuesHtml() {
     const icon  = TYPE_ICON[i.type] || '?';
     const file  = (i.component_path || '').replace(/\\/g, '/').split('/').slice(-3).join('/');
     const loc   = i.end_line && i.end_line !== i.line ? `${i.line}–${i.end_line}` : `${i.line}`;
-    return `<tr style="--row-sev-color:${color};--row-sev-bg:${bg}" class="sev-row">
+    const status = i.status || 'open';
+    const isClosed = status === 'closed';
+    let actionBtns = '';
+    if (!isClosed) {
+      actionBtns = `
+        <button class="itbtn fp-btn" data-id="${i.id}" data-res="false_positive" title="False positive">FP</button>
+        <button class="itbtn wf-btn" data-id="${i.id}" data-res="wont_fix" title="Won't fix">WF</button>
+        <button class="itbtn ok-btn" data-id="${i.id}" data-res="fixed" title="Mark as fixed">✓</button>`;
+    } else {
+      actionBtns = `<button class="itbtn re-btn" data-id="${i.id}" data-res="" title="Reopen">↩</button>`;
+    }
+    const statusDot = isClosed
+      ? `<span class="status-dot" style="background:var(--text-muted)" title="${escAttr(i.resolution||status)}"></span>`
+      : '';
+    return `<tr style="--row-sev-color:${color};--row-sev-bg:${bg}" class="sev-row${isClosed?' row-closed':''}">
       <td><span class="sev-badge" style="background:${color}">${escHtml(i.severity)}</span></td>
       <td>${icon} ${escHtml((i.type||'').replace('_',' ').toLowerCase())}</td>
       <td class="mono" style="font-size:11px">${escHtml(i.rule_key||'')}</td>
       <td class="file-cell" title="${escAttr(i.component_path||'')}"><span class="mono">${escHtml(file)}<span style="color:var(--text-muted)">:${loc}</span></span></td>
-      <td>${escHtml(i.message||'')}</td>
+      <td>${statusDot}${escHtml(i.message||'')}</td>
+      <td class="actions-cell">${actionBtns}</td>
     </tr>`;
   }).join('');
 
@@ -398,7 +438,7 @@ function buildIssuesHtml() {
     <div class="issues-table-wrap">
       <table class="issues-table">
         <thead><tr>
-          <th>Severity</th><th>Type</th><th>Rule</th><th>File</th><th>Message</th>
+          <th>Severity</th><th>Type</th><th>Rule</th><th>File</th><th>Message</th><th></th>
         </tr></thead>
         <tbody>${rows}</tbody>
       </table>
@@ -431,7 +471,358 @@ function bindIssueControls() {
     state.issueOffset += ISSUE_PAGE;
     loadIssues(true);
   });
+
+  // Issue transition buttons
+  document.querySelectorAll('.itbtn').forEach(btn => {
+    btn.addEventListener('click', async e => {
+      e.stopPropagation();
+      const id  = btn.dataset.id;
+      const res = btn.dataset.res; // '' = reopen
+      btn.disabled = true;
+      try {
+        await apiFetch('/issues/' + id + '/transition', {
+          method: 'POST',
+          body: JSON.stringify({ resolution: res, comment: '' }),
+        });
+        const idx = state.issues.findIndex(i => String(i.id) === String(id));
+        if (idx !== -1) {
+          const iss = state.issues[idx];
+          if (res === '') {
+            iss.status = 'open'; iss.resolution = '';
+          } else {
+            iss.status = 'closed'; iss.resolution = res;
+          }
+        }
+        renderIssuesSection();
+      } catch (err) {
+        showToast(err.message, 'error');
+        btn.disabled = false;
+      }
+    });
+  });
 }
+
+// ── Tab switching & data loading ──────────────────────────────────────────────
+
+async function switchTab(tab) {
+  state.projectTab = tab;
+  render();
+  if (tab === 'issues') {
+    renderIssuesSection();
+    return;
+  }
+  if (tab === 'gate' && state.gateData === null) {
+    await loadGateData(); return;
+  }
+  if (tab === 'webhooks' && state.webhooksData === null) {
+    await loadWebhooksData(); return;
+  }
+  if (tab === 'profiles' && state.profilesData === null) {
+    await loadProfilesData(); return;
+  }
+  bindTabContent();
+}
+
+async function loadGateData() {
+  try {
+    const data = await apiFetch('/quality-gates');
+    state.gateData = data.items || (Array.isArray(data) ? data : []);
+  } catch { state.gateData = []; }
+  render();
+  bindTabContent();
+}
+
+async function loadWebhooksData() {
+  const p = state.currentProject;
+  try {
+    const data = await apiFetch('/webhooks' + (p ? '?project_key=' + encodeURIComponent(p.key) : ''));
+    state.webhooksData = data.items || (Array.isArray(data) ? data : []);
+  } catch { state.webhooksData = []; }
+  try {
+    state.newCodePeriod = await apiFetch('/projects/' + encodeURIComponent(p.key) + '/new-code-period');
+  } catch { state.newCodePeriod = null; }
+  render();
+  bindTabContent();
+}
+
+async function loadProfilesData() {
+  try {
+    const data = await apiFetch('/profiles');
+    state.profilesData = data.items || (Array.isArray(data) ? data : []);
+  } catch { state.profilesData = []; }
+  render();
+  bindTabContent();
+}
+
+// ── Gate tab rendering ────────────────────────────────────────────────────────
+
+function renderGateTab() {
+  const gates = state.gateData;
+  if (gates === null) return `<div class="loading-state"><div class="spinner"></div></div>`;
+  if (!gates.length) return `<div class="empty-state" style="padding:40px 0"><p>No quality gates configured.</p></div>`;
+
+  const rows = gates.map(g => `
+    <div class="gate-card">
+      <div class="gate-header">
+        <div>
+          <span class="gate-name">${escHtml(g.name)}</span>
+          ${g.is_default ? `<span class="badge badge-ok" style="font-size:11px;margin-left:8px">Default</span>` : ''}
+        </div>
+        <div class="gate-actions">
+          <button class="btn-sm btn-outline assign-gate-btn" data-gate-id="${g.id}" data-gate-name="${escAttr(g.name)}">Assign to project</button>
+          <button class="btn-sm btn-ghost expand-gate-btn" data-gate-id="${g.id}">Conditions ▾</button>
+        </div>
+      </div>
+      <div class="gate-conditions hidden" id="gate-cond-${g.id}">
+        <div class="loading-inline">Loading…</div>
+      </div>
+    </div>`).join('');
+
+  return `<div class="tab-section">
+    <p class="section-title" style="margin-top:24px">Quality Gates</p>
+    <p style="color:var(--text-muted);font-size:13px;margin-bottom:16px">Conditions that must pass for a project analysis to be considered successful.</p>
+    <div class="gate-list">${rows}</div>
+  </div>`;
+}
+
+// ── Webhooks tab rendering ────────────────────────────────────────────────────
+
+function renderWebhooksTab() {
+  const whs = state.webhooksData;
+  if (whs === null) return `<div class="loading-state"><div class="spinner"></div></div>`;
+
+  const ncp = state.newCodePeriod;
+  const ncpStr = ncp
+    ? escHtml(ncp.strategy) + (ncp.value ? ' — ' + escHtml(ncp.value) : '')
+    : 'auto (default)';
+
+  const whRows = whs.length === 0
+    ? `<div class="empty-state" style="padding:20px 0"><p>No webhooks configured.</p></div>`
+    : whs.map(w => `
+      <div class="webhook-row">
+        <div class="webhook-info">
+          <span class="webhook-name">${escHtml(w.name)}</span>
+          <span class="webhook-url mono" title="${escAttr(w.url)}">${escHtml(w.url)}</span>
+        </div>
+        <div class="webhook-btns">
+          <button class="btn-sm btn-outline test-wh-btn" data-wh-id="${w.id}">Test</button>
+          <button class="btn-sm btn-danger del-wh-btn" data-wh-id="${w.id}">Delete</button>
+        </div>
+      </div>`).join('');
+
+  return `<div class="tab-section">
+    <p class="section-title" style="margin-top:24px">Webhooks</p>
+    <div class="webhook-list">${whRows}</div>
+    <div class="create-form">
+      <h4 style="font-size:14px;font-weight:600;margin-bottom:12px">Add webhook</h4>
+      <div class="form-row">
+        <input id="newWhName" class="filter-input" placeholder="Name" style="width:150px">
+        <input id="newWhUrl" class="filter-input" placeholder="https://…" style="flex:1;min-width:200px">
+        <input id="newWhSecret" class="filter-input" placeholder="Secret (optional)" style="width:160px">
+        <button class="btn btn-primary" id="addWhBtn" style="width:auto;padding:6px 18px;margin-top:0">Add</button>
+      </div>
+    </div>
+
+    <p class="section-title" style="margin-top:32px">New Code Period</p>
+    <div class="scan-info" style="grid-template-columns:1fr auto;gap:16px;align-items:center">
+      <div>
+        <div class="info-label">Current strategy</div>
+        <div class="info-value" id="ncpDisplay">${ncpStr}</div>
+      </div>
+      <div class="form-row" style="justify-content:flex-end">
+        <select id="ncpStrategy" class="filter-sel">
+          <option value="auto"${(!ncp||ncp.strategy==='auto')?' selected':''}>Auto</option>
+          <option value="previous_version"${ncp?.strategy==='previous_version'?' selected':''}>Previous version</option>
+          <option value="number_of_days"${ncp?.strategy==='number_of_days'?' selected':''}>Number of days</option>
+          <option value="reference_branch"${ncp?.strategy==='reference_branch'?' selected':''}>Reference branch</option>
+        </select>
+        <input id="ncpValue" class="filter-input" placeholder="Value (if needed)" style="width:140px" value="${escAttr(ncp?.value||'')}">
+        <button class="btn btn-primary" id="saveNcpBtn" style="width:auto;padding:6px 18px;margin-top:0">Save</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+// ── Profiles tab rendering ────────────────────────────────────────────────────
+
+function renderProfilesTab() {
+  const profiles = state.profilesData;
+  if (profiles === null) return `<div class="loading-state"><div class="spinner"></div></div>`;
+  if (!profiles.length) return `<div class="empty-state" style="padding:40px 0"><p>No quality profiles found.</p></div>`;
+
+  const byLang = {};
+  for (const pr of profiles) {
+    if (!byLang[pr.language]) byLang[pr.language] = [];
+    byLang[pr.language].push(pr);
+  }
+
+  const sections = Object.entries(byLang).map(([lang, profs]) => `
+    <div class="profile-lang-section">
+      <h4 class="profile-lang-title">${escHtml(lang)}</h4>
+      <div class="profile-list">
+        ${profs.map(pr => `
+          <div class="profile-row">
+            <div class="profile-info">
+              <span class="profile-name">${escHtml(pr.name)}</span>
+              ${pr.is_builtin ? `<span class="badge badge-ok" style="font-size:10px;margin-left:6px">Built-in</span>` : ''}
+              ${pr.is_default ? `<span class="badge badge-warn" style="font-size:10px;margin-left:6px">Default</span>` : ''}
+              <span style="color:var(--text-muted);font-size:12px;margin-left:8px">${pr.rule_count||0} rules</span>
+            </div>
+            <button class="btn-sm btn-outline assign-profile-btn"
+              data-profile-id="${pr.id}"
+              data-profile-lang="${escAttr(pr.language)}"
+              data-profile-name="${escAttr(pr.name)}">Assign to project</button>
+          </div>`).join('')}
+      </div>
+    </div>`).join('');
+
+  return `<div class="tab-section">
+    <p class="section-title" style="margin-top:24px">Quality Profiles</p>
+    <p style="color:var(--text-muted);font-size:13px;margin-bottom:16px">Profiles define which rules are active for each language.</p>
+    ${sections}
+  </div>`;
+}
+
+// ── Tab content event binding ─────────────────────────────────────────────────
+
+function bindTabContent() {
+  const p = state.currentProject;
+  if (!p) return;
+
+  // Gate tab
+  document.querySelectorAll('.expand-gate-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const id = btn.dataset.gateId;
+      const box = document.getElementById('gate-cond-' + id);
+      if (!box) return;
+      const hidden = box.classList.toggle('hidden');
+      btn.textContent = hidden ? 'Conditions ▾' : 'Conditions ▴';
+      if (!hidden && box.innerHTML.includes('Loading')) {
+        try {
+          const gate = await apiFetch('/quality-gates/' + id);
+          const conds = gate.conditions || [];
+          if (!conds.length) {
+            box.innerHTML = '<p style="color:var(--text-muted);padding:8px 0;font-size:13px">No conditions defined.</p>';
+          } else {
+            box.innerHTML = `<table class="conditions-table">
+              <thead><tr><th>Metric</th><th>Operator</th><th>Threshold</th><th>New Code Only</th></tr></thead>
+              <tbody>${conds.map(c => `<tr>
+                <td>${escHtml(c.metric)}</td>
+                <td>${escHtml(c.operator)}</td>
+                <td class="mono">${escHtml(String(c.value))}</td>
+                <td>${c.on_new_code ? '✓' : ''}</td>
+              </tr>`).join('')}</tbody>
+            </table>`;
+          }
+        } catch { box.innerHTML = '<p style="color:var(--danger);font-size:13px">Failed to load conditions.</p>'; }
+      }
+    });
+  });
+
+  document.querySelectorAll('.assign-gate-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const id = btn.dataset.gateId;
+      const name = btn.dataset.gateName;
+      btn.disabled = true;
+      try {
+        await apiFetch('/projects/' + encodeURIComponent(p.key) + '/quality-gate', {
+          method: 'POST',
+          body: JSON.stringify({ gate_id: parseInt(id, 10) }),
+        });
+        showToast('Gate "' + name + '" assigned.');
+      } catch (err) { showToast(err.message, 'error'); }
+      btn.disabled = false;
+    });
+  });
+
+  // Webhooks tab
+  document.getElementById('addWhBtn')?.addEventListener('click', async () => {
+    const name   = document.getElementById('newWhName')?.value.trim();
+    const url    = document.getElementById('newWhUrl')?.value.trim();
+    const secret = document.getElementById('newWhSecret')?.value.trim();
+    if (!name || !url) { showToast('Name and URL are required.', 'error'); return; }
+    try {
+      await apiFetch('/webhooks', {
+        method: 'POST',
+        body: JSON.stringify({ name, url, secret: secret || '', project_key: p.key }),
+      });
+      state.webhooksData = null;
+      await loadWebhooksData();
+    } catch (err) { showToast(err.message, 'error'); }
+  });
+
+  document.querySelectorAll('.test-wh-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      try {
+        await apiFetch('/webhooks/' + btn.dataset.whId + '/test', { method: 'POST' });
+        showToast('Test delivery sent.');
+      } catch (err) { showToast(err.message, 'error'); }
+      btn.disabled = false;
+    });
+  });
+
+  document.querySelectorAll('.del-wh-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Delete this webhook?')) return;
+      btn.disabled = true;
+      try {
+        await apiFetch('/webhooks/' + btn.dataset.whId, { method: 'DELETE' });
+        state.webhooksData = null;
+        await loadWebhooksData();
+      } catch (err) { showToast(err.message, 'error'); btn.disabled = false; }
+    });
+  });
+
+  document.getElementById('saveNcpBtn')?.addEventListener('click', async () => {
+    const strategy = document.getElementById('ncpStrategy')?.value;
+    const value    = document.getElementById('ncpValue')?.value.trim();
+    try {
+      await apiFetch('/projects/' + encodeURIComponent(p.key) + '/new-code-period', {
+        method: 'PUT',
+        body: JSON.stringify({ strategy, value: value || '' }),
+      });
+      state.newCodePeriod = { strategy, value };
+      const display = document.getElementById('ncpDisplay');
+      if (display) display.textContent = strategy + (value ? ' \u2014 ' + value : '');
+      showToast('New code period saved.');
+    } catch (err) { showToast(err.message, 'error'); }
+  });
+
+  // Profiles tab
+  document.querySelectorAll('.assign-profile-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const id   = btn.dataset.profileId;
+      const lang = btn.dataset.profileLang;
+      const name = btn.dataset.profileName;
+      btn.disabled = true;
+      try {
+        await apiFetch('/projects/' + encodeURIComponent(p.key) + '/profiles', {
+          method: 'POST',
+          body: JSON.stringify({ profile_id: parseInt(id, 10), language: lang }),
+        });
+        showToast('Profile "' + name + '" assigned.');
+      } catch (err) { showToast(err.message, 'error'); }
+      btn.disabled = false;
+    });
+  });
+}
+
+// ── Toast notifications ───────────────────────────────────────────────────────
+
+function showToast(msg, type = 'success') {
+  const el = document.createElement('div');
+  el.className = 'toast toast-' + type;
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(() => el.classList.add('toast-show'), 10);
+  setTimeout(() => {
+    el.classList.remove('toast-show');
+    setTimeout(() => el.remove(), 300);
+  }, 3500);
+}
+
+// ── Scan metrics ──────────────────────────────────────────────────────────────
 
 function renderScanMetrics(s) {
   const newIssuesCls = s.new_issues > 0 ? 'warning' : 'success';
@@ -513,14 +904,20 @@ function bindMain() {
   document.querySelectorAll('.project-card').forEach(card => {
     card.addEventListener('click', () => loadProject(card.dataset.key));
   });
-  if (state.view === 'project') bindIssueControls();
+  if (state.view === 'project') {
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+    });
+    if (state.projectTab !== 'issues') bindTabContent();
+  }
 }
 
 function logout() {
   clearStorage();
   state = { user: null, view: 'login', projects: [], currentProject: null, currentScan: null,
             issues: [], issuesTotal: 0, issueOffset: 0, issueFilter: { severity: 'all', type: 'all', search: '' },
-            loading: false, loadingIssues: false };
+            loading: false, loadingIssues: false,
+            projectTab: 'issues', gateData: null, webhooksData: null, profilesData: null, newCodePeriod: null };
   render();
 }
 

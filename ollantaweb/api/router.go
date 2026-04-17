@@ -9,6 +9,8 @@ import (
 	"github.com/scovl/ollanta/ollantastore/search"
 	"github.com/scovl/ollanta/ollantaweb/config"
 	"github.com/scovl/ollanta/ollantaweb/ingest"
+	"github.com/scovl/ollanta/ollantaweb/telemetry"
+	"github.com/scovl/ollanta/ollantaweb/webhook"
 )
 
 // NewRouter builds and returns the complete chi router for the ollantaweb server.
@@ -26,12 +28,19 @@ func NewRouter(
 	searcher *search.MeilisearchSearcher,
 	indexer *search.MeilisearchIndexer,
 	pipeline *ingest.Pipeline,
+	profiles *postgres.ProfileRepository,
+	gates *postgres.GateRepository,
+	periods *postgres.NewCodePeriodRepository,
+	webhooks *postgres.WebhookRepository,
+	dispatcher *webhook.Dispatcher,
+	metricsReg *telemetry.Registry,
 ) http.Handler {
 	r := chi.NewRouter()
 
 	// ── Global middleware ──────────────────────────────────────────────────
 	r.Use(middleware.RequestID)
 	r.Use(middleware.Recoverer)
+	r.Use(telemetry.TraceIDMiddleware)
 	r.Use(RequestLogger)
 	r.Use(CORS)
 	r.Use(MaxBody(10 << 20)) // 10 MB
@@ -39,6 +48,7 @@ func NewRouter(
 	// ── Health (always public) ─────────────────────────────────────────────
 	r.Get("/healthz", Liveness)
 	r.Get("/readyz", Readiness)
+	r.Get("/metrics", metricsReg.Handler())
 
 	// ── Auth middleware ────────────────────────────────────────────────────
 	authMW := NewAuthMiddleware(users, tokens, sessions, []byte(cfg.JWTSecret))
@@ -49,6 +59,10 @@ func NewRouter(
 	groupsH := NewGroupsHandler(groups)
 	tokensH := NewTokensHandler(tokens, projects, perms)
 	permsH := NewPermsHandler(perms, projects)
+	profilesH := NewProfilesHandler(profiles, projects)
+	gatesH := NewGatesHandler(gates, projects)
+	periodsH := NewNewCodePeriodHandler(periods, projects)
+	webhooksH := NewWebhooksHandler(webhooks, projects, dispatcher)
 
 	ph := &ProjectsHandler{repo: projects}
 	sh := &ScansHandler{scans: scans, projects: projects, pipeline: pipeline}
@@ -125,6 +139,15 @@ func NewRouter(
 			r.Post("/projects/{key}/permissions/grant", permsH.GrantProject)
 			r.Post("/projects/{key}/permissions/revoke", permsH.RevokeProject)
 
+			// Project-scoped profile and gate assignments
+			r.Post("/projects/{key}/profiles", profilesH.AssignToProject)
+			r.Post("/projects/{key}/quality-gate", gatesH.AssignToProject)
+
+			// Project-scoped new code period
+			r.Get("/projects/{key}/new-code-period", periodsH.GetForProject)
+			r.Put("/projects/{key}/new-code-period", periodsH.SetForProject)
+			r.Delete("/projects/{key}/new-code-period", periodsH.DeleteForProject)
+
 			// Scans
 			r.Post("/scans", sh.Ingest)
 			r.Get("/scans/{id}", sh.Get)
@@ -134,6 +157,38 @@ func NewRouter(
 			// Issues
 			r.Get("/issues", ih.List)
 			r.Get("/issues/facets", ih.Facets)
+			r.Post("/issues/{id}/transition", ih.Transition)
+
+			// Quality profiles
+			r.Get("/profiles", profilesH.List)
+			r.Post("/profiles", profilesH.Create)
+			r.Get("/profiles/{id}", profilesH.Get)
+			r.Put("/profiles/{id}", profilesH.Update)
+			r.Delete("/profiles/{id}", profilesH.Delete)
+			r.Post("/profiles/{id}/rules", profilesH.ActivateRule)
+			r.Delete("/profiles/{id}/rules/{rule}", profilesH.DeactivateRule)
+			r.Get("/profiles/{id}/effective-rules", profilesH.EffectiveRules)
+
+			// Quality gates
+			r.Get("/quality-gates", gatesH.List)
+			r.Post("/quality-gates", gatesH.Create)
+			r.Get("/quality-gates/{id}", gatesH.Get)
+			r.Put("/quality-gates/{id}", gatesH.Update)
+			r.Delete("/quality-gates/{id}", gatesH.Delete)
+			r.Post("/quality-gates/{id}/conditions", gatesH.AddCondition)
+			r.Delete("/quality-gates/{id}/conditions/{cid}", gatesH.RemoveCondition)
+
+			// New code periods (global)
+			r.Get("/new-code-periods/global", periodsH.GetGlobal)
+			r.Put("/new-code-periods/global", periodsH.SetGlobal)
+
+			// Webhooks
+			r.Get("/webhooks", webhooksH.List)
+			r.Post("/webhooks", webhooksH.Create)
+			r.Put("/webhooks/{id}", webhooksH.Update)
+			r.Delete("/webhooks/{id}", webhooksH.Delete)
+			r.Get("/webhooks/{id}/deliveries", webhooksH.Deliveries)
+			r.Post("/webhooks/{id}/test", webhooksH.Test)
 
 			// Measures
 			r.Get("/projects/{key}/measures/trend", mh.Trend)

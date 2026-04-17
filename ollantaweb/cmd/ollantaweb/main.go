@@ -18,6 +18,8 @@ import (
 	"github.com/scovl/ollanta/ollantaweb/api"
 	"github.com/scovl/ollanta/ollantaweb/config"
 	"github.com/scovl/ollanta/ollantaweb/ingest"
+	"github.com/scovl/ollanta/ollantaweb/telemetry"
+	"github.com/scovl/ollanta/ollantaweb/webhook"
 )
 
 func main() {
@@ -48,6 +50,10 @@ func main() {
 	tokenRepo := postgres.NewTokenRepository(db)
 	sessionRepo := postgres.NewSessionRepository(db)
 	permRepo := postgres.NewPermissionRepository(db)
+	profileRepo := postgres.NewProfileRepository(db)
+	gateRepo := postgres.NewGateRepository(db)
+	periodRepo := postgres.NewNewCodePeriodRepository(db)
+	webhookRepo := postgres.NewWebhookRepository(db)
 
 	// ── Meilisearch ────────────────────────────────────────────────────────
 	indexerCfg := search.IndexerConfig{
@@ -67,7 +73,17 @@ func main() {
 	}
 
 	// ── Health deps ────────────────────────────────────────────────────────
-	api.SetHealthDeps(db, indexer)
+	ingestQueue := ingest.NewIngestQueue(100)
+	api.SetHealthDeps(db, indexer, ingestQueue)
+
+	// ── Telemetry ──────────────────────────────────────────────────────────
+	metricsReg := telemetry.NewRegistry()
+	appMetrics := telemetry.NewMetrics(metricsReg)
+	_ = appMetrics // wired into pipeline below
+
+	// ── Webhook dispatcher ─────────────────────────────────────────────────
+	wdispatcher := webhook.NewDispatcher(webhookRepo, 256)
+	go wdispatcher.Start(ctx)
 
 	// ── Background worker ─────────────────────────────────────────────────
 	worker := ingest.NewWorker(indexer, issueRepo, 256)
@@ -82,6 +98,8 @@ func main() {
 		projectRepo, scanRepo, issueRepo, measureRepo,
 		userRepo, groupRepo, tokenRepo, sessionRepo, permRepo,
 		searcher, indexer, pipeline,
+		profileRepo, gateRepo, periodRepo, webhookRepo, wdispatcher,
+		metricsReg,
 	)
 
 	srv := &http.Server{
@@ -103,6 +121,7 @@ func main() {
 	log.Println("ollantaweb: shutting down...")
 
 	worker.Stop()
+	wdispatcher.Stop()
 
 	shutCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
