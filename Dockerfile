@@ -11,6 +11,9 @@ COPY go.work go.work.sum* ./
 
 # Copy each module's dependency manifests before the source so that
 # `go mod download` is only re-run when dependencies actually change.
+COPY adapter/go.mod                              adapter/
+COPY application/go.mod                          application/
+COPY domain/go.mod                               domain/
 COPY ollantacore/go.mod                          ollantacore/
 COPY ollantaengine/go.mod                        ollantaengine/
 COPY ollantaparser/go.mod  ollantaparser/go.sum  ollantaparser/
