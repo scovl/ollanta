@@ -18,33 +18,7 @@ Inspired by [OpenStaticAnalyzer](https://github.com/sed-inf-u-szeged/OpenStaticA
 
 ## Architecture
 
-Ollanta follows a **hexagonal (ports & adapters)** layout. The inner modules have no external dependencies; adapters plug in at the edges.
-
-```
-domain/           — pure models, port interfaces, and domain services (zero external deps)
-application/      — use cases: ingest, analysis, scan orchestration
-adapter/
-  config/         — environment-based configuration loader
-  primary/http/   — chi-based HTTP handlers (primary adapter)
-  secondary/
-    postgres/     — pgx/v5 repository implementations
-    search/       — Meilisearch indexer, searcher, and async worker
-    oauth/        — GitHub / GitLab / Google OAuth providers, JWT, bcrypt
-    webhook/      — outbound webhook dispatcher with retry
-    breaker/      — circuit breaker for external calls
-    telemetry/    — request tracing and Prometheus-style metrics
-    parser/       — Tree-sitter adapter (CGo)
-    rules/        — rule registry bridge to ollantarules
-  cmd/web/        — main entry point: wires all adapters and starts the server
-
-ollantacore/      — shared domain types (Component, Issue, Metric, Rule)
-ollantaparser/    — language parsers (Go AST, Tree-sitter for JS/Py/TS/Rust)
-ollantarules/     — rule definitions, language sensors, thresholds
-ollantascanner/   — scan orchestration, file discovery, reporting (JSON + SARIF)
-ollantaengine/    — post-scan analysis (quality gates, issue tracking, metric aggregation)
-ollantastore/     — PostgreSQL repositories + Meilisearch search layer
-ollantaweb/       — centralized REST API server (legacy monolith, kept for Docker builds)
-```
+Ollanta follows a **hexagonal (ports & adapters)** layout — inner modules have no external dependencies; adapters plug in at the edges. See [docs/architecture.md](docs/architecture.md) for the full module layout.
 
 ---
 
@@ -189,99 +163,7 @@ OLLANTA_SERVER=http://your-server:8080 docker compose --profile push run --rm pu
 
 ## Server API (ollantaweb)
 
-When running the server stack, the REST API is available at `:8080`. All `/api/v1` routes (except auth) require a `Bearer` token or an API token (`olt_…`) in the `Authorization` header.
-
-**Auth**
-
-| Method | Endpoint                        | Description |
-|--------|---------------------------------|-------------|
-| POST   | `/api/v1/auth/login`            | Email+password login → JWT + refresh token |
-| POST   | `/api/v1/auth/refresh`          | Refresh access token |
-| POST   | `/api/v1/auth/logout`           | Invalidate refresh token |
-| GET    | `/api/v1/auth/github`           | Start GitHub OAuth flow |
-| GET    | `/api/v1/auth/github/callback`  | GitHub OAuth callback |
-| GET    | `/api/v1/auth/gitlab`           | Start GitLab OAuth flow |
-| GET    | `/api/v1/auth/gitlab/callback`  | GitLab OAuth callback |
-| GET    | `/api/v1/auth/google`           | Start Google OAuth flow |
-| GET    | `/api/v1/auth/google/callback`  | Google OAuth callback |
-
-**Core**
-
-| Method | Endpoint                                  | Description |
-|--------|-------------------------------------------|-------------|
-| GET    | `/healthz`                                | Liveness probe |
-| GET    | `/readyz`                                 | Readiness (PG + Meilisearch) |
-| GET    | `/metrics`                                | Prometheus-style metrics |
-| POST   | `/api/v1/projects`                        | Create/update a project |
-| GET    | `/api/v1/projects`                        | List projects |
-| GET    | `/api/v1/projects/{key}`                  | Get project by key |
-| DELETE | `/api/v1/projects/{key}`                  | Delete project |
-| POST   | `/api/v1/scans`                           | Ingest a scan report |
-| GET    | `/api/v1/scans/{id}`                      | Get scan by ID |
-| GET    | `/api/v1/projects/{key}/scans`            | List scans for project |
-| GET    | `/api/v1/projects/{key}/scans/latest`     | Latest scan for project |
-| GET    | `/api/v1/issues`                          | List/filter issues (project, severity, rule, status) |
-| GET    | `/api/v1/issues/facets`                   | Issue distribution facets |
-| GET    | `/api/v1/projects/{key}/measures/trend`   | Metric trend over time |
-| GET    | `/api/v1/search`                          | Full-text search (Meilisearch) |
-| POST   | `/admin/reindex`                          | Rebuild Meilisearch from PostgreSQL |
-
-**Users, groups & permissions**
-
-| Method | Endpoint                                  | Description |
-|--------|-------------------------------------------|-------------|
-| GET    | `/api/v1/users`                           | List users |
-| GET    | `/api/v1/users/me`                        | Current user profile |
-| POST   | `/api/v1/users`                           | Create user |
-| PUT    | `/api/v1/users/{id}`                      | Update user |
-| POST   | `/api/v1/users/{id}/change-password`      | Change password |
-| DELETE | `/api/v1/users/{id}`                      | Deactivate user |
-| GET    | `/api/v1/groups`                          | List groups |
-| POST   | `/api/v1/groups`                          | Create group |
-| POST   | `/api/v1/groups/{id}/members`             | Add member to group |
-| DELETE | `/api/v1/groups/{id}/members/{userID}`    | Remove member |
-| DELETE | `/api/v1/groups/{id}`                     | Delete group |
-| GET    | `/api/v1/projects/{key}/permissions`      | List project permissions |
-| POST   | `/api/v1/projects/{key}/permissions`      | Grant permission |
-| DELETE | `/api/v1/projects/{key}/permissions/{id}` | Revoke permission |
-
-**API tokens**
-
-| Method | Endpoint                    | Description |
-|--------|-----------------------------|-------------|
-| GET    | `/api/v1/tokens`            | List API tokens for current user |
-| POST   | `/api/v1/tokens`            | Generate a new API token (`olt_…`) |
-| DELETE | `/api/v1/tokens/{id}`       | Revoke token |
-
-**Quality gates & profiles**
-
-| Method | Endpoint                                           | Description |
-|--------|----------------------------------------------------|-------------|
-| GET    | `/api/v1/gates`                                    | List quality gates |
-| POST   | `/api/v1/gates`                                    | Create quality gate |
-| GET    | `/api/v1/gates/{id}`                               | Get gate details |
-| PUT    | `/api/v1/gates/{id}`                               | Update gate |
-| DELETE | `/api/v1/gates/{id}`                               | Delete gate |
-| POST   | `/api/v1/gates/{id}/conditions`                    | Add condition to gate |
-| DELETE | `/api/v1/gates/{id}/conditions/{condID}`           | Remove condition |
-| GET    | `/api/v1/profiles`                                 | List quality profiles |
-| POST   | `/api/v1/profiles`                                 | Create quality profile |
-| GET    | `/api/v1/profiles/{id}`                            | Get profile |
-| POST   | `/api/v1/profiles/{id}/rules`                      | Activate rule in profile |
-| DELETE | `/api/v1/profiles/{id}/rules/{ruleKey}`            | Deactivate rule |
-| POST   | `/api/v1/profiles/{id}/import`                     | Import profile from YAML |
-
-**New-code periods & webhooks**
-
-| Method | Endpoint                                  | Description |
-|--------|-------------------------------------------|-------------|
-| GET    | `/api/v1/projects/{key}/new-code`         | Get new-code period setting |
-| PUT    | `/api/v1/projects/{key}/new-code`         | Set new-code period |
-| GET    | `/api/v1/projects/{key}/webhooks`         | List webhooks |
-| POST   | `/api/v1/projects/{key}/webhooks`         | Register webhook |
-| PUT    | `/api/v1/projects/{key}/webhooks/{id}`    | Update webhook |
-| DELETE | `/api/v1/projects/{key}/webhooks/{id}`    | Delete webhook |
-| GET    | `/api/v1/projects/{key}/webhooks/{id}/deliveries` | List recent deliveries |
+Full REST API reference at [docs/api.md](docs/api.md). All `/api/v1` routes require a `Bearer` token or API token (`olt_…`) in the `Authorization` header.
 
 ---
 
@@ -307,109 +189,31 @@ Quality Gate : ERROR
 
 ## Rules reference
 
-### Go (8 rules)
-
-| Rule key                       | Severity | Description |
-|--------------------------------|----------|-------------|
-| `go:no-large-functions`        | Major    | Functions exceeding `max_lines` (default: 40) |
-| `go:no-naked-returns`          | Critical | Naked `return` in functions with named returns longer than `min_lines` |
-| `go:naming-conventions`        | Minor    | Exported names must use MixedCaps per Effective Go |
-| `go:cognitive-complexity`      | Critical | Functions with high cognitive complexity |
-| `go:too-many-parameters`       | Major    | Functions with too many parameters |
-| `go:function-nesting-depth`    | Major    | Code nested too deeply |
-| `go:magic-number`              | Minor    | Numeric literals that should be named constants |
-| `go:todo-comment`              | Info     | TODO, FIXME, HACK and XXX comments |
-
-### JavaScript (4 rules)
-
-| Rule key                 | Severity | Description |
-|--------------------------|----------|-------------|
-| `js:no-large-functions`  | Major    | Functions exceeding `max_lines` (default: 40) |
-| `js:no-console-log`      | Minor    | `console.log` left in production code |
-| `js:eqeqeq`              | Major    | Use `===`/`!==` instead of `==`/`!=` |
-| `js:too-many-parameters`  | Major    | Functions with too many parameters |
-
-### Python (5 rules)
-
-| Rule key                      | Severity | Description |
-|-------------------------------|----------|-------------|
-| `py:no-large-functions`       | Major    | Functions exceeding `max_lines` (default: 40) |
-| `py:broad-except`             | Major    | Catching broad exceptions like `Exception` |
-| `py:mutable-default-argument` | Major    | Mutable default argument values (list, dict, set) |
-| `py:comparison-to-none`       | Minor    | Use `is`/`is not` for None comparisons |
-| `py:too-many-parameters`       | Major    | Functions with too many parameters |
+17 built-in rules across Go, JavaScript, and Python. See [docs/rules.md](docs/rules.md) for the full reference and instructions on adding new rules.
 
 ---
 
 ## Quality Gates
 
-Quality gates evaluate numeric metrics against configurable thresholds after every scan. Conditions support operators: `gt`, `lt`, `eq`, `gte`, `lte`.
-
-Gates can be managed via the API or defined in-process:
-
-```go
-conditions := []qualitygate.Condition{
-    {MetricKey: "bugs",     Operator: qualitygate.OpGreaterThan, ErrorThreshold: 0,  Description: "Zero bugs"},
-    {MetricKey: "coverage", Operator: qualitygate.OpLessThan,    ErrorThreshold: 80, Description: "Coverage ≥ 80%"},
-}
-status := qualitygate.Evaluate(conditions, measures)
-if !status.Passed() {
-    log.Fatal("Quality gate failed")
-}
-```
-
-The server persists gates in PostgreSQL. Each scan stores its `gate_status` (`OK` / `WARN` / `ERROR`) and the scanner CLI exits with code 1 when the gate fails.
+Quality gates evaluate numeric metrics against configurable thresholds after every scan. The scanner CLI exits with code 1 when the gate fails. See [docs/quality-gates.md](docs/quality-gates.md).
 
 ## Authentication
 
-The server supports three authentication mechanisms:
-
-| Mechanism | How to use |
-|-----------|------------|
-| **Local** | `POST /api/v1/auth/login` with `login` + `password`; returns a short-lived JWT and a refresh token |
-| **OAuth** | GitHub, GitLab, or Google — configure via environment variables (see below); users are auto-provisioned on first login |
-| **API tokens** | Generate via `POST /api/v1/tokens`; prefix `olt_`; use as `Authorization: Bearer olt_…` in CI scripts |
-
-OAuth environment variables:
-
-| Variable | Description |
-|---|---|
-| `OLLANTA_GITHUB_CLIENT_ID` / `_SECRET` | GitHub OAuth app credentials |
-| `OLLANTA_GITLAB_CLIENT_ID` / `_SECRET` | GitLab OAuth app credentials |
-| `OLLANTA_GOOGLE_CLIENT_ID` / `_SECRET` | Google OAuth app credentials |
-| `OLLANTA_OAUTH_REDIRECT_BASE` | External base URL for OAuth callbacks (e.g. `https://ollanta.example.com`) |
-| `OLLANTA_JWT_SECRET` | HMAC-SHA256 signing key (random if unset — tokens won't survive restarts) |
-| `OLLANTA_JWT_EXPIRY` | Access token lifetime, e.g. `15m` (default) |
+Three mechanisms: local (JWT), OAuth (GitHub, GitLab, Google), and API tokens (`olt_…`). See [docs/authentication.md](docs/authentication.md).
 
 ## Webhooks
 
-Projects can register outbound webhooks that fire on scan events. Each webhook receives a signed JSON payload:
+Projects can register outbound webhooks that fire on scan events, with HMAC-SHA256 signature verification and automatic retry. See [docs/webhooks.md](docs/webhooks.md).
 
-```json
-{
-  "event": "scan.completed",
-  "project_key": "my-project",
-  "scan_id": 42,
-  "gate_status": "OK",
-  "timestamp": "2026-04-17T12:00:00Z"
-}
-```
+## Server API
 
-The `X-Ollanta-Signature` header contains an HMAC-SHA256 hex digest of the payload signed with the webhook secret. Deliveries are retried automatically and stored for audit via `GET /api/v1/projects/{key}/webhooks/{id}/deliveries`.
+Full REST API reference (50+ endpoints) at [docs/api.md](docs/api.md).
 
 ---
 
 ## Issue Tracking
 
-The `ollantaengine/tracking` package compares current scan results against a previous baseline to classify each issue as **new**, **unchanged**, **closed**, or **reopened**. Issues are matched by rule key + line hash, with a fallback to file path + line number.
-
----
-
-## Adding a new rule
-
-1. Create a struct implementing the `ollantarules.Rule` interface in the appropriate language package.
-2. Register it in the sensor's `ActiveRules()` method.
-3. Add tests in the corresponding `*_test.go` file.
+Each scan is compared against a previous baseline to classify issues as **new**, **unchanged**, **closed**, or **reopened**. See [docs/issue-tracking.md](docs/issue-tracking.md).
 
 ---
 
