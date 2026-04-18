@@ -14,6 +14,9 @@ COPY ollantaweb/go.mod     ollantaweb/go.sum*     ./ollantaweb/
 COPY ollantaparser/go.mod  ollantaparser/go.sum*  ./ollantaparser/
 COPY ollantarules/go.mod   ollantarules/go.sum*   ./ollantarules/
 COPY ollantascanner/go.mod ollantascanner/go.sum* ./ollantascanner/
+COPY adapter/go.mod     adapter/go.sum*     ./adapter/
+COPY application/go.mod application/go.sum* ./application/
+COPY domain/go.mod      domain/go.sum*      ./domain/
 
 RUN go work sync || true
 
