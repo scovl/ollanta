@@ -2,14 +2,14 @@
 
 ## Hexagonal Layout
 
-Ollanta follows a **hexagonal (ports & adapters)** layout. The idea: the inner rings know nothing about the outer rings. HTTP, PostgreSQL, Meilisearch — all are plug-in details.
+Ollanta follows a **hexagonal (ports & adapters)** layout. The idea: the inner rings know nothing about the outer rings. HTTP, PostgreSQL, ZincSearch — all are plug-in details.
 
 ```mermaid
 graph TD
     subgraph Outer["🔌 Adapters (outer ring)"]
         HTTP["primary/http\nchi HTTP handlers"]
         PG["secondary/postgres\npgx/v5"]
-        SEARCH["secondary/search\nMeilisearch"]
+        SEARCH["secondary/search\nZincSearch · Postgres FTS"]
         OAUTH["secondary/oauth\nGitHub · GitLab · Google"]
         WH["secondary/webhook\noutbound dispatcher"]
         PARSER["secondary/parser\nTree-sitter CGo"]
@@ -48,7 +48,7 @@ graph LR
     ollantarules["ollantarules\nrule definitions\nsensors · thresholds"]
     ollantascanner["ollantascanner\nscan orchestration\nJSON + SARIF output"]
     ollantaengine["ollantaengine\nquality gates\nissue tracking\nmetric aggregation"]
-    ollantastore["ollantastore\nPostgreSQL repos\nMeilisearch layer"]
+    ollantastore["ollantastore\nPostgreSQL repos\nZincSearch · Postgres FTS"]
     ollantaweb["ollantaweb\nREST API server\n(Docker entry point)"]
     adapter["adapter/\nHTTP · OAuth · Webhook\nTelemetry · Breaker"]
 

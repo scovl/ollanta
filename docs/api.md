@@ -29,7 +29,7 @@ docker compose --profile server up -d
 | Method | Endpoint                                  | Description |
 |--------|-------------------------------------------|-------------|
 | GET    | `/healthz`                                | Liveness probe |
-| GET    | `/readyz`                                 | Readiness (PG + Meilisearch) |
+| GET    | `/readyz`                                 | Readiness (PG + search backend) |
 | GET    | `/metrics`                                | Prometheus-style metrics |
 | POST   | `/api/v1/projects`                        | Create/update a project |
 | GET    | `/api/v1/projects`                        | List projects |
@@ -42,8 +42,8 @@ docker compose --profile server up -d
 | GET    | `/api/v1/issues`                          | List/filter issues (project, severity, rule, status) |
 | GET    | `/api/v1/issues/facets`                   | Issue distribution facets |
 | GET    | `/api/v1/projects/{key}/measures/trend`   | Metric trend over time |
-| GET    | `/api/v1/search`                          | Full-text search (Meilisearch) |
-| POST   | `/admin/reindex`                          | Rebuild Meilisearch from PostgreSQL |
+| GET    | `/api/v1/search`                          | Full-text search (ZincSearch / Postgres FTS) |
+| POST   | `/admin/reindex`                          | Rebuild search indexes from PostgreSQL |
 
 ## Users, Groups & Permissions
 

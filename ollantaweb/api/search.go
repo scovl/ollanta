@@ -8,9 +8,9 @@ import (
 	"github.com/scovl/ollanta/ollantastore/search"
 )
 
-// SearchHandler handles full-text search via Meilisearch.
+// SearchHandler handles full-text search via a pluggable search backend.
 type SearchHandler struct {
-	searcher *search.MeilisearchSearcher
+	searcher search.ISearcher
 }
 
 // Search handles GET /api/v1/search

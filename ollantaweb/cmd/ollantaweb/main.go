@@ -1,6 +1,6 @@
 // Command ollantaweb is the centralized scan-collection server.
 // It exposes a REST API for receiving scan reports from ollantascanner,
-// persisting them to PostgreSQL, and indexing them in Meilisearch.
+// persisting them to PostgreSQL, and indexing them in ZincSearch.
 package main
 
 import (
@@ -18,6 +18,7 @@ import (
 	"github.com/scovl/ollanta/ollantaweb/api"
 	"github.com/scovl/ollanta/ollantaweb/config"
 	"github.com/scovl/ollanta/ollantaweb/ingest"
+	"github.com/scovl/ollanta/ollantaweb/pgnotify"
 	"github.com/scovl/ollanta/ollantaweb/telemetry"
 	"github.com/scovl/ollanta/ollantaweb/webhook"
 )
@@ -55,21 +56,18 @@ func main() {
 	periodRepo := postgres.NewNewCodePeriodRepository(db)
 	webhookRepo := postgres.NewWebhookRepository(db)
 
-	// ── Meilisearch ────────────────────────────────────────────────────────
-	indexerCfg := search.IndexerConfig{
-		Host:   cfg.MeilisearchURL,
-		APIKey: cfg.MeilisearchAPIKey,
+	// ── Search backend ─────────────────────────────────────────────────────
+	zincCfg := search.ZincConfig{
+		Host:     cfg.ZincSearchURL,
+		User:     cfg.ZincSearchUser,
+		Password: cfg.ZincSearchPassword,
 	}
-	indexer, err := search.NewMeilisearchIndexer(indexerCfg)
+	searcher, indexer, err := search.NewBackend(cfg.SearchBackend, zincCfg, db.Pool)
 	if err != nil {
-		log.Fatalf("ollantaweb: create indexer: %v", err)
+		log.Fatalf("ollantaweb: create search backend: %v", err)
 	}
 	if err := indexer.ConfigureIndexes(ctx); err != nil {
-		log.Printf("ollantaweb: meilisearch configure: %v (continuing)", err)
-	}
-	searcher, err := search.NewMeilisearchSearcher(indexerCfg)
-	if err != nil {
-		log.Fatalf("ollantaweb: create searcher: %v", err)
+		log.Printf("ollantaweb: search configure: %v (continuing)", err)
 	}
 
 	// ── Health deps ────────────────────────────────────────────────────────
@@ -85,12 +83,24 @@ func main() {
 	wdispatcher := webhook.NewDispatcher(webhookRepo, 256)
 	go wdispatcher.Start(ctx)
 
-	// ── Background worker ─────────────────────────────────────────────────
-	worker := ingest.NewWorker(indexer, issueRepo, 256)
-	go worker.Start(ctx)
+	// ── Index coordinator ──────────────────────────────────────────────────
+	var enqueuer ingest.IndexEnqueuer
+	switch cfg.IndexCoordinator {
+	case "pgnotify":
+		coord := pgnotify.NewCoordinator(db.Pool, indexer, issueRepo)
+		if err := coord.EnsureTable(ctx); err != nil {
+			log.Fatalf("ollantaweb: pgnotify ensure table: %v", err)
+		}
+		go coord.Start(ctx)
+		enqueuer = coord
+	default: // "memory"
+		worker := ingest.NewWorker(indexer, issueRepo, 256)
+		go worker.Start(ctx)
+		enqueuer = worker
+	}
 
 	// ── Ingest pipeline ────────────────────────────────────────────────────
-	pipeline := ingest.NewPipeline(db, projectRepo, scanRepo, issueRepo, measureRepo, indexer, worker)
+	pipeline := ingest.NewPipeline(db, projectRepo, scanRepo, issueRepo, measureRepo, indexer, enqueuer)
 
 	// ── HTTP server ────────────────────────────────────────────────────────
 	router := api.NewRouter(
@@ -120,7 +130,9 @@ func main() {
 	<-ctx.Done()
 	log.Println("ollantaweb: shutting down...")
 
-	worker.Stop()
+	if stopper, ok := enqueuer.(interface{ Stop() }); ok {
+		stopper.Stop()
+	}
 	wdispatcher.Stop()
 
 	shutCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)

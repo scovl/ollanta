@@ -16,7 +16,7 @@
 #
 # Server usage:
 #
-#   # Start PostgreSQL + Meilisearch + ollantaweb API
+#   # Start PostgreSQL + ZincSearch + ollantaweb API
 #   docker compose --profile server up -d
 #
 # Reports are written to <PROJECT_DIR>/.ollanta/
@@ -100,22 +100,24 @@ services:
       retries: 10
     profiles: ["server"]
 
-  # ── meilisearch: full-text search engine ────────────────────────────────────
-  meilisearch:
-    image: getmeili/meilisearch:v1.13
+  # ── zincsearch: full-text search engine ───────────────────────────────────
+  zincsearch:
+    image: public.ecr.aws/zinclabs/zincsearch:0.4.10
     environment:
-      MEILI_MASTER_KEY: ${MEILI_KEY:-ollanta_dev_key}
-      MEILI_ENV: development
+      ZINC_FIRST_ADMIN_USER: ${ZINC_USER:-admin}
+      ZINC_FIRST_ADMIN_PASSWORD: ${ZINC_PASSWORD:-ollanta_dev}
+      ZINC_DATA_PATH: /data
+      GIN_MODE: release
     volumes:
-      - msdata:/meili_data
+      - zsdata:/data
     ports:
-      - "7700:7700"
+      - "4080:4080"
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:7700/health || exit 1"]
-      interval: 5s
+      test: ["NONE"]
+      interval: 10s
       timeout: 5s
-      start_period: 15s
-      retries: 12
+      start_period: 10s
+      retries: 5
     profiles: ["server"]
 
   # ── ollantaweb: centralized API server ──────────────────────────────────────
@@ -126,13 +128,14 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      meilisearch:
+      zincsearch:
         condition: service_started
     environment:
       OLLANTA_ADDR: ":8080"
       OLLANTA_DATABASE_URL: "postgres://ollanta:${PG_PASSWORD:-ollanta_dev}@postgres:5432/ollanta?sslmode=disable"
-      OLLANTA_MEILISEARCH_URL: "http://meilisearch:7700"
-      OLLANTA_MEILISEARCH_KEY: "${MEILI_KEY:-ollanta_dev_key}"
+      OLLANTA_ZINCSEARCH_URL: "http://zincsearch:4080"
+      OLLANTA_ZINCSEARCH_USER: "${ZINC_USER:-admin}"
+      OLLANTA_ZINCSEARCH_PASSWORD: "${ZINC_PASSWORD:-ollanta_dev}"
       OLLANTA_LOG_LEVEL: "info"
     ports:
       - "8080:8080"
@@ -141,4 +144,4 @@ services:
 
 volumes:
   pgdata:
-  msdata:
+  zsdata:

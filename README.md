@@ -130,7 +130,7 @@ docker compose run --rm scan-only
 
 ### Centralized server stack
 
-Start PostgreSQL, Meilisearch, and the ollantaweb API server:
+Start PostgreSQL, ZincSearch, and the ollantaweb API server:
 
 ```sh
 docker compose --profile server up -d
@@ -150,14 +150,16 @@ OLLANTA_SERVER=http://your-server:8080 docker compose --profile push run --rm pu
 
 ### Environment variables
 
-| Variable          | Default             | Description |
-|-------------------|---------------------|-------------|
-| `PROJECT_DIR`     | `.`                 | Host directory to scan |
-| `PROJECT_KEY`     | `project`           | Project identifier |
-| `PORT`            | `7777`              | Scanner UI port |
-| `PG_PASSWORD`     | `ollanta_dev`       | PostgreSQL password |
-| `MEILI_KEY`       | `ollanta_dev_key`   | Meilisearch master key |
-| `OLLANTA_SERVER`  | `http://ollantaweb:8080` | API server URL (for push mode) |
+| Variable              | Default                  | Description |
+|-----------------------|--------------------------|-------------|
+| `PROJECT_DIR`         | `.`                      | Host directory to scan |
+| `PROJECT_KEY`         | `project`                | Project identifier |
+| `PORT`                | `7777`                   | Scanner UI port |
+| `PG_PASSWORD`         | `ollanta_dev`            | PostgreSQL password |
+| `ZINC_USER`           | `admin`                  | ZincSearch admin user |
+| `ZINC_PASSWORD`       | `ollanta_dev`            | ZincSearch admin password |
+| `OLLANTA_SEARCH_BACKEND` | `zincsearch`          | Search backend (`zincsearch` or `postgres`) |
+| `OLLANTA_SERVER`      | `http://ollantaweb:8080` | API server URL (for push mode) |
 
 ---
 
@@ -196,6 +198,10 @@ Quality Gate : ERROR
 ## Quality Gates
 
 Quality gates evaluate numeric metrics against configurable thresholds after every scan. The scanner CLI exits with code 1 when the gate fails. See [docs/quality-gates.md](docs/quality-gates.md).
+
+## Kubernetes
+
+Ollanta is designed for cloud-native operation: stateless app pods, externalized state, pluggable search backend, and independent scaling per component. Full deployment guide with manifests at [docs/kubernetes.md](docs/kubernetes.md).
 
 ## Authentication
 

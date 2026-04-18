@@ -9,17 +9,17 @@ import (
 	"github.com/scovl/ollanta/ollantastore/search"
 )
 
-// IndexJob represents a unit of work for the background Meilisearch indexer.
+// IndexJob represents a unit of work for the background search indexer.
 type IndexJob struct {
 	ScanID     int64
 	ProjectID  int64
 	ProjectKey string
 }
 
-// Worker drains an IndexJob channel and calls the Meilisearch indexer.
+// Worker drains an IndexJob channel and calls the search indexer.
 // If the indexer is unavailable, jobs are retried up to maxRetries times.
 type Worker struct {
-	indexer    *search.MeilisearchIndexer
+	indexer    search.IIndexer
 	issues     *postgres.IssueRepository
 	queue      chan IndexJob
 	maxRetries int
@@ -27,7 +27,7 @@ type Worker struct {
 
 // NewWorker creates a Worker with a buffered job queue of the given size.
 func NewWorker(
-	indexer *search.MeilisearchIndexer,
+	indexer search.IIndexer,
 	issues *postgres.IssueRepository,
 	bufferSize int,
 ) *Worker {
@@ -39,13 +39,19 @@ func NewWorker(
 	}
 }
 
+// compile-time interface check
+var _ IndexEnqueuer = (*Worker)(nil)
+
 // Enqueue submits a job to the queue without blocking.
 // If the queue is full, the job is dropped and a warning is logged.
-func (w *Worker) Enqueue(job IndexJob) {
+func (w *Worker) Enqueue(_ context.Context, scanID, projectID int64, projectKey string) error {
+	job := IndexJob{ScanID: scanID, ProjectID: projectID, ProjectKey: projectKey}
 	select {
 	case w.queue <- job:
+		return nil
 	default:
-		log.Printf("ollantaweb/worker: queue full, dropping index job for scan %d", job.ScanID)
+		log.Printf("ollantaweb/worker: queue full, dropping index job for scan %d", scanID)
+		return nil
 	}
 }
 

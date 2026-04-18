@@ -1,6 +1,6 @@
 // Package ingest implements the scan ingestion pipeline.
 // It receives a decoded report, persists it transactionally to PostgreSQL,
-// runs issue tracking and quality gate evaluation, then enqueues async Meilisearch indexing.
+// runs issue tracking and quality gate evaluation, then enqueues async search indexing.
 package ingest
 
 import (
@@ -55,27 +55,35 @@ type IngestResult struct {
 	Tracking     *tracking.TrackingResult `json:"tracking"`
 }
 
+// IndexEnqueuer abstracts the mechanism for enqueuing search index jobs.
+// Implementations include the in-process Worker (for single-instance deploys)
+// and pgnotify.Coordinator (for multi-replica K8s deploys).
+type IndexEnqueuer interface {
+	Enqueue(ctx context.Context, scanID, projectID int64, projectKey string) error
+}
+
 // Pipeline orchestrates the full ingest workflow.
 type Pipeline struct {
-	projects *postgres.ProjectRepository
-	scans    *postgres.ScanRepository
-	issues   *postgres.IssueRepository
-	measures *postgres.MeasureRepository
-	indexer  *search.MeilisearchIndexer
-	worker   *Worker
-	dbBreaker  *breaker.Breaker
-	msBreaker  *breaker.Breaker
+	projects  *postgres.ProjectRepository
+	scans     *postgres.ScanRepository
+	issues    *postgres.IssueRepository
+	measures  *postgres.MeasureRepository
+	indexer   search.IIndexer
+	enqueuer  IndexEnqueuer
+	dbBreaker *breaker.Breaker
+	msBreaker *breaker.Breaker
 }
 
 // NewPipeline creates an ingest pipeline with all required dependencies.
+// enqueuer may be nil to disable async search indexing.
 func NewPipeline(
 	_ *postgres.DB,
 	projects *postgres.ProjectRepository,
 	scans *postgres.ScanRepository,
 	issues *postgres.IssueRepository,
 	measures *postgres.MeasureRepository,
-	indexer *search.MeilisearchIndexer,
-	worker *Worker,
+	indexer search.IIndexer,
+	enqueuer IndexEnqueuer,
 ) *Pipeline {
 	return &Pipeline{
 		projects:  projects,
@@ -83,7 +91,7 @@ func NewPipeline(
 		issues:    issues,
 		measures:  measures,
 		indexer:   indexer,
-		worker:    worker,
+		enqueuer:  enqueuer,
 		dbBreaker: breaker.New(5, 30*time.Second, 1),
 		msBreaker: breaker.New(5, 30*time.Second, 1),
 	}
@@ -207,12 +215,10 @@ func (p *Pipeline) Ingest(ctx context.Context, req *IngestRequest) (*IngestResul
 		return nil, fmt.Errorf("bulk insert measures: %w", err)
 	}
 
-	// ── 8. Async: enqueue Meilisearch indexing ───────────────────────────────
-	if p.worker != nil {
-		p.worker.Enqueue(IndexJob{
-			ScanID:     scan.ID,
-			ProjectID:  project.ID,
-			ProjectKey: project.Key,
+	// ── 8. Async: enqueue search indexing ────────────────────────────────────
+	if p.enqueuer != nil {
+		_ = pipelineSteps.indexSearch.run(ctx, func(ctx context.Context) error {
+			return p.enqueuer.Enqueue(ctx, scan.ID, project.ID, project.Key)
 		})
 	}
 

@@ -19,11 +19,21 @@ type Config struct {
 	// Required. Format: postgres://user:pass@host:5432/dbname?sslmode=disable
 	DatabaseURL string
 
-	// MeilisearchURL is the base URL of the Meilisearch instance.
-	MeilisearchURL string
+	// ZincSearchURL is the base URL of the ZincSearch instance.
+	ZincSearchURL string
 
-	// MeilisearchAPIKey is the Meilisearch master key (empty for local dev).
-	MeilisearchAPIKey string
+	// ZincSearchUser is the ZincSearch admin username.
+	ZincSearchUser string
+
+	// ZincSearchPassword is the ZincSearch admin password.
+	ZincSearchPassword string
+
+	// SearchBackend selects the search engine: "zincsearch" (default), "postgres".
+	SearchBackend string
+
+	// IndexCoordinator selects the index job coordinator: "memory" (default) or "pgnotify".
+	// "pgnotify" uses Postgres LISTEN/NOTIFY for multi-replica coordination.
+	IndexCoordinator string
 
 	// LogLevel controls log verbosity ("debug", "info", "warn", "error").
 	LogLevel string
@@ -77,8 +87,11 @@ func Load() (*Config, error) {
 	cfg := &Config{
 		Addr:              envOr("OLLANTA_ADDR", ":8080"),
 		DatabaseURL:       os.Getenv("OLLANTA_DATABASE_URL"),
-		MeilisearchURL:    envOr("OLLANTA_MEILISEARCH_URL", "http://localhost:7700"),
-		MeilisearchAPIKey: os.Getenv("OLLANTA_MEILISEARCH_KEY"),
+		ZincSearchURL:      envOr("OLLANTA_ZINCSEARCH_URL", "http://localhost:4080"),
+		ZincSearchUser:     envOr("OLLANTA_ZINCSEARCH_USER", "admin"),
+		ZincSearchPassword: envOr("OLLANTA_ZINCSEARCH_PASSWORD", "admin"),
+		SearchBackend:      envOr("OLLANTA_SEARCH_BACKEND", "zincsearch"),
+		IndexCoordinator:  envOr("OLLANTA_INDEX_COORDINATOR", "memory"),
 		LogLevel:          envOr("OLLANTA_LOG_LEVEL", "info"),
 		JWTSecret:         jwtSecret,
 		JWTExpiry:         jwtExpiry,

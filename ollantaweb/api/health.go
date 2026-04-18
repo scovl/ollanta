@@ -14,14 +14,14 @@ import (
 // healthDeps are satisfied by the dependencies available in main.
 type healthDeps struct {
 	db      *postgres.DB
-	indexer *search.MeilisearchIndexer
+	indexer search.IIndexer
 	queue   *ingest.IngestQueue
 }
 
 var deps *healthDeps
 
 // SetHealthDeps wires the dependencies used by the health handlers.
-func SetHealthDeps(db *postgres.DB, indexer *search.MeilisearchIndexer, queue *ingest.IngestQueue) {
+func SetHealthDeps(db *postgres.DB, indexer search.IIndexer, queue *ingest.IngestQueue) {
 	deps = &healthDeps{db: db, indexer: indexer, queue: queue}
 }
 
@@ -41,7 +41,7 @@ type checkResult struct {
 
 // Readiness handles GET /readyz.
 // Returns 200 "ready" when all components are up.
-// Returns 200 "degraded" when postgres is up but meilisearch is down.
+// Returns 200 "degraded" when postgres is up but search is down.
 // Returns 503 "not_ready" when postgres is down.
 func Readiness(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -60,15 +60,15 @@ func Readiness(w http.ResponseWriter, r *http.Request) {
 			checks["postgres"] = checkResult{Status: "ok", Latency: time.Since(pgStart).String()}
 		}
 
-		// ── meilisearch ───────────────────────────────────────────────────
+		// ── search ────────────────────────────────────────────────────────
 		msStart := time.Now()
 		msCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 		defer cancel()
 		if err := deps.indexer.Health(msCtx); err != nil {
-			checks["meilisearch"] = checkResult{Status: "error", Error: err.Error()}
+			checks["search"] = checkResult{Status: "error", Error: err.Error()}
 		} else {
 			msOK = true
-			checks["meilisearch"] = checkResult{Status: "ok", Latency: time.Since(msStart).String()}
+			checks["search"] = checkResult{Status: "ok", Latency: time.Since(msStart).String()}
 		}
 
 		// ── ingest queue ──────────────────────────────────────────────────

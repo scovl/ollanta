@@ -5,6 +5,7 @@ go 1.21
 require (
 	github.com/go-chi/chi/v5 v5.2.1
 	github.com/golang-jwt/jwt/v4 v4.5.1
+	github.com/jackc/pgx/v5 v5.7.2
 	github.com/scovl/ollanta/ollantacore v0.0.0
 	github.com/scovl/ollanta/ollantaengine v0.0.0
 	github.com/scovl/ollanta/ollantastore v0.0.0
@@ -12,14 +13,9 @@ require (
 )
 
 require (
-	github.com/andybalholm/brotli v1.1.1 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
-	github.com/jackc/pgx/v5 v5.7.2 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
-	github.com/josharian/intern v1.0.0 // indirect
-	github.com/mailru/easyjson v0.7.7 // indirect
-	github.com/meilisearch/meilisearch-go v0.30.0 // indirect
 	golang.org/x/sync v0.10.0 // indirect
 	golang.org/x/text v0.21.0 // indirect
 )
