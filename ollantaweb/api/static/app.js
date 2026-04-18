@@ -11,7 +11,7 @@ let state = {
   issues: [],
   issuesTotal: 0,
   issueOffset: 0,
-  issueFilter: { severity: 'all', type: 'all', search: '' },
+  issueFilter: { severity: 'all', type: 'all', status: 'all', search: '' },
   loading: false,
   loadingIssues: false,
   projectTab: 'issues',  // 'issues' | 'gate' | 'webhooks' | 'profiles'
@@ -223,7 +223,7 @@ async function loadProject(key) {
   state.issues         = [];
   state.issuesTotal    = 0;
   state.issueOffset    = 0;
-  state.issueFilter    = { severity: 'all', type: 'all', search: '' };
+  state.issueFilter    = { severity: 'all', type: 'all', status: 'all', search: '' };
   state.projectTab     = 'issues';
   state.gateData       = null;
   state.webhooksData   = null;
@@ -263,6 +263,7 @@ async function loadIssues(append = false) {
     : `project_id=${p.id}&limit=${ISSUE_PAGE}&offset=${state.issueOffset}`;
   if (f.severity !== 'all') qs += `&severity=${encodeURIComponent(f.severity)}`;
   if (f.type     !== 'all') qs += `&type=${encodeURIComponent(f.type)}`;
+  if (f.status   !== 'all') qs += `&status=${encodeURIComponent(f.status)}`;
   if (f.search)             qs += `&file=${encodeURIComponent(f.search)}`;
 
   try {
@@ -829,31 +830,31 @@ function renderScanMetrics(s) {
 
   return `
     <div class="metrics-row">
-      <div class="metric-card">
+      <button class="metric-card metric-card-link" data-mc-type="bug" title="Show bugs">
         <div class="label">Bugs</div>
         <div class="value ${s.total_bugs > 0 ? 'danger' : 'success'}">${fmtNum(s.total_bugs)}</div>
-      </div>
-      <div class="metric-card">
+        <div class="mc-hint">View issues ›</div>
+      </button>
+      <button class="metric-card metric-card-link" data-mc-type="vulnerability" title="Show vulnerabilities">
         <div class="label">Vulnerabilities</div>
         <div class="value ${s.total_vulnerabilities > 0 ? 'warning' : 'success'}">${fmtNum(s.total_vulnerabilities)}</div>
-      </div>
-      <div class="metric-card">
+        <div class="mc-hint">View issues ›</div>
+      </button>
+      <button class="metric-card metric-card-link" data-mc-type="code_smell" title="Show code smells">
         <div class="label">Code Smells</div>
         <div class="value muted">${fmtNum(s.total_code_smells)}</div>
-      </div>
-      <div class="metric-card">
+        <div class="mc-hint">View issues ›</div>
+      </button>
+      <button class="metric-card metric-card-link" data-mc-type="all" title="Show all issues">
         <div class="label">Total Issues</div>
         <div class="value info">${fmtNum(s.total_issues)}</div>
-      </div>
-      <div class="metric-card">
+        <div class="mc-hint">View issues ›</div>
+      </button>
+      <button class="metric-card metric-card-link" data-mc-status="new" title="Show new issues">
         <div class="label">New Issues</div>
         <div class="value ${newIssuesCls}">${fmtNum(s.new_issues)}</div>
-      </div>
-      <div class="metric-card">
-        <div class="label">Files</div>
-        <div class="value">${fmtNum(s.total_files)}</div>
-      </div>
-      <div class="metric-card">
+        <div class="mc-hint">View issues ›</div>
+      </button>
         <div class="label">Lines</div>
         <div class="value">${fmtNum(s.total_lines)}</div>
       </div>
@@ -908,6 +909,19 @@ function bindMain() {
     document.querySelectorAll('.tab-btn').forEach(btn => {
       btn.addEventListener('click', () => switchTab(btn.dataset.tab));
     });
+    document.querySelectorAll('.metric-card-link').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const type   = btn.dataset.mcType;
+        const status = btn.dataset.mcStatus;
+        state.issueFilter.type   = type   || 'all';
+        state.issueFilter.status = status || 'all';
+        state.issueFilter.severity = 'all';
+        state.issueFilter.search   = '';
+        loadIssues().then(() => {
+          document.getElementById('issues-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+      });
+    });
     if (state.projectTab !== 'issues') bindTabContent();
   }
 }
@@ -915,7 +929,7 @@ function bindMain() {
 function logout() {
   clearStorage();
   state = { user: null, view: 'login', projects: [], currentProject: null, currentScan: null,
-            issues: [], issuesTotal: 0, issueOffset: 0, issueFilter: { severity: 'all', type: 'all', search: '' },
+            issues: [], issuesTotal: 0, issueOffset: 0, issueFilter: { severity: 'all', type: 'all', status: 'all', search: '' },
             loading: false, loadingIssues: false,
             projectTab: 'issues', gateData: null, webhooksData: null, profilesData: null, newCodePeriod: null };
   render();

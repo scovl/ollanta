@@ -164,6 +164,35 @@ main { max-width: 1100px; margin: 0 auto; padding: 32px 24px; }
   border-radius: var(--radius);
   padding: 16px;
 }
+button.metric-card-link {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+  cursor: pointer;
+  transition: border-color .15s, box-shadow .15s, transform .1s;
+  position: relative;
+}
+button.metric-card-link:hover {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(99,102,241,.15);
+  transform: translateY(-1px);
+}
+button.metric-card-link:active {
+  transform: translateY(0);
+}
+button.metric-card-link .mc-hint {
+  font-size: 11px;
+  color: var(--accent);
+  margin-top: 6px;
+  opacity: 0;
+  transition: opacity .15s;
+}
+button.metric-card-link:hover .mc-hint {
+  opacity: 1;
+}
 .metric-card .label { font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: var(--text-muted); margin-bottom: 8px; }
 .metric-card .value { font-size: 26px; font-weight: 700; }
 .metric-card .value.danger  { color: var(--danger); }
