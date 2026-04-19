@@ -314,7 +314,52 @@ The combination `(rule_key, line_hash)` acts as an issue's fingerprint.
 **The matching algorithm operates in 2 layers:**
 
 ```mermaid
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "primaryColor": "#fef9c3",
+    "primaryTextColor": "#1c1917",
+    "primaryBorderColor": "#d97706",
+    "lineColor": "#92400e",
+    "edgeLabelBackground": "#fffbeb",
+    "fontFamily": "ui-monospace, monospace",
+    "fontSize": "14px",
+    "clusterBkg": "#fffbeb",
+    "clusterBorder": "#fbbf24"
+  }
+}}%%
+flowchart TD
+    CI(["📋 Issue in current scan\n(rule_key + file + line_hash)"]):::src
 
+    L1{{"🔍 Layer 1\nExact match?\n(rule_key + file + line_hash)\nin previous OPEN issues"}}:::decision
+    L2{{"🔍 Layer 2\nLoose match?\n(rule_key + line_hash)\nin any previous file"}}:::decision
+    WC{{"❓ Was it previously\nCLOSED?"}}:::decision
+
+    Unchanged(["♻️ Unchanged\nproblem persists"]):::keep
+    Moved(["🔀 Moved\nsame content, new location"]):::keep
+    Reopened(["🔄 Reopened\ncame back!"]):::warn
+    New(["🆕 New\nnot seen before"]):::new_
+
+    Unmatched(["📋 Previous OPEN issue\nnot matched by anything"]):::prev
+    Closed(["✅ Closed\nwas fixed!"]):::fixed
+
+    CI --> L1
+    L1 -->|"✅ Yes"| Unchanged
+    L1 -->|"❌ No"| L2
+    L2 -->|"✅ Yes"| Moved
+    L2 -->|"❌ No"| WC
+    WC -->|"Yes"| Reopened
+    WC -->|"No"| New
+
+    Unmatched --> Closed
+
+    classDef src      fill:#dbeafe,stroke:#3b82f6,stroke-width:2px,color:#1e3a5f
+    classDef decision fill:#fef3c7,stroke:#f59e0b,stroke-width:2px,color:#92400e
+    classDef keep     fill:#d1fae5,stroke:#059669,stroke-width:2px,color:#064e3b
+    classDef warn     fill:#fef9c3,stroke:#d97706,stroke-width:2px,color:#1c1917
+    classDef new_     fill:#ede9fe,stroke:#7c3aed,stroke-width:2px,color:#3b0764
+    classDef prev     fill:#f3f4f6,stroke:#6b7280,stroke-width:2px,color:#1f2937
+    classDef fixed    fill:#d1fae5,stroke:#059669,stroke-width:2px,color:#064e3b
 ```
 
 **Concrete example:**

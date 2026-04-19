@@ -146,7 +146,7 @@ graph TD
 
 **Por que dois parsers?** O Go tem um parser excelente na própria standard library (`go/parser`). Para as outras linguagens, usamos o [tree-sitter](https://tree-sitter.github.io/), um parser incremental muito rápido que suporta dezenas de linguagens via gramáticas plugáveis.
 
-> **Detalhe técnico importante:** O tree-sitter é escrito em C, então o módulo `ollantaparser` é o **único** que precisa de CGo (compilador C). Todos os outros módulos do Ollanta funcionam sem CGo, o que simplifica builds e deploys.
+> **Detalhe técnico importante:** O tree-sitter é escrito em C/Rust, então o módulo `ollantaparser` é o **único** que precisa de CGo (compilador C). Todos os outros módulos do Ollanta funcionam sem CGo, o que simplifica builds e deploys.
 
 > **Código relevante:** `ollantaparser/` (tree-sitter) e `ollantarules/languages/golang/sensor/` (Go nativo)
 
@@ -314,7 +314,52 @@ A combinação `(rule_key, line_hash)` funciona como a "impressão digital" de u
 **O algoritmo de matching opera em 2 camadas:**
 
 ```mermaid
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "primaryColor": "#fef9c3",
+    "primaryTextColor": "#1c1917",
+    "primaryBorderColor": "#d97706",
+    "lineColor": "#92400e",
+    "edgeLabelBackground": "#fffbeb",
+    "fontFamily": "ui-monospace, monospace",
+    "fontSize": "14px",
+    "clusterBkg": "#fffbeb",
+    "clusterBorder": "#fbbf24"
+  }
+}}%%
+flowchart TD
+    CI(["📋 Issue no scan atual\n(rule_key + arquivo + line_hash)"]):::src
 
+    L1{{"🔍 Camada 1\nCorrespondência exata?\n(rule_key + arquivo + line_hash)\nnos issues ABERTOS anteriores"}}:::decision
+    L2{{"🔍 Camada 2\nCorrespondência solta?\n(rule_key + line_hash)\nem qualquer arquivo anterior"}}:::decision
+    WC{{"❓ Estava FECHADA\nanteriormente?"}}:::decision
+
+    Unchanged(["♻️ Unchanged\nproblema continua"]):::keep
+    Moved(["🔀 Moved\nmesmo conteúdo, local diferente"]):::keep
+    Reopened(["🔄 Reopened\nvoltou!"]):::warn
+    New(["🆕 New\nnunca visto antes"]):::new_
+
+    Unmatched(["📋 Issue ABERTA anterior\nsem correspondência"]):::prev
+    Closed(["✅ Closed\nfoi corrigido!"]):::fixed
+
+    CI --> L1
+    L1 -->|"✅ Sim"| Unchanged
+    L1 -->|"❌ Não"| L2
+    L2 -->|"✅ Sim"| Moved
+    L2 -->|"❌ Não"| WC
+    WC -->|"Sim"| Reopened
+    WC -->|"Não"| New
+
+    Unmatched --> Closed
+
+    classDef src      fill:#dbeafe,stroke:#3b82f6,stroke-width:2px,color:#1e3a5f
+    classDef decision fill:#fef3c7,stroke:#f59e0b,stroke-width:2px,color:#92400e
+    classDef keep     fill:#d1fae5,stroke:#059669,stroke-width:2px,color:#064e3b
+    classDef warn     fill:#fef9c3,stroke:#d97706,stroke-width:2px,color:#1c1917
+    classDef new_     fill:#ede9fe,stroke:#7c3aed,stroke-width:2px,color:#3b0764
+    classDef prev     fill:#f3f4f6,stroke:#6b7280,stroke-width:2px,color:#1f2937
+    classDef fixed    fill:#d1fae5,stroke:#059669,stroke-width:2px,color:#064e3b
 ```
 
 **Exemplo concreto:**
