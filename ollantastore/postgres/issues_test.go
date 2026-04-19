@@ -1,6 +1,7 @@
 package postgres_test
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/scovl/ollanta/ollantastore/postgres"
@@ -38,5 +39,31 @@ func TestIssueTransitionStatusMapping(t *testing.T) {
 		if toStatus != tt.expectedStatus {
 			t.Errorf("resolution=%q: expected status %q, got %q", tt.resolution, tt.expectedStatus, toStatus)
 		}
+	}
+}
+
+func TestIssueRow_EngineIDField(t *testing.T) {
+	t.Parallel()
+	row := postgres.IssueRow{EngineID: "semgrep"}
+	if row.EngineID != "semgrep" {
+		t.Errorf("EngineID: got %q", row.EngineID)
+	}
+}
+
+func TestIssueRow_SecondaryLocationsJSON(t *testing.T) {
+	t.Parallel()
+	sl := json.RawMessage(`[{"filePath":"a.go","message":"see also","startLine":5}]`)
+	row := postgres.IssueRow{SecondaryLocations: sl}
+	if string(row.SecondaryLocations) != string(sl) {
+		t.Errorf("SecondaryLocations mismatch")
+	}
+}
+
+func TestIssueFilter_EngineIDField(t *testing.T) {
+	t.Parallel()
+	eid := "ollanta"
+	f := postgres.IssueFilter{EngineID: &eid}
+	if *f.EngineID != "ollanta" {
+		t.Errorf("EngineID filter: got %q", *f.EngineID)
 	}
 }

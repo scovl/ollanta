@@ -49,6 +49,12 @@ type Report struct {
 func Build(projectKey string, files []discovery.DiscoveredFile, issues []*domain.Issue, elapsed time.Duration) *Report {
 	m := computeMeasures(files)
 	for _, iss := range issues {
+		if iss.EngineID == "" {
+			iss.EngineID = "ollanta"
+		}
+		if iss.SecondaryLocations == nil {
+			iss.SecondaryLocations = []domain.SecondaryLocation{}
+		}
 		switch iss.Type {
 		case domain.TypeBug:
 			m.Bugs++

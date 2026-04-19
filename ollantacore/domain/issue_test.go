@@ -120,3 +120,69 @@ func TestIssue_JSONRoundtrip(t *testing.T) {
 		t.Errorf("Severity mismatch: got %q", restored.Severity)
 	}
 }
+
+func TestNewIssue_EngineIDDefault(t *testing.T) {
+	issue := domain.NewIssue("go:test", "main.go", 1)
+	if issue.EngineID != "ollanta" {
+		t.Errorf("EngineID: expected \"ollanta\", got %q", issue.EngineID)
+	}
+}
+
+func TestNewIssue_SecondaryLocationsEmpty(t *testing.T) {
+	issue := domain.NewIssue("go:test", "main.go", 1)
+	if issue.SecondaryLocations == nil {
+		t.Fatal("SecondaryLocations should not be nil")
+	}
+	if len(issue.SecondaryLocations) != 0 {
+		t.Errorf("SecondaryLocations: expected empty, got %d", len(issue.SecondaryLocations))
+	}
+}
+
+func TestSecondaryLocation_JSONRoundtrip(t *testing.T) {
+	locs := []domain.SecondaryLocation{
+		{FilePath: "a.go", Message: "related", StartLine: 10, StartColumn: 5, EndLine: 10, EndColumn: 20},
+		{FilePath: "b.go", Message: "also related", StartLine: 20},
+	}
+	data, err := json.Marshal(locs)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var restored []domain.SecondaryLocation
+	if err := json.Unmarshal(data, &restored); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(restored) != 2 {
+		t.Fatalf("expected 2 locations, got %d", len(restored))
+	}
+	if restored[0].FilePath != "a.go" {
+		t.Errorf("FilePath: got %q", restored[0].FilePath)
+	}
+	if restored[0].EndColumn != 20 {
+		t.Errorf("EndColumn: got %d", restored[0].EndColumn)
+	}
+}
+
+func TestIssue_EngineID_JSONRoundtrip(t *testing.T) {
+	issue := domain.NewIssue("go:test", "main.go", 1)
+	issue.EngineID = "external-tool"
+	issue.SecondaryLocations = []domain.SecondaryLocation{
+		{FilePath: "main.go", Message: "see also", StartLine: 5},
+	}
+	data, err := json.Marshal(issue)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var restored domain.Issue
+	if err := json.Unmarshal(data, &restored); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if restored.EngineID != "external-tool" {
+		t.Errorf("EngineID: got %q", restored.EngineID)
+	}
+	if len(restored.SecondaryLocations) != 1 {
+		t.Fatalf("SecondaryLocations: expected 1, got %d", len(restored.SecondaryLocations))
+	}
+	if restored.SecondaryLocations[0].StartLine != 5 {
+		t.Errorf("StartLine: got %d", restored.SecondaryLocations[0].StartLine)
+	}
+}

@@ -5,6 +5,7 @@ package ingest
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -259,23 +260,33 @@ func domainToIssueRow(iss *domain.Issue, scanID, projectID int64) postgres.Issue
 	if tags == nil {
 		tags = []string{}
 	}
+	engineID := iss.EngineID
+	if engineID == "" {
+		engineID = "ollanta"
+	}
+	sl, _ := json.Marshal(iss.SecondaryLocations)
+	if len(iss.SecondaryLocations) == 0 {
+		sl = []byte("[]")
+	}
 	return postgres.IssueRow{
-		ScanID:        scanID,
-		ProjectID:     projectID,
-		RuleKey:       iss.RuleKey,
-		ComponentPath: iss.ComponentPath,
-		Line:          iss.Line,
-		Column:        iss.Column,
-		EndLine:       iss.EndLine,
-		EndColumn:     iss.EndColumn,
-		Message:       iss.Message,
-		Type:          string(iss.Type),
-		Severity:      string(iss.Severity),
-		Status:        string(iss.Status),
-		Resolution:    iss.Resolution,
-		EffortMinutes: iss.EffortMinutes,
-		LineHash:      iss.LineHash,
-		Tags:          tags,
+		ScanID:             scanID,
+		ProjectID:          projectID,
+		RuleKey:            iss.RuleKey,
+		ComponentPath:      iss.ComponentPath,
+		Line:               iss.Line,
+		Column:             iss.Column,
+		EndLine:            iss.EndLine,
+		EndColumn:          iss.EndColumn,
+		Message:            iss.Message,
+		Type:               string(iss.Type),
+		Severity:           string(iss.Severity),
+		Status:             string(iss.Status),
+		Resolution:         iss.Resolution,
+		EffortMinutes:      iss.EffortMinutes,
+		EngineID:           engineID,
+		LineHash:           iss.LineHash,
+		Tags:               tags,
+		SecondaryLocations: sl,
 	}
 }
 

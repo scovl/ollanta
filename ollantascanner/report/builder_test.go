@@ -70,6 +70,29 @@ func TestBuild_Issues(t *testing.T) {
 	}
 }
 
+func TestBuild_SetsEngineIDAndSecondaryLocations(t *testing.T) {
+	iss := []*domain.Issue{sampleIssue()}
+	r := report.Build("p", nil, iss, 0)
+	if r.Issues[0].EngineID != "ollanta" {
+		t.Errorf("EngineID: expected \"ollanta\", got %q", r.Issues[0].EngineID)
+	}
+	if r.Issues[0].SecondaryLocations == nil {
+		t.Fatal("SecondaryLocations should not be nil")
+	}
+	if len(r.Issues[0].SecondaryLocations) != 0 {
+		t.Errorf("SecondaryLocations: expected empty, got %d", len(r.Issues[0].SecondaryLocations))
+	}
+}
+
+func TestBuild_PreservesExistingEngineID(t *testing.T) {
+	iss := sampleIssue()
+	iss.EngineID = "semgrep"
+	r := report.Build("p", nil, []*domain.Issue{iss}, 0)
+	if r.Issues[0].EngineID != "semgrep" {
+		t.Errorf("EngineID: expected \"semgrep\", got %q", r.Issues[0].EngineID)
+	}
+}
+
 func TestSaveJSON_Valid(t *testing.T) {
 	dir := t.TempDir()
 	iss := []*domain.Issue{sampleIssue()}

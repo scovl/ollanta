@@ -91,6 +91,7 @@ func (z *ZincBackend) ConfigureIndexes(ctx context.Context) error {
 					"type":           map[string]string{"type": "keyword"},
 					"severity":       map[string]string{"type": "keyword"},
 					"status":         map[string]string{"type": "keyword"},
+					"engine_id":      map[string]string{"type": "keyword"},
 					"tags":           map[string]string{"type": "keyword"},
 					"created_at":     map[string]string{"type": "date"},
 				},
@@ -168,6 +169,7 @@ func (z *ZincBackend) IndexIssues(ctx context.Context, projectKey string, issues
 			"type":           iss.Type,
 			"severity":       iss.Severity,
 			"status":         iss.Status,
+			"engine_id":      iss.EngineID,
 			"tags":           tags,
 			"created_at":     iss.CreatedAt.Format(time.RFC3339),
 		}
@@ -241,7 +243,35 @@ func (z *ZincBackend) DeleteScanIssues(ctx context.Context, scanID int64) error 
 
 // ReindexAll rebuilds the entire search index from the database.
 func (z *ZincBackend) ReindexAll(ctx context.Context, issueRepo *postgres.IssueRepository, projectRepo *postgres.ProjectRepository) error {
-	// Delete and recreate indexes
+	if err := z.resetIndexes(ctx); err != nil {
+		return err
+	}
+
+	offset := 0
+	const batch = 200
+	for {
+		projects, _, err := projectRepo.List(ctx, batch, offset)
+		if err != nil {
+			return fmt.Errorf("list projects for reindex: %w", err)
+		}
+		if len(projects) == 0 {
+			break
+		}
+		for _, p := range projects {
+			if err := z.reindexProject(ctx, issueRepo, p); err != nil {
+				return err
+			}
+		}
+		offset += len(projects)
+		if len(projects) < batch {
+			break
+		}
+	}
+	return nil
+}
+
+// resetIndexes deletes and recreates all search indexes.
+func (z *ZincBackend) resetIndexes(ctx context.Context) error {
 	for _, idx := range []string{indexIssues, indexProjects} {
 		delReq, err := http.NewRequestWithContext(ctx, http.MethodDelete,
 			z.cfg.Host+"/api/index/"+idx, nil)
@@ -255,56 +285,42 @@ func (z *ZincBackend) ReindexAll(ctx context.Context, issueRepo *postgres.IssueR
 		}
 		delResp.Body.Close()
 	}
-
 	if err := z.ConfigureIndexes(ctx); err != nil {
 		return fmt.Errorf("zincsearch reconfigure indexes: %w", err)
 	}
+	return nil
+}
 
-	// Iterate projects and re-index
-	offset := 0
-	const batch = 200
+// reindexProject indexes a single project and all its issues in batches.
+func (z *ZincBackend) reindexProject(ctx context.Context, issueRepo *postgres.IssueRepository, p *postgres.Project) error {
+	if err := z.IndexProject(ctx, p); err != nil {
+		return fmt.Errorf("index project %s: %w", p.Key, err)
+	}
+
+	const issueBatch = 1000
+	pid := p.ID
+	issOffset := 0
 	for {
-		projects, _, err := projectRepo.List(ctx, batch, offset)
+		issues, _, err := issueRepo.Query(ctx, postgres.IssueFilter{
+			ProjectID: &pid,
+			Limit:     issueBatch,
+			Offset:    issOffset,
+		})
 		if err != nil {
-			return fmt.Errorf("list projects for reindex: %w", err)
+			return fmt.Errorf("query issues for reindex project %s: %w", p.Key, err)
 		}
-		if len(projects) == 0 {
+		if len(issues) == 0 {
 			break
 		}
-		for _, p := range projects {
-			if err := z.IndexProject(ctx, p); err != nil {
-				return fmt.Errorf("index project %s: %w", p.Key, err)
-			}
-
-			issOffset := 0
-			pid := p.ID
-			for {
-				issues, _, err := issueRepo.Query(ctx, postgres.IssueFilter{
-					ProjectID: &pid,
-					Limit:     1000,
-					Offset:    issOffset,
-				})
-				if err != nil {
-					return fmt.Errorf("query issues for reindex project %s: %w", p.Key, err)
-				}
-				if len(issues) == 0 {
-					break
-				}
-				rows := make([]postgres.IssueRow, len(issues))
-				for i, iss := range issues {
-					rows[i] = *iss
-				}
-				if err := z.IndexIssues(ctx, p.Key, rows); err != nil {
-					return fmt.Errorf("index issues for project %s: %w", p.Key, err)
-				}
-				issOffset += len(issues)
-				if len(issues) < 1000 {
-					break
-				}
-			}
+		rows := make([]postgres.IssueRow, len(issues))
+		for i, iss := range issues {
+			rows[i] = *iss
 		}
-		offset += len(projects)
-		if len(projects) < batch {
+		if err := z.IndexIssues(ctx, p.Key, rows); err != nil {
+			return fmt.Errorf("index issues for project %s: %w", p.Key, err)
+		}
+		issOffset += len(issues)
+		if len(issues) < issueBatch {
 			break
 		}
 	}
@@ -329,7 +345,38 @@ func (z *ZincBackend) search(ctx context.Context, index string, req SearchReques
 		limit = 20
 	}
 
-	// Build ES-compatible query DSL (v2 API)
+	body := z.buildSearchBody(req, limit)
+
+	data, _ := json.Marshal(body)
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		z.cfg.Host+"/es/"+index+"/_search", bytes.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+	z.setAuth(httpReq)
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := z.client.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("zincsearch search %s: %w", index, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("zincsearch search %s: status %d: %s", index, resp.StatusCode, string(b))
+	}
+
+	var sr zincSearchResponse
+	if err := json.NewDecoder(resp.Body).Decode(&sr); err != nil {
+		return nil, fmt.Errorf("zincsearch decode: %w", err)
+	}
+
+	return mapSearchResponse(&sr), nil
+}
+
+// buildSearchBody constructs the ES-compatible query DSL for ZincSearch.
+func (z *ZincBackend) buildSearchBody(req SearchRequest, limit int) map[string]interface{} {
 	must := []interface{}{}
 	if req.Query != "" {
 		must = append(must, map[string]interface{}{
@@ -393,31 +440,11 @@ func (z *ZincBackend) search(ctx context.Context, index string, req SearchReques
 		body["aggs"] = aggs
 	}
 
-	data, _ := json.Marshal(body)
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		z.cfg.Host+"/es/"+index+"/_search", bytes.NewReader(data))
-	if err != nil {
-		return nil, err
-	}
-	z.setAuth(httpReq)
-	httpReq.Header.Set("Content-Type", "application/json")
+	return body
+}
 
-	resp, err := z.client.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("zincsearch search %s: %w", index, err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		b, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("zincsearch search %s: status %d: %s", index, resp.StatusCode, string(b))
-	}
-
-	var sr zincSearchResponse
-	if err := json.NewDecoder(resp.Body).Decode(&sr); err != nil {
-		return nil, fmt.Errorf("zincsearch decode: %w", err)
-	}
-
+// mapSearchResponse converts a raw ZincSearch response into a SearchResult.
+func mapSearchResponse(sr *zincSearchResponse) *SearchResult {
 	result := &SearchResult{
 		TotalHits:        int64(sr.Hits.Total.Value),
 		ProcessingTimeMs: int64(sr.Took),
@@ -442,7 +469,7 @@ func (z *ZincBackend) search(ctx context.Context, index string, req SearchReques
 		}
 	}
 
-	return result, nil
+	return result
 }
 
 // ─── helpers ───────────────────────────────────────────────────────────────────

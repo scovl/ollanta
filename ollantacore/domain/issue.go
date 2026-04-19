@@ -54,6 +54,17 @@ const (
 	StatusReopened Status = "reopened"
 )
 
+// SecondaryLocation represents an auxiliary source location that contextualises an issue,
+// such as a step in a taint flow, a duplicated code fragment, or a data-flow path.
+type SecondaryLocation struct {
+	FilePath    string `json:"file_path,omitempty"`
+	Message     string `json:"message,omitempty"`
+	StartLine   int    `json:"start_line,omitempty"`
+	StartColumn int    `json:"start_column,omitempty"`
+	EndLine     int    `json:"end_line,omitempty"`
+	EndColumn   int    `json:"end_column,omitempty"`
+}
+
 // Issue represents a single quality finding produced by a rule during analysis.
 // It is language-agnostic: the same struct is used for Go, JavaScript, Python, and any
 // other language supported by Ollanta.
@@ -70,21 +81,25 @@ type Issue struct {
 	Status        Status    `json:"status"`
 	Resolution    string    `json:"resolution,omitempty"`
 	EffortMinutes int       `json:"effort_minutes,omitempty"`
+	EngineID      string    `json:"engine_id,omitempty"`
 	// LineHash is the SHA-256 hex digest of the trimmed source line. Used by the
 	// issue tracker (ollantaengine) to match the same logical issue across scans
 	// even when its line number shifts due to edits elsewhere in the file.
-	LineHash string   `json:"line_hash,omitempty"`
-	Tags     []string `json:"tags,omitempty"`
+	LineHash           string              `json:"line_hash,omitempty"`
+	Tags               []string            `json:"tags,omitempty"`
+	SecondaryLocations []SecondaryLocation `json:"secondary_locations"`
 }
 
 // NewIssue creates an Issue with the required identifying fields and sane defaults.
 // Callers set additional fields (Message, Severity, Type, etc.) after construction.
 func NewIssue(ruleKey, componentPath string, line int) *Issue {
 	return &Issue{
-		RuleKey:       ruleKey,
-		ComponentPath: componentPath,
-		Line:          line,
-		Status:        StatusOpen,
+		RuleKey:            ruleKey,
+		ComponentPath:      componentPath,
+		Line:               line,
+		Status:             StatusOpen,
+		EngineID:           "ollanta",
+		SecondaryLocations: []SecondaryLocation{},
 	}
 }
 

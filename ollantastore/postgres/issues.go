@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -12,24 +13,26 @@ import (
 
 // IssueRow is the database representation of a single issue.
 type IssueRow struct {
-	ID            int64     `json:"id"`
-	ScanID        int64     `json:"scan_id"`
-	ProjectID     int64     `json:"project_id"`
-	RuleKey       string    `json:"rule_key"`
-	ComponentPath string    `json:"component_path"`
-	Line          int       `json:"line"`
-	Column        int       `json:"column"`
-	EndLine       int       `json:"end_line"`
-	EndColumn     int       `json:"end_column"`
-	Message       string    `json:"message"`
-	Type          string    `json:"type"`
-	Severity      string    `json:"severity"`
-	Status        string    `json:"status"`
-	Resolution    string    `json:"resolution"`
-	EffortMinutes int       `json:"effort_minutes"`
-	LineHash      string    `json:"line_hash"`
-	Tags          []string  `json:"tags"`
-	CreatedAt     time.Time `json:"created_at"`
+	ID                 int64           `json:"id"`
+	ScanID             int64           `json:"scan_id"`
+	ProjectID          int64           `json:"project_id"`
+	RuleKey            string          `json:"rule_key"`
+	ComponentPath      string          `json:"component_path"`
+	Line               int             `json:"line"`
+	Column             int             `json:"column"`
+	EndLine            int             `json:"end_line"`
+	EndColumn          int             `json:"end_column"`
+	Message            string          `json:"message"`
+	Type               string          `json:"type"`
+	Severity           string          `json:"severity"`
+	Status             string          `json:"status"`
+	Resolution         string          `json:"resolution"`
+	EffortMinutes      int             `json:"effort_minutes"`
+	EngineID           string          `json:"engine_id"`
+	LineHash           string          `json:"line_hash"`
+	Tags               []string        `json:"tags"`
+	SecondaryLocations json.RawMessage `json:"secondary_locations"`
+	CreatedAt          time.Time       `json:"created_at"`
 }
 
 // IssueFilter specifies query parameters for listing issues.
@@ -41,15 +44,20 @@ type IssueFilter struct {
 	Type      *string
 	Status    *string
 	FilePath  *string // applied as LIKE pattern against component_path
-	Limit     int     // default 100, max 1000
+	EngineID  *string
+	Limit     int // default 100, max 1000
 	Offset    int
 }
 
 // IssueFacets holds aggregate distributions for the issues index.
 type IssueFacets struct {
-	BySeverity map[string]int
-	ByType     map[string]int
-	ByRule     map[string]int
+	BySeverity map[string]int `json:"by_severity"`
+	ByType     map[string]int `json:"by_type"`
+	ByRule     map[string]int `json:"by_rule"`
+	ByStatus   map[string]int `json:"by_status"`
+	ByEngineID map[string]int `json:"by_engine_id"`
+	ByFile     map[string]int `json:"by_file"`
+	ByTags     map[string]int `json:"by_tags"`
 }
 
 // IssueRepository provides access to the issues table.
@@ -80,11 +88,19 @@ func (r *IssueRepository) BulkInsert(ctx context.Context, issues []IssueRow) err
 		if tags == nil {
 			tags = []string{}
 		}
+		sl := iss.SecondaryLocations
+		if len(sl) == 0 {
+			sl = json.RawMessage("[]")
+		}
+		engineID := iss.EngineID
+		if engineID == "" {
+			engineID = "ollanta"
+		}
 		rows[i] = []interface{}{
 			iss.ScanID, iss.ProjectID, iss.RuleKey, iss.ComponentPath,
 			iss.Line, iss.Column, iss.EndLine, iss.EndColumn,
 			iss.Message, iss.Type, iss.Severity, iss.Status,
-			iss.Resolution, iss.EffortMinutes, iss.LineHash, tags,
+			iss.Resolution, iss.EffortMinutes, engineID, iss.LineHash, tags, sl,
 		}
 	}
 
@@ -95,7 +111,8 @@ func (r *IssueRepository) BulkInsert(ctx context.Context, issues []IssueRow) err
 			"scan_id", "project_id", "rule_key", "component_path",
 			"line", "column_num", "end_line", "end_column",
 			"message", "type", "severity", "status",
-			"resolution", "effort_minutes", "line_hash", "tags",
+			"resolution", "effort_minutes", "engine_id", "line_hash", "tags",
+			"secondary_locations",
 		},
 		pgx.CopyFromRows(rows),
 	)
@@ -150,6 +167,11 @@ func (r *IssueRepository) Query(ctx context.Context, f IssueFilter) ([]*IssueRow
 		args = append(args, "%"+*f.FilePath+"%")
 		n++
 	}
+	if f.EngineID != nil {
+		conds = append(conds, fmt.Sprintf("engine_id = $%d", n))
+		args = append(args, *f.EngineID)
+		n++
+	}
 
 	where := ""
 	if len(conds) > 0 {
@@ -167,7 +189,7 @@ func (r *IssueRepository) Query(ctx context.Context, f IssueFilter) ([]*IssueRow
 		SELECT id, scan_id, project_id, rule_key, component_path,
 		       line, column_num, end_line, end_column, message,
 		       type, severity, status, resolution, effort_minutes,
-		       line_hash, tags, created_at
+		       engine_id, line_hash, tags, secondary_locations, created_at
 		FROM issues %s
 		ORDER BY created_at DESC, id DESC
 		LIMIT $%d OFFSET $%d`, where, n, n+1)
@@ -185,7 +207,7 @@ func (r *IssueRepository) Query(ctx context.Context, f IssueFilter) ([]*IssueRow
 			&iss.ID, &iss.ScanID, &iss.ProjectID, &iss.RuleKey, &iss.ComponentPath,
 			&iss.Line, &iss.Column, &iss.EndLine, &iss.EndColumn, &iss.Message,
 			&iss.Type, &iss.Severity, &iss.Status, &iss.Resolution, &iss.EffortMinutes,
-			&iss.LineHash, &iss.Tags, &iss.CreatedAt,
+			&iss.EngineID, &iss.LineHash, &iss.Tags, &iss.SecondaryLocations, &iss.CreatedAt,
 		); err != nil {
 			return nil, 0, err
 		}
@@ -194,12 +216,18 @@ func (r *IssueRepository) Query(ctx context.Context, f IssueFilter) ([]*IssueRow
 	return issues, total, rows.Err()
 }
 
-// Facets returns count distributions by severity, type, and rule for a given scan.
+// Facets returns count distributions by severity, type, rule, status,
+// engine_id, file (top 10), and tags for a given scan.
+// Inspired by SonarQube's sticky faceted search pattern.
 func (r *IssueRepository) Facets(ctx context.Context, projectID, scanID int64) (*IssueFacets, error) {
 	facets := &IssueFacets{
 		BySeverity: make(map[string]int),
 		ByType:     make(map[string]int),
 		ByRule:     make(map[string]int),
+		ByStatus:   make(map[string]int),
+		ByEngineID: make(map[string]int),
+		ByFile:     make(map[string]int),
+		ByTags:     make(map[string]int),
 	}
 
 	type facetRow struct {
@@ -212,6 +240,30 @@ func (r *IssueRepository) Facets(ctx context.Context, projectID, scanID int64) (
 			SELECT %s, COUNT(*) FROM issues
 			WHERE project_id = $1 AND scan_id = $2
 			GROUP BY %s`, column, column)
+		rows, err := r.db.Pool.Query(ctx, q, projectID, scanID)
+		if err != nil {
+			return nil, err
+		}
+		defer rows.Close()
+		var out []facetRow
+		for rows.Next() {
+			var fr facetRow
+			if err := rows.Scan(&fr.key, &fr.count); err != nil {
+				return nil, err
+			}
+			out = append(out, fr)
+		}
+		return out, rows.Err()
+	}
+
+	// Top N facet — limits results to the most frequent entries.
+	queryTopFacet := func(column string, limit int) ([]facetRow, error) {
+		q := fmt.Sprintf(`
+			SELECT %s, COUNT(*) AS cnt FROM issues
+			WHERE project_id = $1 AND scan_id = $2
+			GROUP BY %s
+			ORDER BY cnt DESC
+			LIMIT %d`, column, column, limit)
 		rows, err := r.db.Pool.Query(ctx, q, projectID, scanID)
 		if err != nil {
 			return nil, err
@@ -244,12 +296,60 @@ func (r *IssueRepository) Facets(ctx context.Context, projectID, scanID int64) (
 		facets.ByType[r.key] = r.count
 	}
 
-	rule, err := queryFacet("rule_key")
+	rule, err := queryTopFacet("rule_key", 20)
 	if err != nil {
 		return nil, fmt.Errorf("facet rule: %w", err)
 	}
 	for _, r := range rule {
 		facets.ByRule[r.key] = r.count
+	}
+
+	st, err := queryFacet("status")
+	if err != nil {
+		return nil, fmt.Errorf("facet status: %w", err)
+	}
+	for _, r := range st {
+		facets.ByStatus[r.key] = r.count
+	}
+
+	eng, err := queryFacet("engine_id")
+	if err != nil {
+		return nil, fmt.Errorf("facet engine_id: %w", err)
+	}
+	for _, r := range eng {
+		facets.ByEngineID[r.key] = r.count
+	}
+
+	file, err := queryTopFacet("component_path", 10)
+	if err != nil {
+		return nil, fmt.Errorf("facet file: %w", err)
+	}
+	for _, r := range file {
+		facets.ByFile[r.key] = r.count
+	}
+
+	// Tags facet uses unnest since tags is an array column.
+	tagRows, err := r.db.Pool.Query(ctx, `
+		SELECT t, COUNT(*) AS cnt
+		FROM issues, unnest(tags) AS t
+		WHERE project_id = $1 AND scan_id = $2
+		GROUP BY t
+		ORDER BY cnt DESC
+		LIMIT 20`, projectID, scanID)
+	if err != nil {
+		return nil, fmt.Errorf("facet tags: %w", err)
+	}
+	defer tagRows.Close()
+	for tagRows.Next() {
+		var tag string
+		var cnt int
+		if err := tagRows.Scan(&tag, &cnt); err != nil {
+			return nil, fmt.Errorf("facet tags scan: %w", err)
+		}
+		facets.ByTags[tag] = cnt
+	}
+	if err := tagRows.Err(); err != nil {
+		return nil, fmt.Errorf("facet tags iter: %w", err)
 	}
 
 	return facets, nil
@@ -271,13 +371,13 @@ func (r *IssueRepository) GetByID(ctx context.Context, id int64) (*IssueRow, err
 		SELECT id, scan_id, project_id, rule_key, component_path,
 		       line, column_num, end_line, end_column, message,
 		       type, severity, status, resolution, effort_minutes,
-		       line_hash, tags, created_at
+		       engine_id, line_hash, tags, secondary_locations, created_at
 		FROM issues WHERE id = $1 LIMIT 1`, id,
 	).Scan(
 		&iss.ID, &iss.ScanID, &iss.ProjectID, &iss.RuleKey, &iss.ComponentPath,
 		&iss.Line, &iss.Column, &iss.EndLine, &iss.EndColumn, &iss.Message,
 		&iss.Type, &iss.Severity, &iss.Status, &iss.Resolution, &iss.EffortMinutes,
-		&iss.LineHash, &iss.Tags, &iss.CreatedAt,
+		&iss.EngineID, &iss.LineHash, &iss.Tags, &iss.SecondaryLocations, &iss.CreatedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
