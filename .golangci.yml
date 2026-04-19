@@ -11,6 +11,13 @@ linters:
     - ineffassign
     - misspell
     - revive
+  settings:
+    revive:
+      rules:
+        - name: exported
+          severity: warning
+        - name: package-comments
+          severity: warning
   exclusions:
     rules:
       # Interface implementations don't need per-method comments.
@@ -25,11 +32,3 @@ linters:
       # Version constant in report package is self-documenting.
       - linters: [revive]
         text: 'exported const Version'
-
-linters-settings:
-  revive:
-    rules:
-      - name: exported
-        severity: warning
-      - name: package-comments
-        severity: warning

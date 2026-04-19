@@ -72,10 +72,10 @@ jobs:
           CGO_ENABLED: "0"
           DATABASE_URL: "postgres://ollanta:ollanta@localhost:5432/ollanta?sslmode=disable"
         run: |
-          go test -race -count=1 ./ollantaweb/...
-          go test -race -count=1 ./ollantastore/...
-          go test -race -count=1 ./domain/...
-          go test -race -count=1 ./application/...
+          go test -count=1 ./ollantaweb/...
+          go test -count=1 ./ollantastore/...
+          go test -count=1 ./domain/...
+          go test -count=1 ./application/...
 
   # ── Adapter module (CGO for tree-sitter + DB) ──────────────────────
   test-adapter:
@@ -123,31 +123,31 @@ jobs:
 
       - uses: golangci/golangci-lint-action@v6
         with:
-          version: latest
+          version: v2.11.4
           args: --timeout 5m
           working-directory: ollantacore
 
       - uses: golangci/golangci-lint-action@v6
         with:
-          version: latest
+          version: v2.11.4
           args: --timeout 5m
           working-directory: ollantaparser
 
       - uses: golangci/golangci-lint-action@v6
         with:
-          version: latest
+          version: v2.11.4
           args: --timeout 5m
           working-directory: ollantarules
 
       - uses: golangci/golangci-lint-action@v6
         with:
-          version: latest
+          version: v2.11.4
           args: --timeout 5m
           working-directory: ollantascanner
 
       - uses: golangci/golangci-lint-action@v6
         with:
-          version: latest
+          version: v2.11.4
           args: --timeout 5m
           working-directory: ollantaengine
 
@@ -159,7 +159,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Build scanner image
-        run: docker build -t ollanta-scanner:ci .
+        run: DOCKER_BUILDKIT=1 docker build -t ollanta-scanner:ci .
 
       - name: Build web image
-        run: docker build -t ollanta-web:ci ./ollantaweb
+        run: DOCKER_BUILDKIT=1 docker build -f ollantaweb/Dockerfile -t ollanta-web:ci .
