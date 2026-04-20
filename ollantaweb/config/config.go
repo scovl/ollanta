@@ -62,6 +62,10 @@ type Config struct {
 	// GoogleOAuth credentials. If empty, Google login is disabled.
 	GoogleClientID     string
 	GoogleClientSecret string
+
+	// ScannerToken is a pre-shared key accepted for POST /api/v1/scans.
+	// If empty, scanner push requires a regular JWT or API token.
+	ScannerToken string
 }
 
 // Load reads configuration from environment variables and validates required fields.
@@ -103,6 +107,7 @@ func Load() (*Config, error) {
 		GitLabClientSecret: os.Getenv("OLLANTA_GITLAB_CLIENT_SECRET"),
 		GoogleClientID:     os.Getenv("OLLANTA_GOOGLE_CLIENT_ID"),
 		GoogleClientSecret: os.Getenv("OLLANTA_GOOGLE_CLIENT_SECRET"),
+		ScannerToken:       os.Getenv("OLLANTA_SCANNER_TOKEN"),
 	}
 
 	if cfg.DatabaseURL == "" {

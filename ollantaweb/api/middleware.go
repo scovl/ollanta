@@ -13,20 +13,30 @@ import (
 
 // AuthMiddleware holds the dependencies needed to authenticate requests.
 type AuthMiddleware struct {
-	users    *postgres.UserRepository
-	tokens   *postgres.TokenRepository
-	sessions *postgres.SessionRepository
-	secret   []byte
+	users        *postgres.UserRepository
+	tokens       *postgres.TokenRepository
+	sessions     *postgres.SessionRepository
+	secret       []byte
+	scannerToken string
 }
 
 // NewAuthMiddleware creates a new AuthMiddleware.
+// scannerToken is an optional pre-shared key accepted for scanner push (POST /api/v1/scans).
+// Pass an empty string to disable scanner token auth.
 func NewAuthMiddleware(
 	users *postgres.UserRepository,
 	tokens *postgres.TokenRepository,
 	sessions *postgres.SessionRepository,
 	secret []byte,
+	scannerToken string,
 ) *AuthMiddleware {
-	return &AuthMiddleware{users: users, tokens: tokens, sessions: sessions, secret: secret}
+	return &AuthMiddleware{
+		users:        users,
+		tokens:       tokens,
+		sessions:     sessions,
+		secret:       secret,
+		scannerToken: scannerToken,
+	}
 }
 
 // Authenticate is a chi middleware that validates Bearer tokens (JWT or API token).
@@ -44,6 +54,15 @@ func (m *AuthMiddleware) Authenticate(next http.Handler) http.Handler {
 			return
 		}
 		tokenStr := parts[1]
+
+		// Scanner pre-shared token — allows CI/CD push without a user account.
+		if m.scannerToken != "" && tokenStr == m.scannerToken {
+			next.ServeHTTP(w, WithUser(r, &postgres.User{
+				Login:    "scanner",
+				IsActive: true,
+			}))
+			return
+		}
 
 		var user *postgres.User
 

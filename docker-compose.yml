@@ -78,7 +78,7 @@ services:
       - -project-key=${PROJECT_KEY:-project}
       - -format=all
       - -server=${OLLANTA_SERVER:-http://ollantaweb:8080}
-      - -server-token=${OLLANTA_TOKEN:-}
+      - -server-token=${OLLANTA_TOKEN:-ollanta-dev-scanner-token}
     restart: "no"
     profiles: ["push"]
 
@@ -137,6 +137,7 @@ services:
       OLLANTA_ZINCSEARCH_USER: "${ZINC_USER:-admin}"
       OLLANTA_ZINCSEARCH_PASSWORD: "${ZINC_PASSWORD:-ollanta_dev}"
       OLLANTA_LOG_LEVEL: "info"
+      OLLANTA_SCANNER_TOKEN: "${OLLANTA_SCANNER_TOKEN:-ollanta-dev-scanner-token}"
     ports:
       - "8080:8080"
     restart: unless-stopped
