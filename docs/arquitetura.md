@@ -289,15 +289,18 @@ Exemplo:
 
 O servidor (`ollantaweb`) é onde a mágica de **acompanhamento ao longo do tempo** acontece. Enquanto o scanner é "stateless" (roda e esquece), o servidor mantém o histórico completo.
 
-Quando o scanner envia um relatório para o servidor via `POST /api/v1/scans`, um pipeline de 7 passos é executado em sequência:
+Quando o scanner envia um relatório para o servidor via `POST /api/v1/scans`, um pipeline de 8 passos é executado. Cada passo tem timeout individual e estratégia de erro (abort ou skip):
 
-1. **Registrar o projeto** — cria o projeto no banco se ainda não existir.
-2. **Buscar scan anterior** — carrega as issues abertas e fechadas do último scan do mesmo projeto/branch.
-3. **Comparar issues** — aplica o algoritmo de tracking para determinar quais issues são novas, quais continuam abertas, quais foram corrigidas e quais reapareceram.
-4. **Avaliar quality gate** — verifica se o projeto satisfaz todas as condições configuradas.
-5. **Salvar no banco** — persiste o scan, as issues e as métricas em uma única transação.
-6. **Indexar para busca** — envia as issues para o backend de busca (ZincSearch ou Postgres FTS).
-7. **Disparar webhooks** — notifica sistemas externos registrados (CI, Slack, etc.).
+1. **Registrar o projeto** — cria o projeto no banco se ainda não existir (abort on fail).
+2. **Buscar scan anterior** — carrega o último scan do mesmo projeto para tracking (skip on fail).
+3. **Comparar issues** — aplica o algoritmo de tracking para determinar quais issues são novas, quais continuam abertas, quais foram corrigidas e quais reapareceram (abort on fail).
+4. **Avaliar quality gate** — verifica se o projeto satisfaz todas as condições configuradas (skip on fail).
+5. **Inserir scan** — persiste o registro do scan com métricas e status do gate (abort on fail).
+6. **Inserir issues** — bulk insert de todas as issues via COPY protocol (abort on fail).
+7. **Inserir métricas** — bulk insert das medidas agregadas (abort on fail).
+8. **Indexar para busca** — enfileira indexação async no backend de busca (skip on fail).
+
+Webhooks são disparados pelo handler HTTP após o pipeline retornar, não dentro do pipeline em si.
 
 A resposta retorna `gate_status` (OK ou ERROR), contagem de issues novas e fechadas. Vamos aprofundar os passos mais interessantes:
 
@@ -898,7 +901,7 @@ No modo `pgnotify`, o fluxo é:
 
 ## Parte 8: Autenticação e Autorização
 
-### Três formas de se autenticar
+### Quatro formas de se autenticar
 
 ```mermaid
 %%{init: {
@@ -940,16 +943,26 @@ graph TB
         T1 --> T2 --> T3
     end
 
+    subgraph SCANNER ["  🔧  4. Scanner Token (pré-compartilhado)  "]
+        S1(["Authorization: Bearer <scanner-token>"]):::req
+        S2["🔑 Token == OLLANTA_SCANNER_TOKEN?"]:::step
+        S3(["✅ Aceita como usuário 'scanner'
+Sem consulta ao banco"]):::ok
+        S1 --> S2 --> S3
+    end
+
     classDef req  fill:#dbeafe,stroke:#3b82f6,stroke-width:2px,color:#1e3a5f
     classDef step fill:#fef9c3,stroke:#d97706,stroke-width:2px,color:#1c1917
     classDef ok   fill:#d1fae5,stroke:#059669,stroke-width:2px,color:#064e3b
 
-    style PWD   fill:#fffbeb,stroke:#fbbf24,stroke-width:2px,stroke-dasharray:6 3
-    style OAUTH fill:#eff6ff,stroke:#93c5fd,stroke-width:2px,stroke-dasharray:6 3
-    style TOKEN fill:#f5f3ff,stroke:#c4b5fd,stroke-width:2px,stroke-dasharray:6 3
+    style PWD     fill:#fffbeb,stroke:#fbbf24,stroke-width:2px,stroke-dasharray:6 3
+    style OAUTH   fill:#eff6ff,stroke:#93c5fd,stroke-width:2px,stroke-dasharray:6 3
+    style TOKEN   fill:#f5f3ff,stroke:#c4b5fd,stroke-width:2px,stroke-dasharray:6 3
+    style SCANNER fill:#f0fdf4,stroke:#6ee7b7,stroke-width:2px,stroke-dasharray:6 3
 
     PWD ~~~ OAUTH
     OAUTH ~~~ TOKEN
+    TOKEN ~~~ SCANNER
 ```
 
 | Tipo de token | Prefixo | Duração | Uso típico |
@@ -957,6 +970,9 @@ graph TB
 | **Access Token** | (JWT) | 15 minutos | Navegação na UI, chamadas de API |
 | **Refresh Token** | `ort_` | 30 dias | Renovar o access token sem re-login |
 | **API Token** | `olt_` | Sem expiração | Automação, CI/CD, scanner |
+| **Scanner Token** | *(configurável)* | Sem expiração | Push de relatórios sem conta de usuário |
+
+**Scanner Token (pré-compartilhado):** O Ollanta aceita um token pré-compartilhado para o push de scans via CI/CD, evitando a necessidade de criar uma conta de usuário. Configure `OLLANTA_SCANNER_TOKEN` no servidor e `OLLANTA_TOKEN` no scanner com o mesmo valor. Se o Bearer token coincidir, a requisição é aceita como um usuário sintético `scanner` — sem consulta ao banco.
 
 ### Permissões
 
@@ -1047,6 +1063,7 @@ As mais importantes para configurar o servidor:
 | `OLLANTA_JWT_EXPIRY` | `15m` | Duração do access token |
 | `OLLANTA_ZINCSEARCH_URL` | `http://localhost:4080` | URL do ZincSearch |
 | `OLLANTA_LOG_LEVEL` | `info` | Nível de log |
+| `OLLANTA_SCANNER_TOKEN` | *(vazio)* | Token pré-compartilhado para push do scanner. Se vazio, push requer JWT ou API token |
 
 OAuth (opcional — configure para habilitar login social):
 
@@ -1182,6 +1199,7 @@ flowchart TB
 | `PUT` | `/api/v1/projects/{key}/new-code` | `project_admin` | Configurar new code period |
 | `POST/GET` | `/api/v1/projects/{key}/webhooks` | `project_admin` | Gerenciar webhooks |
 | `POST` | `/api/v1/admin/reindex` | `admin` | Reindexar busca |
+| `GET` | `/api/v1/system/info` | `admin` | Informações do sistema (versão, stats) |
 
 ---
 
@@ -1254,6 +1272,7 @@ O schema evolui via migrações numeradas, aplicadas em ordem:
 | 016 | Coluna `resolution` em `issues` | Motivo de fechamento (fixed, false_positive, won't_fix) |
 | 017 | `engine_id` + `secondary_locations` | Suporte multi-engine e contexto expandido |
 | 018 | `changelog` | Histórico de transições de issues |
+| 019 | Fix `quality_profiles` | Remove perfis Java/C# (não suportados), adiciona perfil Rust |
 
 ---
 
