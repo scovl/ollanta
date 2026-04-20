@@ -47,6 +47,52 @@ func (s *MeilisearchSearcher) SearchProjects(_ context.Context, req SearchReques
 	return s.search(indexProjects, req)
 }
 
+// buildFilter joins a field→value map into a Meilisearch AND filter string.
+func buildFilter(f map[string]string) string {
+	parts := make([]string, 0, len(f))
+	for k, v := range f {
+		parts = append(parts, fmt.Sprintf("%s = %q", k, v))
+	}
+	return strings.Join(parts, " AND ")
+}
+
+// convertHits casts each raw Meilisearch hit to map[string]interface{}.
+func convertHits(raw []interface{}) []map[string]interface{} {
+	out := make([]map[string]interface{}, len(raw))
+	for i, h := range raw {
+		if m, ok := h.(map[string]interface{}); ok {
+			out[i] = m
+		} else {
+			out[i] = map[string]interface{}{"_raw": h}
+		}
+	}
+	return out
+}
+
+// convertFacetDistribution converts the untyped Meilisearch facet payload to
+// a typed map[facet]map[value]count.
+func convertFacetDistribution(raw interface{}) map[string]map[string]int {
+	fd, ok := raw.(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	result := make(map[string]map[string]int, len(fd))
+	for facetName, facetVals := range fd {
+		vals, ok := facetVals.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		m := make(map[string]int, len(vals))
+		for k, v := range vals {
+			if n, ok := v.(float64); ok {
+				m[k] = int(n)
+			}
+		}
+		result[facetName] = m
+	}
+	return result
+}
+
 func (s *MeilisearchSearcher) search(index string, req SearchRequest) (*SearchResult, error) {
 	limit := int64(req.Limit)
 	if limit <= 0 {
@@ -59,11 +105,7 @@ func (s *MeilisearchSearcher) search(index string, req SearchRequest) (*SearchRe
 	}
 
 	if len(req.Filter) > 0 {
-		parts := make([]string, 0, len(req.Filter))
-		for k, v := range req.Filter {
-			parts = append(parts, fmt.Sprintf("%s = %q", k, v))
-		}
-		sr.Filter = strings.Join(parts, " AND ")
+		sr.Filter = buildFilter(req.Filter)
 	}
 
 	if len(req.Facets) > 0 {
@@ -79,34 +121,10 @@ func (s *MeilisearchSearcher) search(index string, req SearchRequest) (*SearchRe
 		return nil, fmt.Errorf("meilisearch search %s: %w", index, err)
 	}
 
-	result := &SearchResult{
-		TotalHits:        resp.EstimatedTotalHits,
-		ProcessingTimeMs: resp.ProcessingTimeMs,
-		Hits:             make([]map[string]interface{}, len(resp.Hits)),
-	}
-
-	for i, h := range resp.Hits {
-		if m, ok := h.(map[string]interface{}); ok {
-			result.Hits[i] = m
-		} else {
-			result.Hits[i] = map[string]interface{}{"_raw": h}
-		}
-	}
-
-	if fd, ok := resp.FacetDistribution.(map[string]interface{}); ok {
-		result.FacetDistribution = make(map[string]map[string]int, len(fd))
-		for facetName, facetVals := range fd {
-			if vals, ok := facetVals.(map[string]interface{}); ok {
-				m := make(map[string]int, len(vals))
-				for k, v := range vals {
-					if n, ok := v.(float64); ok {
-						m[k] = int(n)
-					}
-				}
-				result.FacetDistribution[facetName] = m
-			}
-		}
-	}
-
-	return result, nil
+	return &SearchResult{
+		TotalHits:         resp.EstimatedTotalHits,
+		ProcessingTimeMs:  resp.ProcessingTimeMs,
+		Hits:              convertHits(resp.Hits),
+		FacetDistribution: convertFacetDistribution(resp.FacetDistribution),
+	}, nil
 }

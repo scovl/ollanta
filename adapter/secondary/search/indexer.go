@@ -140,6 +140,35 @@ func (idx *MeilisearchIndexer) DeleteScanIssues(_ context.Context, scanID int64)
 	return err
 }
 
+// reindexProject pages through all issues for a single project and indexes them.
+func (idx *MeilisearchIndexer) reindexProject(ctx context.Context, p *model.Project, issueRepo port.IIssueRepo) error {
+	pid := p.ID
+	for offset := 0; ; offset += 1000 {
+		issues, _, err := issueRepo.Query(ctx, model.IssueFilter{
+			ProjectID: &pid,
+			Limit:     1000,
+			Offset:    offset,
+		})
+		if err != nil {
+			return fmt.Errorf("query issues for reindex project %s: %w", p.Key, err)
+		}
+		if len(issues) == 0 {
+			break
+		}
+		rows := make([]model.IssueRow, len(issues))
+		for i, iss := range issues {
+			rows[i] = *iss
+		}
+		if err := idx.IndexIssues(ctx, p.Key, rows); err != nil {
+			return fmt.Errorf("index issues for project %s: %w", p.Key, err)
+		}
+		if len(issues) < 1000 {
+			break
+		}
+	}
+	return nil
+}
+
 // ReindexAll rebuilds the issues index from the database.
 func (idx *MeilisearchIndexer) ReindexAll(ctx context.Context, issueRepo port.IIssueRepo, projectRepo port.IProjectRepo) error {
 	if _, err := idx.client.Index(indexIssues).DeleteAllDocuments(); err != nil {
@@ -152,31 +181,8 @@ func (idx *MeilisearchIndexer) ReindexAll(ctx context.Context, issueRepo port.II
 	}
 
 	for _, p := range projects {
-		issOffset := 0
-		pid := p.ID
-		for {
-			issues, _, err := issueRepo.Query(ctx, model.IssueFilter{
-				ProjectID: &pid,
-				Limit:     1000,
-				Offset:    issOffset,
-			})
-			if err != nil {
-				return fmt.Errorf("query issues for reindex project %s: %w", p.Key, err)
-			}
-			if len(issues) == 0 {
-				break
-			}
-			rows := make([]model.IssueRow, len(issues))
-			for i, iss := range issues {
-				rows[i] = *iss
-			}
-			if err := idx.IndexIssues(ctx, p.Key, rows); err != nil {
-				return fmt.Errorf("index issues for project %s: %w", p.Key, err)
-			}
-			issOffset += len(issues)
-			if len(issues) < 1000 {
-				break
-			}
+		if err := idx.reindexProject(ctx, p, issueRepo); err != nil {
+			return err
 		}
 	}
 	return nil

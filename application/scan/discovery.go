@@ -26,6 +26,49 @@ type DiscoveredFile struct {
 	Language string // canonical language identifier (e.g. "go", "javascript")
 }
 
+// makeWalkFunc returns a WalkDir callback that appends discovered source files to results.
+func makeWalkFunc(baseDir string, exclusions []string, seen map[string]bool, results *[]DiscoveredFile) func(string, os.DirEntry, error) error {
+	return func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return nil // skip unreadable entries
+		}
+		if d.IsDir() {
+			if defaultExcludedDirs[d.Name()] {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		lang, ok := model.ExtensionToLanguage[strings.ToLower(filepath.Ext(path))]
+		if !ok {
+			return nil
+		}
+
+		abs, err := filepath.Abs(path)
+		if err != nil || seen[abs] {
+			return nil
+		}
+
+		rel, _ := filepath.Rel(baseDir, abs)
+		if matchesAny(rel, exclusions) {
+			return nil
+		}
+
+		seen[abs] = true
+		*results = append(*results, DiscoveredFile{Path: abs, Language: lang})
+		return nil
+	}
+}
+
+// discoverDir walks a single root directory and appends discovered files to results.
+func discoverDir(root, baseDir string, exclusions []string, seen map[string]bool, results *[]DiscoveredFile) error {
+	info, err := os.Stat(root)
+	if err != nil || !info.IsDir() {
+		return nil
+	}
+	return filepath.WalkDir(root, makeWalkFunc(baseDir, exclusions, seen, results))
+}
+
 // Discover walks sourceDirs under baseDir and returns all source files whose
 // extension is recognised by model.ExtensionToLanguage.
 //
@@ -46,46 +89,10 @@ func Discover(baseDir string, sourceDirs []string, exclusions []string) ([]Disco
 		if !filepath.IsAbs(dir) {
 			root = filepath.Join(baseDir, dir)
 		}
-		// Strip Go-style recursive suffix
 		root = strings.TrimSuffix(root, "/...")
 		root = strings.TrimSuffix(root, `\...`)
 
-		info, err := os.Stat(root)
-		if err != nil || !info.IsDir() {
-			continue
-		}
-
-		err = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-			if err != nil {
-				return nil // skip unreadable entries
-			}
-			if d.IsDir() {
-				if defaultExcludedDirs[d.Name()] {
-					return filepath.SkipDir
-				}
-				return nil
-			}
-
-			lang, ok := model.ExtensionToLanguage[strings.ToLower(filepath.Ext(path))]
-			if !ok {
-				return nil
-			}
-
-			abs, err := filepath.Abs(path)
-			if err != nil || seen[abs] {
-				return nil
-			}
-
-			rel, _ := filepath.Rel(baseDir, abs)
-			if matchesAny(rel, exclusions) {
-				return nil
-			}
-
-			seen[abs] = true
-			results = append(results, DiscoveredFile{Path: abs, Language: lang})
-			return nil
-		})
-		if err != nil {
+		if err := discoverDir(root, baseDir, exclusions, seen, &results); err != nil {
 			return nil, err
 		}
 	}

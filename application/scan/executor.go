@@ -35,6 +35,57 @@ func NewExecutor(p port.IParser, analyzers []port.IAnalyzer) *Executor {
 	return &Executor{parser: p, analyzers: analyzers, workers: w}
 }
 
+// parseGoFile parses a Go source file using the stdlib parser.
+// Returns nil, nil if parsing fails.
+func parseGoFile(path string, src []byte) (*goast.File, *token.FileSet) {
+	fset := token.NewFileSet()
+	af, err := parser.ParseFile(fset, path, src, parser.AllErrors)
+	if err != nil {
+		return nil, nil
+	}
+	return af, fset
+}
+
+// analyzeFile runs all matching analyzers on a single file and returns the issues found.
+// Returns nil on read or parse failure.
+func (e *Executor) analyzeFile(ctx context.Context, f DiscoveredFile) []*model.Issue {
+	src, err := os.ReadFile(f.Path)
+	if err != nil {
+		return nil
+	}
+
+	var parsedFile any
+	if e.parser != nil {
+		parsedFile, _ = e.parser.ParseSource(f.Path, src, f.Language)
+	}
+
+	var goFile *goast.File
+	var goFset *token.FileSet
+	if f.Language == model.LangGo {
+		goFile, goFset = parseGoFile(f.Path, src)
+	}
+
+	ac := port.AnalysisContext{
+		Path:       f.Path,
+		Language:   f.Language,
+		Source:     src,
+		ParsedFile: parsedFile,
+		GoFile:     goFile,
+		GoFileSet:  goFset,
+	}
+
+	var issues []*model.Issue
+	for _, a := range e.analyzers {
+		if a.Language() != f.Language && a.Language() != "*" {
+			continue
+		}
+		if err := a.Check(ctx, ac, &issues); err != nil {
+			log.Printf("ollanta: analyser %s error on %s: %v", a.Key(), f.Path, err)
+		}
+	}
+	return issues
+}
+
 // Run analyses all files in parallel and returns the aggregated issues.
 // Individual file failures are isolated: a crash or parse error produces an
 // empty result for that file rather than aborting the whole run.
@@ -57,7 +108,6 @@ func (e *Executor) Run(ctx context.Context, files []DiscoveredFile) ([]*model.Is
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			// Fault isolation: recover from any panic in analyser code.
 			defer func() {
 				if r := recover(); r != nil {
 					log.Printf("ollanta: panic analyzing %s: %v", f.Path, r)
@@ -72,49 +122,7 @@ func (e *Executor) Run(ctx context.Context, files []DiscoveredFile) ([]*model.Is
 			default:
 			}
 
-			src, err := os.ReadFile(f.Path)
-			if err != nil {
-				out <- result{}
-				return
-			}
-
-			// Parse via the injected IParser (tree-sitter / language server).
-			var parsedFile any
-			if e.parser != nil {
-				parsedFile, _ = e.parser.ParseSource(f.Path, src, f.Language)
-			}
-
-			// For Go files, also produce a stdlib AST for rules that prefer it.
-			var goFile *goast.File
-			var goFset *token.FileSet
-			if f.Language == model.LangGo {
-				fset := token.NewFileSet()
-				af, err := parser.ParseFile(fset, f.Path, src, parser.AllErrors)
-				if err == nil {
-					goFile = af
-					goFset = fset
-				}
-			}
-
-			ac := port.AnalysisContext{
-				Path:       f.Path,
-				Language:   f.Language,
-				Source:     src,
-				ParsedFile: parsedFile,
-				GoFile:     goFile,
-				GoFileSet:  goFset,
-			}
-
-			var issues []*model.Issue
-			for _, a := range e.analyzers {
-				if a.Language() != f.Language && a.Language() != "*" {
-					continue
-				}
-				if err := a.Check(ctx, ac, &issues); err != nil {
-					log.Printf("ollanta: analyser %s error on %s: %v", a.Key(), f.Path, err)
-				}
-			}
-			out <- result{issues: issues}
+			out <- result{issues: e.analyzeFile(ctx, f)}
 		}()
 	}
 

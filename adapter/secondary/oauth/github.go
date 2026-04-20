@@ -33,6 +33,25 @@ func (p *GitHubProvider) AuthURL(state string) string {
 	return "https://github.com/login/oauth/authorize?" + v.Encode()
 }
 
+// githubPrimaryEmail fetches the verified primary email from the /user/emails endpoint.
+// Returns empty string on any error or if no matching address is found.
+func githubPrimaryEmail(ctx context.Context, token string) string {
+	emails, err := githubAPIGet[[]struct {
+		Email    string `json:"email"`
+		Primary  bool   `json:"primary"`
+		Verified bool   `json:"verified"`
+	}](ctx, "https://api.github.com/user/emails", token)
+	if err != nil {
+		return ""
+	}
+	for _, e := range emails {
+		if e.Primary && e.Verified {
+			return e.Email
+		}
+	}
+	return ""
+}
+
 func (p *GitHubProvider) Exchange(ctx context.Context, code string) (*model.OAuthUser, error) {
 	v := url.Values{
 		"client_id":     {p.ClientID},
@@ -76,19 +95,7 @@ func (p *GitHubProvider) Exchange(ctx context.Context, code string) (*model.OAut
 
 	email := user.Email
 	if email == "" {
-		emails, err := githubAPIGet[[]struct {
-			Email    string `json:"email"`
-			Primary  bool   `json:"primary"`
-			Verified bool   `json:"verified"`
-		}](ctx, "https://api.github.com/user/emails", tokenResp.AccessToken)
-		if err == nil {
-			for _, e := range emails {
-				if e.Primary && e.Verified {
-					email = e.Email
-					break
-				}
-			}
-		}
+		email = githubPrimaryEmail(ctx, tokenResp.AccessToken)
 	}
 
 	name := user.Name

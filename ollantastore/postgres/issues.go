@@ -119,19 +119,9 @@ func (r *IssueRepository) BulkInsert(ctx context.Context, issues []IssueRow) err
 	return err
 }
 
-// Query returns issues matching the filter, plus the total count before LIMIT/OFFSET.
-func (r *IssueRepository) Query(ctx context.Context, f IssueFilter) ([]*IssueRow, int, error) {
-	if f.Limit <= 0 {
-		f.Limit = 100
-	}
-	if f.Limit > 1000 {
-		f.Limit = 1000
-	}
-
-	conds := []string{}
-	args := []interface{}{}
+// buildIssueFilter constructs WHERE clause conditions and argument values from f.
+func buildIssueFilter(f IssueFilter) (conds []string, args []interface{}) {
 	n := 1
-
 	if f.ProjectID != nil {
 		conds = append(conds, fmt.Sprintf("project_id = $%d", n))
 		args = append(args, *f.ProjectID)
@@ -172,6 +162,19 @@ func (r *IssueRepository) Query(ctx context.Context, f IssueFilter) ([]*IssueRow
 		args = append(args, *f.EngineID)
 		n++
 	}
+	return
+}
+
+// Query returns issues matching the filter, plus the total count before LIMIT/OFFSET.
+func (r *IssueRepository) Query(ctx context.Context, f IssueFilter) ([]*IssueRow, int, error) {
+	if f.Limit <= 0 {
+		f.Limit = 100
+	}
+	if f.Limit > 1000 {
+		f.Limit = 1000
+	}
+
+	conds, args := buildIssueFilter(f)
 
 	where := ""
 	if len(conds) > 0 {
@@ -184,6 +187,7 @@ func (r *IssueRepository) Query(ctx context.Context, f IssueFilter) ([]*IssueRow
 		return nil, 0, fmt.Errorf("count issues: %w", err)
 	}
 
+	n := len(args) + 1
 	args = append(args, f.Limit, f.Offset)
 	listQuery := fmt.Sprintf(`
 		SELECT id, scan_id, project_id, rule_key, component_path,
@@ -216,6 +220,61 @@ func (r *IssueRepository) Query(ctx context.Context, f IssueFilter) ([]*IssueRow
 	return issues, total, rows.Err()
 }
 
+// facetRow holds a single facet result: a column value and its issue count.
+type facetRow struct {
+	key   string
+	count int
+}
+
+// scanFacetRows reads (key, count) pairs from rows into a facetRow slice.
+func scanFacetRows(rows pgx.Rows) ([]facetRow, error) {
+	defer rows.Close()
+	var out []facetRow
+	for rows.Next() {
+		var fr facetRow
+		if err := rows.Scan(&fr.key, &fr.count); err != nil {
+			return nil, err
+		}
+		out = append(out, fr)
+	}
+	return out, rows.Err()
+}
+
+// applyFacet copies facetRow results into a string→int map.
+func applyFacet(dst map[string]int, rows []facetRow) {
+	for _, r := range rows {
+		dst[r.key] = r.count
+	}
+}
+
+// queryFacet counts issues grouped by column for the given project and scan.
+func (r *IssueRepository) queryFacet(ctx context.Context, column string, projectID, scanID int64) ([]facetRow, error) {
+	q := fmt.Sprintf(`
+		SELECT %s, COUNT(*) FROM issues
+		WHERE project_id = $1 AND scan_id = $2
+		GROUP BY %s`, column, column)
+	rows, err := r.db.Pool.Query(ctx, q, projectID, scanID)
+	if err != nil {
+		return nil, err
+	}
+	return scanFacetRows(rows)
+}
+
+// queryTopFacet counts issues grouped by column, returning only the top-N results.
+func (r *IssueRepository) queryTopFacet(ctx context.Context, column string, limit int, projectID, scanID int64) ([]facetRow, error) {
+	q := fmt.Sprintf(`
+		SELECT %s, COUNT(*) AS cnt FROM issues
+		WHERE project_id = $1 AND scan_id = $2
+		GROUP BY %s
+		ORDER BY cnt DESC
+		LIMIT %d`, column, column, limit)
+	rows, err := r.db.Pool.Query(ctx, q, projectID, scanID)
+	if err != nil {
+		return nil, err
+	}
+	return scanFacetRows(rows)
+}
+
 // Facets returns count distributions by severity, type, rule, status,
 // engine_id, file (top 10), and tags for a given scan.
 // Inspired by SonarQube's sticky faceted search pattern.
@@ -230,103 +289,41 @@ func (r *IssueRepository) Facets(ctx context.Context, projectID, scanID int64) (
 		ByTags:     make(map[string]int),
 	}
 
-	type facetRow struct {
-		key   string
-		count int
-	}
-
-	queryFacet := func(column string) ([]facetRow, error) {
-		q := fmt.Sprintf(`
-			SELECT %s, COUNT(*) FROM issues
-			WHERE project_id = $1 AND scan_id = $2
-			GROUP BY %s`, column, column)
-		rows, err := r.db.Pool.Query(ctx, q, projectID, scanID)
-		if err != nil {
-			return nil, err
-		}
-		defer rows.Close()
-		var out []facetRow
-		for rows.Next() {
-			var fr facetRow
-			if err := rows.Scan(&fr.key, &fr.count); err != nil {
-				return nil, err
-			}
-			out = append(out, fr)
-		}
-		return out, rows.Err()
-	}
-
-	// Top N facet — limits results to the most frequent entries.
-	queryTopFacet := func(column string, limit int) ([]facetRow, error) {
-		q := fmt.Sprintf(`
-			SELECT %s, COUNT(*) AS cnt FROM issues
-			WHERE project_id = $1 AND scan_id = $2
-			GROUP BY %s
-			ORDER BY cnt DESC
-			LIMIT %d`, column, column, limit)
-		rows, err := r.db.Pool.Query(ctx, q, projectID, scanID)
-		if err != nil {
-			return nil, err
-		}
-		defer rows.Close()
-		var out []facetRow
-		for rows.Next() {
-			var fr facetRow
-			if err := rows.Scan(&fr.key, &fr.count); err != nil {
-				return nil, err
-			}
-			out = append(out, fr)
-		}
-		return out, rows.Err()
-	}
-
-	sev, err := queryFacet("severity")
+	sev, err := r.queryFacet(ctx, "severity", projectID, scanID)
 	if err != nil {
 		return nil, fmt.Errorf("facet severity: %w", err)
 	}
-	for _, r := range sev {
-		facets.BySeverity[r.key] = r.count
-	}
+	applyFacet(facets.BySeverity, sev)
 
-	typ, err := queryFacet("type")
+	typ, err := r.queryFacet(ctx, "type", projectID, scanID)
 	if err != nil {
 		return nil, fmt.Errorf("facet type: %w", err)
 	}
-	for _, r := range typ {
-		facets.ByType[r.key] = r.count
-	}
+	applyFacet(facets.ByType, typ)
 
-	rule, err := queryTopFacet("rule_key", 20)
+	rule, err := r.queryTopFacet(ctx, "rule_key", 20, projectID, scanID)
 	if err != nil {
 		return nil, fmt.Errorf("facet rule: %w", err)
 	}
-	for _, r := range rule {
-		facets.ByRule[r.key] = r.count
-	}
+	applyFacet(facets.ByRule, rule)
 
-	st, err := queryFacet("status")
+	st, err := r.queryFacet(ctx, "status", projectID, scanID)
 	if err != nil {
 		return nil, fmt.Errorf("facet status: %w", err)
 	}
-	for _, r := range st {
-		facets.ByStatus[r.key] = r.count
-	}
+	applyFacet(facets.ByStatus, st)
 
-	eng, err := queryFacet("engine_id")
+	eng, err := r.queryFacet(ctx, "engine_id", projectID, scanID)
 	if err != nil {
 		return nil, fmt.Errorf("facet engine_id: %w", err)
 	}
-	for _, r := range eng {
-		facets.ByEngineID[r.key] = r.count
-	}
+	applyFacet(facets.ByEngineID, eng)
 
-	file, err := queryTopFacet("component_path", 10)
+	file, err := r.queryTopFacet(ctx, "component_path", 10, projectID, scanID)
 	if err != nil {
 		return nil, fmt.Errorf("facet file: %w", err)
 	}
-	for _, r := range file {
-		facets.ByFile[r.key] = r.count
-	}
+	applyFacet(facets.ByFile, file)
 
 	// Tags facet uses unnest since tags is an array column.
 	tagRows, err := r.db.Pool.Query(ctx, `

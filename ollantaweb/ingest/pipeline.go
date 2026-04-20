@@ -98,6 +98,38 @@ func NewPipeline(
 	}
 }
 
+// parseAnalysisDate parses an RFC 3339 string, falling back to UTC now.
+func parseAnalysisDate(s string) time.Time {
+	if s != "" {
+		if t, err := time.Parse(time.RFC3339, s); err == nil {
+			return t
+		}
+	}
+	return time.Now().UTC()
+}
+
+// fetchPrevIssues retrieves issues from the previous scan for tracking purposes.
+// Returns nil if prevScan is nil or the query fails.
+func (p *Pipeline) fetchPrevIssues(ctx context.Context, projectID int64, prevScan *postgres.Scan) []*domain.Issue {
+	if prevScan == nil {
+		return nil
+	}
+	sid := prevScan.ID
+	rows, _, err := p.issues.Query(ctx, postgres.IssueFilter{
+		ProjectID: &projectID,
+		ScanID:    &sid,
+		Limit:     10000,
+	})
+	if err != nil {
+		return nil
+	}
+	out := make([]*domain.Issue, len(rows))
+	for i, r := range rows {
+		out[i] = issueRowToDomain(r)
+	}
+	return out
+}
+
 // Ingest persists a scan report and returns a summary of the results.
 // Steps 1–9 run inside a single PostgreSQL transaction; step 11 is async.
 func (p *Pipeline) Ingest(ctx context.Context, req *IngestRequest) (*IngestResult, error) {
@@ -105,12 +137,7 @@ func (p *Pipeline) Ingest(ctx context.Context, req *IngestRequest) (*IngestResul
 		return nil, fmt.Errorf("project_key is required")
 	}
 
-	analysisDate := time.Now().UTC()
-	if req.Metadata.AnalysisDate != "" {
-		if t, err := time.Parse(time.RFC3339, req.Metadata.AnalysisDate); err == nil {
-			analysisDate = t
-		}
-	}
+	analysisDate := parseAnalysisDate(req.Metadata.AnalysisDate)
 
 	// ── 1. Upsert project ────────────────────────────────────────────────────
 	project := &postgres.Project{
@@ -136,22 +163,7 @@ func (p *Pipeline) Ingest(ctx context.Context, req *IngestRequest) (*IngestResul
 	})
 
 	// ── 3. Issue tracking ────────────────────────────────────────────────────
-	var prevIssues []*domain.Issue
-	if prevScan != nil {
-		pid := project.ID
-		sid := prevScan.ID
-		rows, _, err := p.issues.Query(ctx, postgres.IssueFilter{
-			ProjectID: &pid,
-			ScanID:    &sid,
-			Limit:     10000,
-		})
-		if err == nil {
-			prevIssues = make([]*domain.Issue, len(rows))
-			for i, r := range rows {
-				prevIssues[i] = issueRowToDomain(r)
-			}
-		}
-	}
+	prevIssues := p.fetchPrevIssues(ctx, project.ID, prevScan)
 	trackResult := tracking.Track(req.Issues, prevIssues)
 
 	// ── 4. Quality gate evaluation ───────────────────────────────────────────
