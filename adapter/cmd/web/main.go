@@ -89,11 +89,14 @@ searchWorker = worker
 pipeline := ingest.NewIngestUseCase(projects, scans, issues, measures, searchWorker, &webhookDispatchAdapter{dispatcher})
 
 // ?? HTTP router ???????????????????????????????????????????????????????
-handler := api.NewRouter(
-cfg, projects, scans, issues, measures, users, groups, tokens,
-sessions, perms, searcher, indexer, pipeline, profiles, gates,
-periods, webhooksRepo, dispatcher, metricsReg,
-)
+handler := api.NewRouter(&api.RouterDeps{
+	Cfg: cfg, Projects: projects, Scans: scans, Issues: issues,
+	Measures: measures, Users: users, Groups: groups, Tokens: tokens,
+	Sessions: sessions, Perms: perms, Searcher: searcher, Indexer: indexer,
+	Pipeline: pipeline, Profiles: profiles, Gates: gates,
+	Periods: periods, Webhooks: webhooksRepo, Dispatcher: dispatcher,
+	Metrics: metricsReg,
+})
 
 // ?? HTTP server with graceful shutdown ????????????????????????????????
 srv := &http.Server{

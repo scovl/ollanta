@@ -13,28 +13,31 @@ import (
 	"github.com/scovl/ollanta/adapter/secondary/webhook"
 )
 
+// RouterDeps groups all dependencies required by NewRouter.
+type RouterDeps struct {
+	Cfg        *config.Config
+	Projects   *postgres.ProjectRepository
+	Scans      *postgres.ScanRepository
+	Issues     *postgres.IssueRepository
+	Measures   *postgres.MeasureRepository
+	Users      *postgres.UserRepository
+	Groups     *postgres.GroupRepository
+	Tokens     *postgres.TokenRepository
+	Sessions   *postgres.SessionRepository
+	Perms      *postgres.PermissionRepository
+	Searcher   *search.MeilisearchSearcher
+	Indexer    *search.MeilisearchIndexer
+	Pipeline   *ingest.IngestUseCase
+	Profiles   *postgres.ProfileRepository
+	Gates      *postgres.GateRepository
+	Periods    *postgres.NewCodePeriodRepository
+	Webhooks   *postgres.WebhookRepository
+	Dispatcher *webhook.Dispatcher
+	Metrics    *telemetry.Registry
+}
+
 // NewRouter builds and returns the complete chi router for the ollantaweb server.
-func NewRouter(
-	cfg *config.Config,
-	projects *postgres.ProjectRepository,
-	scans *postgres.ScanRepository,
-	issues *postgres.IssueRepository,
-	measures *postgres.MeasureRepository,
-	users *postgres.UserRepository,
-	groups *postgres.GroupRepository,
-	tokens *postgres.TokenRepository,
-	sessions *postgres.SessionRepository,
-	perms *postgres.PermissionRepository,
-	searcher *search.MeilisearchSearcher,
-	indexer *search.MeilisearchIndexer,
-	pipeline *ingest.IngestUseCase,
-	profiles *postgres.ProfileRepository,
-	gates *postgres.GateRepository,
-	periods *postgres.NewCodePeriodRepository,
-	webhooks *postgres.WebhookRepository,
-	dispatcher *webhook.Dispatcher,
-	metricsReg *telemetry.Registry,
-) http.Handler {
+func NewRouter(d *RouterDeps) http.Handler {
 	r := chi.NewRouter()
 
 	// ── Global middleware ──────────────────────────────────────────────────
@@ -48,27 +51,27 @@ func NewRouter(
 	// ── Health (always public) ─────────────────────────────────────────────
 	r.Get("/healthz", Liveness)
 	r.Get("/readyz", Readiness)
-	r.Get("/metrics", metricsReg.Handler())
+	r.Get("/metrics", d.Metrics.Handler())
 
 	// ── Auth middleware ────────────────────────────────────────────────────
-	authMW := NewAuthMiddleware(users, tokens, sessions, []byte(cfg.JWTSecret))
+	authMW := NewAuthMiddleware(d.Users, d.Tokens, d.Sessions, []byte(d.Cfg.JWTSecret))
 
 	// ── Handlers ──────────────────────────────────────────────────────────
-	authH := NewAuthHandler(cfg, users, groups, sessions)
-	usersH := NewUsersHandler(users, tokens)
-	groupsH := NewGroupsHandler(groups)
-	tokensH := NewTokensHandler(tokens, projects, perms)
-	permsH := NewPermsHandler(perms, projects)
-	profilesH := NewProfilesHandler(profiles, projects)
-	gatesH := NewGatesHandler(gates, projects)
-	periodsH := NewNewCodePeriodHandler(periods, projects)
-	webhooksH := NewWebhooksHandler(webhooks, projects, dispatcher)
+	authH := NewAuthHandler(d.Cfg, d.Users, d.Groups, d.Sessions)
+	usersH := NewUsersHandler(d.Users, d.Tokens)
+	groupsH := NewGroupsHandler(d.Groups)
+	tokensH := NewTokensHandler(d.Tokens, d.Projects, d.Perms)
+	permsH := NewPermsHandler(d.Perms, d.Projects)
+	profilesH := NewProfilesHandler(d.Profiles, d.Projects)
+	gatesH := NewGatesHandler(d.Gates, d.Projects)
+	periodsH := NewNewCodePeriodHandler(d.Periods, d.Projects)
+	webhooksH := NewWebhooksHandler(d.Webhooks, d.Projects, d.Dispatcher)
 
-	ph := &ProjectsHandler{repo: projects}
-	sh := &ScansHandler{scans: scans, projects: projects, pipeline: pipeline}
-	ih := &IssuesHandler{issues: issues, projects: projects}
-	mh := &MeasuresHandler{measures: measures, projects: projects}
-	srh := &SearchHandler{searcher: searcher}
+	ph := &ProjectsHandler{repo: d.Projects}
+	sh := &ScansHandler{scans: d.Scans, projects: d.Projects, pipeline: d.Pipeline}
+	ih := &IssuesHandler{issues: d.Issues, projects: d.Projects}
+	mh := &MeasuresHandler{measures: d.Measures, projects: d.Projects}
+	srh := &SearchHandler{searcher: d.Searcher}
 
 	// ── API v1 ────────────────────────────────────────────────────────────
 	r.Route("/api/v1", func(r chi.Router) {
@@ -99,7 +102,7 @@ func NewRouter(
 
 			// User management (requires manage_users)
 			r.Route("/users", func(r chi.Router) {
-				r.Use(RequirePermission(perms, "manage_users"))
+				r.Use(RequirePermission(d.Perms, "manage_users"))
 				r.Get("/", usersH.List)
 				r.Post("/", usersH.Create)
 				r.Get("/{id}", usersH.Get)
@@ -111,7 +114,7 @@ func NewRouter(
 
 			// Group management (requires manage_groups)
 			r.Route("/groups", func(r chi.Router) {
-				r.Use(RequirePermission(perms, "manage_groups"))
+				r.Use(RequirePermission(d.Perms, "manage_groups"))
 				r.Get("/", groupsH.List)
 				r.Post("/", groupsH.Create)
 				r.Put("/{id}", groupsH.Update)
@@ -123,7 +126,7 @@ func NewRouter(
 
 			// Global permission management (requires admin)
 			r.Route("/permissions", func(r chi.Router) {
-				r.Use(RequirePermission(perms, "admin"))
+				r.Use(RequirePermission(d.Perms, "admin"))
 				r.Get("/global", permsH.ListGlobal)
 				r.Post("/global/grant", permsH.GrantGlobal)
 				r.Post("/global/revoke", permsH.RevokeGlobal)
@@ -144,9 +147,11 @@ func NewRouter(
 			r.Post("/projects/{key}/quality-gate", gatesH.AssignToProject)
 
 			// Project-scoped new code period
-			r.Get("/projects/{key}/new-code-period", periodsH.GetForProject)
-			r.Put("/projects/{key}/new-code-period", periodsH.SetForProject)
-			r.Delete("/projects/{key}/new-code-period", periodsH.DeleteForProject)
+			r.Route("/projects/{key}/new-code-period", func(r chi.Router) {
+				r.Get("/", periodsH.GetForProject)
+				r.Put("/", periodsH.SetForProject)
+				r.Delete("/", periodsH.DeleteForProject)
+			})
 
 			// Scans
 			r.Post("/scans", sh.Ingest)
@@ -162,21 +167,25 @@ func NewRouter(
 			// Quality profiles
 			r.Get("/profiles", profilesH.List)
 			r.Post("/profiles", profilesH.Create)
-			r.Get("/profiles/{id}", profilesH.Get)
-			r.Put("/profiles/{id}", profilesH.Update)
-			r.Delete("/profiles/{id}", profilesH.Delete)
-			r.Post("/profiles/{id}/rules", profilesH.ActivateRule)
-			r.Delete("/profiles/{id}/rules/{rule}", profilesH.DeactivateRule)
-			r.Get("/profiles/{id}/effective-rules", profilesH.EffectiveRules)
+			r.Route("/profiles/{id}", func(r chi.Router) {
+				r.Get("/", profilesH.Get)
+				r.Put("/", profilesH.Update)
+				r.Delete("/", profilesH.Delete)
+				r.Post("/rules", profilesH.ActivateRule)
+				r.Delete("/rules/{rule}", profilesH.DeactivateRule)
+				r.Get("/effective-rules", profilesH.EffectiveRules)
+			})
 
 			// Quality gates
 			r.Get("/quality-gates", gatesH.List)
 			r.Post("/quality-gates", gatesH.Create)
-			r.Get("/quality-gates/{id}", gatesH.Get)
-			r.Put("/quality-gates/{id}", gatesH.Update)
-			r.Delete("/quality-gates/{id}", gatesH.Delete)
-			r.Post("/quality-gates/{id}/conditions", gatesH.AddCondition)
-			r.Delete("/quality-gates/{id}/conditions/{cid}", gatesH.RemoveCondition)
+			r.Route("/quality-gates/{id}", func(r chi.Router) {
+				r.Get("/", gatesH.Get)
+				r.Put("/", gatesH.Update)
+				r.Delete("/", gatesH.Delete)
+				r.Post("/conditions", gatesH.AddCondition)
+				r.Delete("/conditions/{cid}", gatesH.RemoveCondition)
+			})
 
 			// New code periods (global)
 			r.Get("/new-code-periods/global", periodsH.GetGlobal)
@@ -201,11 +210,11 @@ func NewRouter(
 	// ── Admin (requires admin permission) ─────────────────────────────────
 	r.Group(func(r chi.Router) {
 		r.Use(authMW.Authenticate)
-		r.Use(RequirePermission(perms, "admin"))
+		r.Use(RequirePermission(d.Perms, "admin"))
 		r.Post("/admin/reindex", func(w http.ResponseWriter, r *http.Request) {
 			go func() {
 				ctx := r.Context()
-				if err := indexer.ReindexAll(ctx, issues, projects); err != nil {
+				if err := d.Indexer.ReindexAll(ctx, d.Issues, d.Projects); err != nil {
 					_ = err
 				}
 			}()

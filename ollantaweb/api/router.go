@@ -59,7 +59,7 @@ func NewRouter(d *RouterDeps) http.Handler {
 	r.Get("/api/v1/projects/{key}/badge", bh.QualityGate)
 
 	// ── Auth middleware ────────────────────────────────────────────────────
-	authMW := NewAuthMiddleware(d.Users, d.Tokens, d.Sessions, []byte(d.Config.JWTSecret))
+	authMW := NewAuthMiddleware(d.Users, d.Tokens, d.Sessions, []byte(d.Config.JWTSecret), d.Config.ScannerToken)
 
 	// ── Handlers ──────────────────────────────────────────────────────────
 	authH := NewAuthHandler(d.Config, d.Users, d.Groups, d.Sessions)
@@ -71,6 +71,8 @@ func NewRouter(d *RouterDeps) http.Handler {
 	gatesH := NewGatesHandler(d.Gates, d.Projects)
 	periodsH := NewNewCodePeriodHandler(d.Periods, d.Projects)
 	webhooksH := NewWebhooksHandler(d.Webhooks, d.Projects, d.Dispatcher)
+	sysH := &SystemHandler{users: d.Users, projects: d.Projects, config: d.Config}
+	rulesH := NewRulesHandler()
 
 	ph := &ProjectsHandler{repo: d.Projects}
 	sh := &ScansHandler{scans: d.Scans, projects: d.Projects, pipeline: d.Pipeline}
@@ -101,6 +103,7 @@ func NewRouter(d *RouterDeps) http.Handler {
 
 			// Current user
 			r.Get("/users/me", usersH.Me)
+			r.Put("/users/me/password", usersH.ChangePassword)
 
 			// Own tokens (self-service)
 			r.Get("/users/me/tokens", tokensH.List)
@@ -115,6 +118,7 @@ func NewRouter(d *RouterDeps) http.Handler {
 				r.Get("/{id}", usersH.Get)
 				r.Put("/{id}", usersH.Update)
 				r.Delete("/{id}", usersH.Deactivate)
+				r.Post("/{id}/reactivate", usersH.Reactivate)
 				r.Get("/{id}/tokens", usersH.ListTokens)
 				r.Delete("/{id}/tokens/{tid}", usersH.DeleteToken)
 			})
@@ -139,24 +143,38 @@ func NewRouter(d *RouterDeps) http.Handler {
 				r.Post("/global/revoke", permsH.RevokeGlobal)
 			})
 
-			// Projects
-			r.Post("/projects", ph.Create)
+			// Projects (read is open, write requires admin)
 			r.Get("/projects", ph.List)
 			r.Get("/projects/{key}", ph.Get)
+			r.Group(func(r chi.Router) {
+				r.Use(RequirePermission(d.Perms, "admin"))
+				r.Post("/projects", ph.Create)
+				r.Put("/projects/{key}", ph.Update)
+				r.Delete("/projects/{key}", ph.Delete)
+			})
 
-			// Project-level permissions (requires admin global or project admin)
+			// Project-level permissions (requires admin)
 			r.Get("/projects/{key}/permissions", permsH.ListProject)
-			r.Post("/projects/{key}/permissions/grant", permsH.GrantProject)
-			r.Post("/projects/{key}/permissions/revoke", permsH.RevokeProject)
+			r.Group(func(r chi.Router) {
+				r.Use(RequirePermission(d.Perms, "admin"))
+				r.Post("/projects/{key}/permissions/grant", permsH.GrantProject)
+				r.Post("/projects/{key}/permissions/revoke", permsH.RevokeProject)
+			})
 
-			// Project-scoped profile and gate assignments
-			r.Post("/projects/{key}/profiles", profilesH.AssignToProject)
-			r.Post("/projects/{key}/quality-gate", gatesH.AssignToProject)
+			// Project-scoped profile and gate assignments (requires admin)
+			r.Group(func(r chi.Router) {
+				r.Use(RequirePermission(d.Perms, "admin"))
+				r.Post("/projects/{key}/profiles", profilesH.AssignToProject)
+				r.Post("/projects/{key}/quality-gate", gatesH.AssignToProject)
+			})
 
-			// Project-scoped new code period
+			// Project-scoped new code period (read is open, write requires admin)
 			r.Get("/projects/{key}/new-code-period", periodsH.GetForProject)
-			r.Put("/projects/{key}/new-code-period", periodsH.SetForProject)
-			r.Delete("/projects/{key}/new-code-period", periodsH.DeleteForProject)
+			r.Group(func(r chi.Router) {
+				r.Use(RequirePermission(d.Perms, "admin"))
+				r.Put("/projects/{key}/new-code-period", periodsH.SetForProject)
+				r.Delete("/projects/{key}/new-code-period", periodsH.DeleteForProject)
+			})
 
 			// Scans
 			r.Post("/scans", sh.Ingest)
@@ -170,46 +188,77 @@ func NewRouter(d *RouterDeps) http.Handler {
 			r.Post("/issues/{id}/transition", ih.Transition)
 			r.Get("/issues/{id}/changelog", ih.Changelog)
 
+			// Rules (read-only, returns rule metadata including descriptions and examples)
+			r.Get("/rules", rulesH.List)
+			r.Get("/rules/*", rulesH.Get)
+
 			// Project overview & activity (SonarQube-inspired dashboard)
 			r.Get("/projects/{key}/overview", oh.Overview)
 			r.Get("/projects/{key}/activity", ah.Activity)
 
-			// Quality profiles
-			r.Get("/profiles", profilesH.List)
-			r.Post("/profiles", profilesH.Create)
-			r.Get("/profiles/{id}", profilesH.Get)
-			r.Put("/profiles/{id}", profilesH.Update)
-			r.Delete("/profiles/{id}", profilesH.Delete)
-			r.Post("/profiles/{id}/rules", profilesH.ActivateRule)
-			r.Delete("/profiles/{id}/rules/{rule}", profilesH.DeactivateRule)
-			r.Get("/profiles/{id}/effective-rules", profilesH.EffectiveRules)
+			// Quality profiles (read is open, write requires admin)
+			r.Route("/profiles", func(r chi.Router) {
+				r.Get("/", profilesH.List)
+				r.Get("/{id}", profilesH.Get)
+				r.Get("/{id}/effective-rules", profilesH.EffectiveRules)
+				r.Group(func(r chi.Router) {
+					r.Use(RequirePermission(d.Perms, "admin"))
+					r.Post("/", profilesH.Create)
+					r.Put("/{id}", profilesH.Update)
+					r.Delete("/{id}", profilesH.Delete)
+					r.Post("/{id}/rules", profilesH.ActivateRule)
+					r.Delete("/{id}/rules/{rule}", profilesH.DeactivateRule)
+					r.Post("/{id}/copy", profilesH.Copy)
+					r.Post("/{id}/set-default", profilesH.SetDefault)
+				})
+			})
 
-			// Quality gates
-			r.Get("/quality-gates", gatesH.List)
-			r.Post("/quality-gates", gatesH.Create)
-			r.Get("/quality-gates/{id}", gatesH.Get)
-			r.Put("/quality-gates/{id}", gatesH.Update)
-			r.Delete("/quality-gates/{id}", gatesH.Delete)
-			r.Post("/quality-gates/{id}/conditions", gatesH.AddCondition)
-			r.Delete("/quality-gates/{id}/conditions/{cid}", gatesH.RemoveCondition)
+			// Quality gates (read is open, write requires admin)
+			r.Route("/quality-gates", func(r chi.Router) {
+				r.Get("/", gatesH.List)
+				r.Get("/{id}", gatesH.Get)
+				r.Group(func(r chi.Router) {
+					r.Use(RequirePermission(d.Perms, "admin"))
+					r.Post("/", gatesH.Create)
+					r.Put("/{id}", gatesH.Update)
+					r.Delete("/{id}", gatesH.Delete)
+					r.Post("/{id}/conditions", gatesH.AddCondition)
+					r.Put("/{id}/conditions/{cid}", gatesH.UpdateCondition)
+					r.Delete("/{id}/conditions/{cid}", gatesH.RemoveCondition)
+					r.Post("/{id}/copy", gatesH.Copy)
+					r.Post("/{id}/set-default", gatesH.SetDefault)
+				})
+			})
 
-			// New code periods (global)
+			// New code periods — global (read is open, write requires admin)
 			r.Get("/new-code-periods/global", periodsH.GetGlobal)
-			r.Put("/new-code-periods/global", periodsH.SetGlobal)
+			r.Group(func(r chi.Router) {
+				r.Use(RequirePermission(d.Perms, "admin"))
+				r.Put("/new-code-periods/global", periodsH.SetGlobal)
+			})
 
-			// Webhooks
-			r.Get("/webhooks", webhooksH.List)
-			r.Post("/webhooks", webhooksH.Create)
-			r.Put("/webhooks/{id}", webhooksH.Update)
-			r.Delete("/webhooks/{id}", webhooksH.Delete)
-			r.Get("/webhooks/{id}/deliveries", webhooksH.Deliveries)
-			r.Post("/webhooks/{id}/test", webhooksH.Test)
+			// Webhooks (requires admin)
+			r.Route("/webhooks", func(r chi.Router) {
+				r.Use(RequirePermission(d.Perms, "admin"))
+				r.Get("/", webhooksH.List)
+				r.Post("/", webhooksH.Create)
+				r.Put("/{id}", webhooksH.Update)
+				r.Delete("/{id}", webhooksH.Delete)
+				r.Get("/{id}/deliveries", webhooksH.Deliveries)
+				r.Post("/{id}/test", webhooksH.Test)
+			})
 
 			// Measures
 			r.Get("/projects/{key}/measures/trend", mh.Trend)
 
 			// Search
 			r.Get("/search", srh.Search)
+
+			// System info (requires admin)
+			r.Group(func(r chi.Router) {
+				r.Use(RequirePermission(d.Perms, "admin"))
+				r.Get("/system/info", sysH.Info)
+			})
 		})
 	})
 

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/url"
 	"strconv"
 
 	"github.com/scovl/ollanta/adapter/secondary/postgres"
@@ -20,44 +21,7 @@ type IssuesHandler struct {
 //
 // Query params: project_id, scan_id, rule_key, severity, type, status, file, limit, offset
 func (h *IssuesHandler) List(w http.ResponseWriter, r *http.Request) {
-	q := r.URL.Query()
-	f := model.IssueFilter{}
-
-	if v := q.Get("limit"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil {
-			f.Limit = n
-		}
-	}
-	if v := q.Get("offset"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil {
-			f.Offset = n
-		}
-	}
-	if v := q.Get("project_id"); v != "" {
-		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
-			f.ProjectID = &n
-		}
-	}
-	if v := q.Get("scan_id"); v != "" {
-		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
-			f.ScanID = &n
-		}
-	}
-	if v := q.Get("rule_key"); v != "" {
-		f.RuleKey = &v
-	}
-	if v := q.Get("severity"); v != "" {
-		f.Severity = &v
-	}
-	if v := q.Get("type"); v != "" {
-		f.Type = &v
-	}
-	if v := q.Get("status"); v != "" {
-		f.Status = &v
-	}
-	if v := q.Get("file"); v != "" {
-		f.FilePath = &v
-	}
+	f := issueFilterFromQuery(r.URL.Query())
 
 	issues, total, err := h.issues.Query(r.Context(), f)
 	if err != nil {
@@ -70,6 +34,48 @@ func (h *IssuesHandler) List(w http.ResponseWriter, r *http.Request) {
 		"limit":  f.Limit,
 		"offset": f.Offset,
 	})
+}
+
+func issueFilterFromQuery(q url.Values) model.IssueFilter {
+	f := model.IssueFilter{}
+	if n, ok := queryInt(q, "limit"); ok {
+		f.Limit = n
+	}
+	if n, ok := queryInt(q, "offset"); ok {
+		f.Offset = n
+	}
+	f.ProjectID = queryInt64Ptr(q, "project_id")
+	f.ScanID = queryInt64Ptr(q, "scan_id")
+	f.RuleKey = queryStrPtr(q, "rule_key")
+	f.Severity = queryStrPtr(q, "severity")
+	f.Type = queryStrPtr(q, "type")
+	f.Status = queryStrPtr(q, "status")
+	f.FilePath = queryStrPtr(q, "file")
+	return f
+}
+
+func queryInt(q url.Values, key string) (int, bool) {
+	if v := q.Get(key); v != "" {
+		n, err := strconv.Atoi(v)
+		return n, err == nil
+	}
+	return 0, false
+}
+
+func queryInt64Ptr(q url.Values, key string) *int64 {
+	if v := q.Get(key); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
+			return &n
+		}
+	}
+	return nil
+}
+
+func queryStrPtr(q url.Values, key string) *string {
+	if v := q.Get(key); v != "" {
+		return &v
+	}
+	return nil
 }
 
 // Facets handles GET /api/v1/issues/facets?project_id=1&scan_id=2.
