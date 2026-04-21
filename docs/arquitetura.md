@@ -105,7 +105,7 @@ Para excluir arquivos adicionais, use o flag `-exclusions` com padrões glob sep
 ollanta -project-dir . -exclusions "*_test.go,generated/**"
 ```
 
-> **Código relevante:** `ollantascanner/discovery/discovery.go`
+> **Código relevante:** `application/scan/discovery.go`
 
 ---
 
@@ -200,7 +200,7 @@ graph LR
     style POOL fill:#fffbeb,stroke:#fbbf24,stroke-width:2px,stroke-dasharray:6 3
 ```
 
-> **Código relevante:** `ollantascanner/executor/executor.go`
+> **Código relevante:** `application/scan/executor.go`
 
 ### Etapa 4: Relatório
 
@@ -880,22 +880,22 @@ A troca entre backends é uma variável de ambiente. O código de negócio não 
 
 > **Código relevante:** `ollantastore/search/port.go`, `ollantastore/search/factory.go`
 
-### Coordenação de indexação — multi-réplica
+### Coordenação de indexação
 
-Quando o servidor roda em múltiplas réplicas (para alta disponibilidade), precisamos garantir que apenas UMA réplica indexe cada scan. O Ollanta oferece dois mecanismos:
+Após cada ingestão, o `ollantaweb` enfileira um job de indexação em um worker in-process anexado à réplica em execução. A mesma réplica que recebeu o scan drena a fila, lê as issues no PostgreSQL e atualiza o backend de busca ativo.
 
-| Coordenador | Como funciona | Quando usar |
-|-------------|---------------|-------------|
-| **memory** | Canal Go in-process, goroutine de background | Single-replica, desenvolvimento local |
-| **pgnotify** | Tabela `search_index_jobs` + PostgreSQL `LISTEN/NOTIFY` + `FOR UPDATE SKIP LOCKED` | Multi-réplica em produção |
+| Worker | Como funciona | Quando usar |
+|--------|---------------|-------------|
+| **memory** | Canal Go com buffer + worker em background com retry | Todas as implantações atuais |
 
-No modo `pgnotify`, o fluxo é:
-1. A ingestão insere um job na tabela `search_index_jobs`
-2. Envia `NOTIFY search_index_ready` via PostgreSQL
-3. Todas as réplicas escutam (`LISTEN`), mas apenas uma consegue o lock (`FOR UPDATE SKIP LOCKED`)
-4. A réplica que ganhou o lock indexa e deleta o job
+No desenho atual, o fluxo de indexação é:
+1. A API persiste scan, issues e métricas no PostgreSQL
+2. O pipeline de ingestão enfileira um job local na réplica que recebeu a requisição
+3. O worker in-process lê as issues do scan e atualiza o índice de busca
 
-> **Código relevante:** `ollantaweb/pgnotify/coordinator.go`
+Isso reduz a complexidade operacional: não há coordenador extra, tabela distribuída de jobs ou caminho com PostgreSQL `LISTEN/NOTIFY`. Se um pod for interrompido antes de drenar sua fila, execute `POST /admin/reindex` para reconstruir o índice a partir do PostgreSQL.
+
+> **Código relevante:** `ollantaweb/ingest/worker.go`
 
 ---
 
@@ -1058,7 +1058,7 @@ As mais importantes para configurar o servidor:
 | `OLLANTA_DATABASE_URL` | *(obrigatória)* | Connection string do PostgreSQL |
 | `OLLANTA_ADDR` | `:8080` | Endereço onde o servidor escuta |
 | `OLLANTA_SEARCH_BACKEND` | `zincsearch` | Backend de busca (`zincsearch` ou `postgres`) |
-| `OLLANTA_INDEX_COORDINATOR` | `memory` | Coordenação de indexação (`memory` ou `pgnotify`) |
+| `OLLANTA_SCANNER_TOKEN` | *(vazio)* | Token compartilhado aceito para pushes do scanner em `POST /api/v1/scans` |
 | `OLLANTA_JWT_SECRET` | *(auto-gerado)* | Segredo para assinar JWTs |
 | `OLLANTA_JWT_EXPIRY` | `15m` | Duração do access token |
 | `OLLANTA_ZINCSEARCH_URL` | `http://localhost:4080` | URL do ZincSearch |
@@ -1294,6 +1294,6 @@ O schema evolui via migrações numeradas, aplicadas em ordem:
 | **Ingestão** | Pipeline que recebe um relatório e persiste scans, issues e métricas |
 | **Port** | Interface que isola o domínio de implementações concretas (hexagonal) |
 | **Adapter** | Implementação concreta de um port (ex: PostgreSQL implementa IProjectRepo) |
-| **pgnotify** | Coordenação de indexação via PostgreSQL LISTEN/NOTIFY |
+| **Index Worker** | Worker in-process que indexa as issues do scan após a ingestão |
 | **CumSum** | Propagação de métricas das folhas para a raiz da árvore de componentes |
 | **SARIF** | Static Analysis Results Interchange Format — formato padrão da indústria |

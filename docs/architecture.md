@@ -108,9 +108,7 @@ To exclude additional files, use the `-exclusions` flag with comma-separated glo
 ollanta -project-dir . -exclusions "*_test.go,generated/**"
 ```
 
-> **Relevant code:** `ollantascanner/discovery/discovery.go`
-
----
+> **Relevant code:** `application/scan/discovery.go`
 
 ### Step 2: Parsing
 
@@ -203,7 +201,7 @@ graph LR
     style POOL fill:#fffbeb,stroke:#fbbf24,stroke-width:2px,stroke-dasharray:6 3
 ```
 
-> **Relevant code:** `ollantascanner/executor/executor.go`
+> **Relevant code:** `application/scan/executor.go`
 
 ### Step 4: Report
 
@@ -894,22 +892,22 @@ Switching backends is a single environment variable. Business code doesn't know 
 
 > **Relevant code:** `ollantastore/search/port.go`, `ollantastore/search/factory.go`
 
-### Indexing coordination — multi-replica
+### Indexing coordination
 
-When the server runs on multiple replicas (for high availability), we need to ensure only ONE replica indexes each scan. Ollanta offers two mechanisms:
+After each ingest, `ollantaweb` enqueues a background indexing job into an in-process worker attached to the running replica. The same replica that accepted the scan drains the queue, loads issues from PostgreSQL, and updates the active search backend.
 
-| Coordinator | How it works | When to use |
-|-------------|--------------|-------------|
-| **memory** | In-process Go channel, background goroutine | Single-replica, local development |
-| **pgnotify** | `search_index_jobs` table + PostgreSQL `LISTEN/NOTIFY` + `FOR UPDATE SKIP LOCKED` | Multi-replica in production |
+| Worker | How it works | When to use |
+|--------|--------------|-------------|
+| **memory** | Buffered Go channel + background worker with retries | All current deployments |
 
-In `pgnotify` mode, the flow is:
-1. Ingestion inserts a job into the `search_index_jobs` table
-2. Sends `NOTIFY search_index_ready` via PostgreSQL
-3. All replicas listen (`LISTEN`), but only one acquires the lock (`FOR UPDATE SKIP LOCKED`)
-4. The replica that won the lock indexes and deletes the job
+In the current design, the indexing flow is:
+1. The API persists the scan, issues, and measures in PostgreSQL
+2. The ingest pipeline enqueues a local index job on the receiving replica
+3. The in-process worker loads the scan issues and updates the search index
 
-> **Relevant code:** `ollantaweb/pgnotify/coordinator.go`
+This keeps the runtime simple: no extra coordinator, no distributed job table, and no PostgreSQL `LISTEN/NOTIFY` path. If a pod is interrupted before its queue drains, rerun `POST /admin/reindex` to rebuild the search index from PostgreSQL.
+
+> **Relevant code:** `ollantaweb/ingest/worker.go`
 
 ---
 
@@ -1063,7 +1061,7 @@ The most important ones for configuring the server:
 | `OLLANTA_DATABASE_URL` | *(required)* | PostgreSQL connection string |
 | `OLLANTA_ADDR` | `:8080` | Address the server listens on |
 | `OLLANTA_SEARCH_BACKEND` | `zincsearch` | Search backend (`zincsearch` or `postgres`) |
-| `OLLANTA_INDEX_COORDINATOR` | `memory` | Indexing coordination (`memory` or `pgnotify`) |
+| `OLLANTA_SCANNER_TOKEN` | *(empty)* | Shared token accepted for scanner pushes to `POST /api/v1/scans` |
 | `OLLANTA_JWT_SECRET` | *(auto-generated)* | Secret for signing JWTs |
 | `OLLANTA_JWT_EXPIRY` | `15m` | Access token lifetime |
 | `OLLANTA_ZINCSEARCH_URL` | `http://localhost:4080` | ZincSearch URL |
@@ -1313,7 +1311,7 @@ The schema evolves via numbered migrations applied in order:
 | **Ingestion** | Pipeline that receives a report and persists scans, issues, and metrics |
 | **Port** | Interface that isolates the domain from concrete implementations (hexagonal) |
 | **Adapter** | Concrete implementation of a port (e.g., PostgreSQL implements IProjectRepo) |
-| **pgnotify** | Indexing coordination via PostgreSQL LISTEN/NOTIFY |
+| **Index Worker** | In-process background worker that indexes scan issues after ingest |
 | **CumSum** | Metric propagation from leaves to the root of the component tree |
 | **SARIF** | Static Analysis Results Interchange Format — industry-standard format |
         PG["secondary/postgres\npgx/v5"]

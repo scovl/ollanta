@@ -9,9 +9,9 @@ This guide covers deploying the **ollantaweb** server stack on Kubernetes. The a
 | Principle | How Ollanta implements it |
 |-----------|--------------------------|
 | **Resilient** | Graceful shutdown (SIGTERM + 15 s drain), liveness and readiness probes, degraded mode when search is down |
-| **Customizable** | 100 % env-var driven config, pluggable search backend (`zincsearch` / `postgres`), pluggable index coordinator (`memory` / `pgnotify`) |
+| **Customizable** | 100 % env-var driven config, pluggable search backend (`zincsearch` / `postgres`) |
 | **Atomic** | Distroless nonroot image, static Go binary, no shell, minimal attack surface |
-| **Scalable** | Stateless app pods behind a Service, ZincSearch scaled independently, `pgnotify` coordinator for multi-replica indexing |
+| **Scalable** | Stateless app pods behind a Service, ZincSearch scaled independently, local indexing worker per replica |
 | **Ephemeral** | Zero local volumes on app pods, auto-migration on boot, indexes rebuilt from PostgreSQL on demand |
 
 ---
@@ -92,7 +92,6 @@ data:
   OLLANTA_ZINCSEARCH_URL: "http://zincsearch.ollanta.svc:4080"
   OLLANTA_ZINCSEARCH_USER: "admin"
   OLLANTA_SEARCH_BACKEND: "zincsearch"
-  OLLANTA_INDEX_COORDINATOR: "pgnotify"
   OLLANTA_LOG_LEVEL: "info"
 ```
 
@@ -106,7 +105,7 @@ data:
 | `OLLANTA_ZINCSEARCH_USER` | `admin` | ZincSearch Basic Auth user |
 | `OLLANTA_ZINCSEARCH_PASSWORD` | `admin` | ZincSearch Basic Auth password |
 | `OLLANTA_SEARCH_BACKEND` | `zincsearch` | `zincsearch` or `postgres` (fallback with no external dependency) |
-| `OLLANTA_INDEX_COORDINATOR` | `memory` | `memory` (single pod) or `pgnotify` (multi-replica via LISTEN/NOTIFY) |
+| `OLLANTA_SCANNER_TOKEN` | *(empty)* | Shared token accepted for scanner pushes to `POST /api/v1/scans` |
 | `OLLANTA_JWT_SECRET` | *(random)* | HMAC-SHA256 signing key — **must be set for multi-replica** |
 | `OLLANTA_JWT_EXPIRY` | `15m` | Access token lifetime |
 | `OLLANTA_REFRESH_EXPIRY` | `720h` | Refresh token lifetime (30 days) |
@@ -388,19 +387,22 @@ spec:
 
 ---
 
-## Multi-Replica Indexing with pgnotify
+## Indexing Behavior on Multiple Replicas
 
-When running multiple ollantaweb pods, set `OLLANTA_INDEX_COORDINATOR=pgnotify`. This uses PostgreSQL `LISTEN/NOTIFY` to coordinate index jobs:
+Each `ollantaweb` pod runs its own in-process indexing worker. The pod that receives `POST /api/v1/scans` persists the report and enqueues the indexing job locally:
 
-1. When a scan is ingested, the receiving pod writes the job to a Postgres table and sends a `NOTIFY`.
-2. Exactly one pod picks up the job via `LISTEN`, indexes the data in ZincSearch, and marks the job done.
-3. No external queue (Redis, RabbitMQ) is needed — Postgres is the single coordination point.
+1. The request hits one pod behind the Service.
+2. That pod persists the scan in PostgreSQL.
+3. The same pod enqueues and executes the background indexing job.
 
 ```
-Pod A (receives scan) ──NOTIFY──▶ PostgreSQL ──LISTEN──▶ Pod B (indexes)
+Pod A (receives scan) ──local queue──▶ Pod A worker ──HTTP──▶ ZincSearch
 ```
 
-With the default `memory` coordinator, each pod indexes independently — this is fine for single-replica deployments but can produce duplicate work with multiple pods.
+There is no distributed index coordinator in the current runtime. For Kubernetes this means two operational requirements matter:
+
+1. Keep graceful termination enabled so a pod can drain its in-flight queue before exit.
+2. If a pod is interrupted mid-index, rebuild the search index with `POST /admin/reindex`.
 
 ---
 
@@ -423,7 +425,7 @@ This uses PostgreSQL full-text search (`tsvector`/`tsquery`) for the `/api/v1/se
 | Namespace created | |
 | Secrets populated (database-url, zincsearch-password, jwt-secret) | |
 | `OLLANTA_JWT_SECRET` set (required for multi-replica token validation) | |
-| `OLLANTA_INDEX_COORDINATOR=pgnotify` for multi-replica | |
+| Graceful termination preserved so local index jobs can drain | |
 | PostgreSQL accessible from cluster | |
 | ZincSearch Deployment + PVC + Service running | |
 | ollantaweb Deployment with probes, resources, security context | |
