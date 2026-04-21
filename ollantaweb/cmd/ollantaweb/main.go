@@ -17,7 +17,6 @@ import (
 	"github.com/scovl/ollanta/ollantastore/search"
 	"github.com/scovl/ollanta/ollantaweb/api"
 	"github.com/scovl/ollanta/ollantaweb/config"
-	"github.com/scovl/ollanta/ollantaweb/ingest"
 	"github.com/scovl/ollanta/ollantaweb/telemetry"
 	"github.com/scovl/ollanta/ollantaweb/webhook"
 )
@@ -43,6 +42,8 @@ func main() {
 	// ── Repositories ───────────────────────────────────────────────────────
 	projectRepo := postgres.NewProjectRepository(db)
 	scanRepo := postgres.NewScanRepository(db)
+	scanJobRepo := postgres.NewScanJobRepository(db)
+	indexJobRepo := postgres.NewIndexJobRepository(db)
 	issueRepo := postgres.NewIssueRepository(db)
 	measureRepo := postgres.NewMeasureRepository(db)
 	userRepo := postgres.NewUserRepository(db)
@@ -54,6 +55,7 @@ func main() {
 	gateRepo := postgres.NewGateRepository(db)
 	periodRepo := postgres.NewNewCodePeriodRepository(db)
 	webhookRepo := postgres.NewWebhookRepository(db)
+	webhookJobRepo := postgres.NewWebhookJobRepository(db)
 	changelogRepo := postgres.NewChangelogRepository(db)
 
 	// ── Search backend ─────────────────────────────────────────────────────
@@ -71,48 +73,38 @@ func main() {
 	}
 
 	// ── Health deps ────────────────────────────────────────────────────────
-	ingestQueue := ingest.NewIngestQueue(100)
-	api.SetHealthDeps(db, indexer, ingestQueue)
+	api.SetHealthDeps(db, indexer, nil)
 
 	// ── Telemetry ──────────────────────────────────────────────────────────
 	metricsReg := telemetry.NewRegistry()
 	appMetrics := telemetry.NewMetrics(metricsReg)
 	_ = appMetrics // wired into pipeline below
-
-	// ── Webhook dispatcher ─────────────────────────────────────────────────
-	wdispatcher := webhook.NewDispatcher(webhookRepo, 256)
-	go wdispatcher.Start(ctx)
-
-	// ── Index worker ───────────────────────────────────────────────────────
-	worker := ingest.NewWorker(indexer, issueRepo, 256)
-	go worker.Start(ctx)
-	var enqueuer ingest.IndexEnqueuer = worker
-
-	// ── Ingest pipeline ────────────────────────────────────────────────────
-	pipeline := ingest.NewPipeline(projectRepo, scanRepo, issueRepo, measureRepo, enqueuer)
+	webhookDispatcher := webhook.NewDispatcher(webhookRepo, webhookJobRepo, "ollantaweb")
 
 	// ── HTTP server ────────────────────────────────────────────────────────
 	router := api.NewRouter(&api.RouterDeps{
-		Config:     cfg,
-		Projects:   projectRepo,
-		Scans:      scanRepo,
-		Issues:     issueRepo,
-		Measures:   measureRepo,
-		Users:      userRepo,
-		Groups:     groupRepo,
-		Tokens:     tokenRepo,
-		Sessions:   sessionRepo,
-		Perms:      permRepo,
-		Searcher:   searcher,
-		Indexer:    indexer,
-		Pipeline:   pipeline,
-		Profiles:   profileRepo,
-		Gates:      gateRepo,
-		Periods:    periodRepo,
-		Webhooks:   webhookRepo,
-		Dispatcher: wdispatcher,
-		MetricsReg: metricsReg,
-		Changelog:  changelogRepo,
+		Config:      cfg,
+		Projects:    projectRepo,
+		Scans:       scanRepo,
+		ScanJobs:    scanJobRepo,
+		IndexJobs:   indexJobRepo,
+		Issues:      issueRepo,
+		Measures:    measureRepo,
+		Users:       userRepo,
+		Groups:      groupRepo,
+		Tokens:      tokenRepo,
+		Sessions:    sessionRepo,
+		Perms:       permRepo,
+		Searcher:    searcher,
+		Indexer:     indexer,
+		Profiles:    profileRepo,
+		Gates:       gateRepo,
+		Periods:     periodRepo,
+		Webhooks:    webhookRepo,
+		WebhookJobs: webhookJobRepo,
+		Dispatcher:  webhookDispatcher,
+		MetricsReg:  metricsReg,
+		Changelog:   changelogRepo,
 	})
 
 	srv := &http.Server{
@@ -132,9 +124,6 @@ func main() {
 
 	<-ctx.Done()
 	log.Println("ollantaweb: shutting down...")
-
-	worker.Stop()
-	wdispatcher.Stop()
 
 	shutCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()

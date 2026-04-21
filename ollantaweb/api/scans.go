@@ -14,23 +14,27 @@ import (
 type ScansHandler struct {
 	scans    *postgres.ScanRepository
 	projects *postgres.ProjectRepository
-	pipeline *ingest.Pipeline
+	jobs     *ingest.ScanJobService
 }
 
-// Ingest handles POST /api/v1/scans — receives a report.json payload and stores it.
+// Ingest handles POST /api/v1/scans — receives a report.json payload and enqueues durable processing.
 func (h *ScansHandler) Ingest(w http.ResponseWriter, r *http.Request) {
 	var req ingest.IngestRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		jsonError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
 		return
 	}
+	if req.Metadata.ProjectKey == "" {
+		jsonError(w, http.StatusBadRequest, "project_key is required")
+		return
+	}
 
-	result, err := h.pipeline.Ingest(r.Context(), &req)
+	result, err := h.jobs.Submit(r.Context(), &req)
 	if err != nil {
 		jsonError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	jsonOK(w, http.StatusCreated, result)
+	jsonOK(w, http.StatusAccepted, result)
 }
 
 // Get handles GET /api/v1/scans/{id}.

@@ -117,6 +117,11 @@ func (h *WebhooksHandler) Deliveries(w http.ResponseWriter, r *http.Request) {
 
 // Test handles POST /api/v1/webhooks/{id}/test — fires a test event.
 func (h *WebhooksHandler) Test(w http.ResponseWriter, r *http.Request) {
+	if h.dispatcher == nil {
+		jsonError(w, http.StatusServiceUnavailable, "webhook dispatcher is not running in the web role")
+		return
+	}
+
 	id, err := parseID(r, "id")
 	if err != nil {
 		jsonError(w, http.StatusBadRequest, "invalid id")

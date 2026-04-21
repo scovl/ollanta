@@ -2,6 +2,7 @@ package ingest
 
 import (
 	"context"
+	"errors"
 	"log"
 	"time"
 
@@ -9,109 +10,149 @@ import (
 	"github.com/scovl/ollanta/ollantastore/search"
 )
 
-// IndexJob represents a unit of work for the background search indexer.
-type IndexJob struct {
-	ScanID     int64
-	ProjectID  int64
-	ProjectKey string
+type indexJobStore interface {
+	Create(ctx context.Context, job *postgres.IndexJob) error
+	ClaimNext(ctx context.Context, workerID string) (*postgres.IndexJob, error)
+	Reschedule(ctx context.Context, id int64, lastError string, nextAttemptAt time.Time) error
+	MarkCompleted(ctx context.Context, id int64) error
+	MarkFailed(ctx context.Context, id int64, lastError string) error
 }
 
-// Worker drains an IndexJob channel and calls the search indexer.
-// If the indexer is unavailable, jobs are retried up to maxRetries times.
+type issueQueryer interface {
+	Query(ctx context.Context, filter postgres.IssueFilter) ([]*postgres.IssueRow, int, error)
+}
+
+// Worker polls durable index jobs and applies them to the configured search backend.
 type Worker struct {
 	indexer    search.IIndexer
-	issues     *postgres.IssueRepository
-	queue      chan IndexJob
+	issues     issueQueryer
+	jobs       indexJobStore
+	workerID   string
+	pollDelay  time.Duration
 	maxRetries int
+	batchSize  int
 }
 
-// NewWorker creates a Worker with a buffered job queue of the given size.
+// NewWorker creates a durable search projection worker.
 func NewWorker(
 	indexer search.IIndexer,
 	issues *postgres.IssueRepository,
-	bufferSize int,
+	jobs *postgres.IndexJobRepository,
+	workerID string,
 ) *Worker {
 	return &Worker{
 		indexer:    indexer,
 		issues:     issues,
-		queue:      make(chan IndexJob, bufferSize),
+		jobs:       jobs,
+		workerID:   workerID,
+		pollDelay:  time.Second,
 		maxRetries: 3,
+		batchSize:  1000,
 	}
 }
 
 // compile-time interface check
 var _ IndexEnqueuer = (*Worker)(nil)
 
-// Enqueue submits a job to the queue without blocking.
-// If the queue is full, the job is dropped and a warning is logged.
-func (w *Worker) Enqueue(_ context.Context, scanID, projectID int64, projectKey string) error {
-	job := IndexJob{ScanID: scanID, ProjectID: projectID, ProjectKey: projectKey}
-	select {
-	case w.queue <- job:
-		return nil
-	default:
-		log.Printf("ollantaweb/worker: queue full, dropping index job for scan %d", scanID)
-		return nil
-	}
+// Enqueue persists a durable search index job.
+func (w *Worker) Enqueue(ctx context.Context, scanID, projectID int64, projectKey string) error {
+	return w.jobs.Create(ctx, &postgres.IndexJob{
+		ScanID:        scanID,
+		ProjectID:     projectID,
+		ProjectKey:    projectKey,
+		Status:        "accepted",
+		NextAttemptAt: time.Now().UTC(),
+	})
 }
 
-// Start begins processing jobs from the queue until ctx is cancelled.
-// It should be called in a goroutine.
+// Start begins polling and processing durable jobs until ctx is cancelled.
 func (w *Worker) Start(ctx context.Context) {
 	for {
-		select {
-		case <-ctx.Done():
-			return
-		case job, ok := <-w.queue:
-			if !ok {
-				return
+		processed, err := w.processNext(ctx)
+		if err != nil {
+			if !errors.Is(err, context.Canceled) {
+				log.Printf("ollantaweb/worker: process next index job: %v", err)
 			}
-			w.process(ctx, job)
-		}
-	}
-}
-
-// Stop drains remaining jobs and closes the queue.
-func (w *Worker) Stop() {
-	close(w.queue)
-}
-
-func (w *Worker) process(ctx context.Context, job IndexJob) {
-	var lastErr error
-	for attempt := 1; attempt <= w.maxRetries; attempt++ {
-		if err := w.doIndex(ctx, job); err != nil {
-			lastErr = err
-			backoff := time.Duration(attempt) * 2 * time.Second
-			log.Printf("ollantaweb/worker: index attempt %d/%d for scan %d failed: %v (retry in %s)",
-				attempt, w.maxRetries, job.ScanID, err, backoff)
-			select {
-			case <-ctx.Done():
+			if !waitForNextTick(ctx, w.pollDelay) {
 				return
-			case <-time.After(backoff):
 			}
 			continue
 		}
-		return
+		if processed {
+			continue
+		}
+		if !waitForNextTick(ctx, w.pollDelay) {
+			return
+		}
 	}
-	log.Printf("ollantaweb/worker: gave up indexing scan %d after %d attempts: %v",
-		job.ScanID, w.maxRetries, lastErr)
 }
 
-func (w *Worker) doIndex(ctx context.Context, job IndexJob) error {
+// Stop is a no-op for the durable worker. The context passed to Start controls shutdown.
+func (w *Worker) Stop() {
+}
+
+func (w *Worker) processNext(ctx context.Context) (bool, error) {
+	job, err := w.jobs.ClaimNext(ctx, w.workerID)
+	if err != nil {
+		if errors.Is(err, postgres.ErrNotFound) {
+			return false, nil
+		}
+		return false, err
+	}
+
+	if err := w.doIndex(ctx, job); err != nil {
+		if job.Attempts >= w.maxRetries {
+			if markErr := w.jobs.MarkFailed(ctx, job.ID, err.Error()); markErr != nil {
+				return true, markErr
+			}
+			return true, nil
+		}
+
+		backoff := time.Duration(job.Attempts) * 2 * time.Second
+		log.Printf("ollantaweb/worker: index attempt %d/%d for scan %d failed: %v (retry in %s)",
+			job.Attempts, w.maxRetries, job.ScanID, err, backoff)
+		if rescheduleErr := w.jobs.Reschedule(ctx, job.ID, err.Error(), time.Now().UTC().Add(backoff)); rescheduleErr != nil {
+			return true, rescheduleErr
+		}
+		return true, nil
+	}
+
+	if err := w.jobs.MarkCompleted(ctx, job.ID); err != nil {
+		return true, err
+	}
+	return true, nil
+}
+
+func (w *Worker) doIndex(ctx context.Context, job *postgres.IndexJob) error {
 	sid := job.ScanID
 	pid := job.ProjectID
+	offset := 0
 
-	issues, _, err := w.issues.Query(ctx, postgres.IssueFilter{
-		ScanID:    &sid,
-		ProjectID: &pid,
-		Limit:     10000,
-	})
-	if err != nil {
-		return err
+	for {
+		issues, _, err := w.issues.Query(ctx, postgres.IssueFilter{
+			ScanID:    &sid,
+			ProjectID: &pid,
+			Limit:     w.batchSize,
+			Offset:    offset,
+		})
+		if err != nil {
+			return err
+		}
+		if len(issues) == 0 {
+			return nil
+		}
+
+		rows := make([]postgres.IssueRow, len(issues))
+		for i, iss := range issues {
+			rows[i] = *iss
+		}
+		if err := w.indexer.IndexIssues(ctx, job.ProjectKey, rows); err != nil {
+			return err
+		}
+
+		offset += len(issues)
+		if len(issues) < w.batchSize {
+			return nil
+		}
 	}
-	rows := make([]postgres.IssueRow, len(issues))
-	for i, iss := range issues {
-		rows[i] = *iss
-	}
-	return w.indexer.IndexIssues(ctx, job.ProjectKey, rows)
 }

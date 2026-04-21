@@ -13,28 +13,35 @@ import (
 	"github.com/scovl/ollanta/ollantaweb/webhook"
 )
 
+const (
+	projectByKeyPath   = "/projects/{key}"
+	projectNewCodePath = "/projects/{key}/new-code-period"
+)
+
 // RouterDeps groups all dependencies needed to build the HTTP router.
 type RouterDeps struct {
-	Config     *config.Config
-	Projects   *postgres.ProjectRepository
-	Scans      *postgres.ScanRepository
-	Issues     *postgres.IssueRepository
-	Measures   *postgres.MeasureRepository
-	Users      *postgres.UserRepository
-	Groups     *postgres.GroupRepository
-	Tokens     *postgres.TokenRepository
-	Sessions   *postgres.SessionRepository
-	Perms      *postgres.PermissionRepository
-	Searcher   search.ISearcher
-	Indexer    search.IIndexer
-	Pipeline   *ingest.Pipeline
-	Profiles   *postgres.ProfileRepository
-	Gates      *postgres.GateRepository
-	Periods    *postgres.NewCodePeriodRepository
-	Webhooks   *postgres.WebhookRepository
-	Dispatcher *webhook.Dispatcher
-	MetricsReg *telemetry.Registry
-	Changelog  *postgres.ChangelogRepository
+	Config      *config.Config
+	Projects    *postgres.ProjectRepository
+	Scans       *postgres.ScanRepository
+	ScanJobs    *postgres.ScanJobRepository
+	IndexJobs   *postgres.IndexJobRepository
+	Issues      *postgres.IssueRepository
+	Measures    *postgres.MeasureRepository
+	Users       *postgres.UserRepository
+	Groups      *postgres.GroupRepository
+	Tokens      *postgres.TokenRepository
+	Sessions    *postgres.SessionRepository
+	Perms       *postgres.PermissionRepository
+	Searcher    search.ISearcher
+	Indexer     search.IIndexer
+	Profiles    *postgres.ProfileRepository
+	Gates       *postgres.GateRepository
+	Periods     *postgres.NewCodePeriodRepository
+	Webhooks    *postgres.WebhookRepository
+	WebhookJobs *postgres.WebhookJobRepository
+	Dispatcher  *webhook.Dispatcher
+	MetricsReg  *telemetry.Registry
+	Changelog   *postgres.ChangelogRepository
 }
 
 // NewRouter builds and returns the complete chi router for the ollantaweb server.
@@ -75,12 +82,15 @@ func NewRouter(d *RouterDeps) http.Handler {
 	rulesH := NewRulesHandler()
 
 	ph := &ProjectsHandler{repo: d.Projects}
-	sh := &ScansHandler{scans: d.Scans, projects: d.Projects, pipeline: d.Pipeline}
+	jobService := ingest.NewScanJobService(d.ScanJobs)
+	sh := &ScansHandler{scans: d.Scans, projects: d.Projects, jobs: jobService}
+	sjh := &ScanJobsHandler{jobs: jobService}
 	ih := &IssuesHandler{issues: d.Issues, projects: d.Projects, changelog: d.Changelog}
 	mh := &MeasuresHandler{measures: d.Measures, projects: d.Projects}
 	srh := &SearchHandler{searcher: d.Searcher}
 	oh := &OverviewHandler{projects: d.Projects, scans: d.Scans, issues: d.Issues, measures: d.Measures, gates: d.Gates}
 	ah := &ActivityHandler{scans: d.Scans, projects: d.Projects}
+	outboxH := &OutboxJobsHandler{indexJobs: d.IndexJobs, webhookJobs: d.WebhookJobs}
 
 	// ── API v1 ────────────────────────────────────────────────────────────
 	r.Route("/api/v1", func(r chi.Router) {
@@ -145,12 +155,12 @@ func NewRouter(d *RouterDeps) http.Handler {
 
 			// Projects (read is open, write requires admin)
 			r.Get("/projects", ph.List)
-			r.Get("/projects/{key}", ph.Get)
+			r.Get(projectByKeyPath, ph.Get)
 			r.Group(func(r chi.Router) {
 				r.Use(RequirePermission(d.Perms, "admin"))
 				r.Post("/projects", ph.Create)
-				r.Put("/projects/{key}", ph.Update)
-				r.Delete("/projects/{key}", ph.Delete)
+				r.Put(projectByKeyPath, ph.Update)
+				r.Delete(projectByKeyPath, ph.Delete)
 			})
 
 			// Project-level permissions (requires admin)
@@ -169,16 +179,17 @@ func NewRouter(d *RouterDeps) http.Handler {
 			})
 
 			// Project-scoped new code period (read is open, write requires admin)
-			r.Get("/projects/{key}/new-code-period", periodsH.GetForProject)
+			r.Get(projectNewCodePath, periodsH.GetForProject)
 			r.Group(func(r chi.Router) {
 				r.Use(RequirePermission(d.Perms, "admin"))
-				r.Put("/projects/{key}/new-code-period", periodsH.SetForProject)
-				r.Delete("/projects/{key}/new-code-period", periodsH.DeleteForProject)
+				r.Put(projectNewCodePath, periodsH.SetForProject)
+				r.Delete(projectNewCodePath, periodsH.DeleteForProject)
 			})
 
 			// Scans
 			r.Post("/scans", sh.Ingest)
 			r.Get("/scans/{id}", sh.Get)
+			r.Get("/scan-jobs/{id}", sjh.Get)
 			r.Get("/projects/{key}/scans", sh.ListByProject)
 			r.Get("/projects/{key}/scans/latest", sh.Latest)
 
@@ -258,6 +269,10 @@ func NewRouter(d *RouterDeps) http.Handler {
 			r.Group(func(r chi.Router) {
 				r.Use(RequirePermission(d.Perms, "admin"))
 				r.Get("/system/info", sysH.Info)
+				r.Get("/admin/index-jobs", outboxH.ListIndexJobs)
+				r.Post("/admin/index-jobs/{id}/retry", outboxH.RetryIndexJob)
+				r.Get("/admin/webhook-jobs", outboxH.ListWebhookJobs)
+				r.Post("/admin/webhook-jobs/{id}/retry", outboxH.RetryWebhookJob)
 			})
 		})
 	})

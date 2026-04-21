@@ -43,13 +43,13 @@ type IngestRequest struct {
 
 // IngestResult is the response returned after a successful ingest.
 type IngestResult struct {
-	ScanID       int64                    `json:"scan_id"`
-	ProjectKey   string                   `json:"project_key"`
-	GateStatus   string                   `json:"gate_status"`
-	TotalIssues  int                      `json:"total_issues"`
-	NewIssues    int                      `json:"new_issues"`
-	ClosedIssues int                      `json:"closed_issues"`
-	Tracking     *service.TrackingResult  `json:"tracking"`
+	ScanID       int64                   `json:"scan_id"`
+	ProjectKey   string                  `json:"project_key"`
+	GateStatus   string                  `json:"gate_status"`
+	TotalIssues  int                     `json:"total_issues"`
+	NewIssues    int                     `json:"new_issues"`
+	ClosedIssues int                     `json:"closed_issues"`
+	Tracking     *service.TrackingResult `json:"tracking"`
 }
 
 // ISearchEnqueuer is an optional outbound port for async search indexing.
@@ -225,7 +225,7 @@ func (uc *IngestUseCase) Ingest(ctx context.Context, req *IngestRequest) (*Inges
 	// ── 9. Fire webhooks ─────────────────────────────────────────────────────
 	if uc.webhooks != nil {
 		_ = pipelineSteps.fireWebhooks.run(ctx, func(ctx context.Context) error {
-			return uc.webhooks.Dispatch(ctx, project.ID, scan.ID, "scan_completed")
+			return uc.webhooks.Dispatch(ctx, project.ID, scan.ID, "scan.completed")
 		})
 	}
 

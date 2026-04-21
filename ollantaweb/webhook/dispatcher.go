@@ -9,6 +9,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -28,54 +29,69 @@ const (
 // retryDelays defines the exponential back-off schedule (3 attempts).
 var retryDelays = []time.Duration{1 * time.Minute, 5 * time.Minute, 30 * time.Minute}
 
-// job is an internal delivery unit queued by Dispatch.
-type job struct {
-	webhook   *postgres.Webhook
-	event     string
-	payload   []byte
+type webhookStore interface {
+	ForEvent(ctx context.Context, projectID int64, event string) ([]*postgres.Webhook, error)
+	GetByID(ctx context.Context, id int64) (*postgres.Webhook, error)
+	CreateDelivery(ctx context.Context, d *postgres.WebhookDelivery) error
 }
 
-// Dispatcher delivers webhooks asynchronously with retry and dead-letter handling.
+type webhookJobStore interface {
+	Create(ctx context.Context, job *postgres.WebhookJob) error
+	ClaimNext(ctx context.Context, workerID string) (*postgres.WebhookJob, error)
+	Reschedule(ctx context.Context, id int64, lastError string, nextAttemptAt time.Time, responseCode *int, responseBody *string) error
+	MarkCompleted(ctx context.Context, id int64, responseCode *int, responseBody *string) error
+	MarkFailed(ctx context.Context, id int64, lastError string, responseCode *int, responseBody *string) error
+}
+
+// Dispatcher enqueues and delivers webhook jobs using durable PostgreSQL state.
 type Dispatcher struct {
-	repo   *postgres.WebhookRepository
-	queue  chan job
-	client *http.Client
+	repo      webhookStore
+	jobs      webhookJobStore
+	client    *http.Client
+	workerID  string
+	pollDelay time.Duration
 }
 
-// NewDispatcher creates a Dispatcher with a buffered job queue.
-func NewDispatcher(repo *postgres.WebhookRepository, bufferSize int) *Dispatcher {
+// NewDispatcher creates a durable webhook dispatcher.
+func NewDispatcher(repo *postgres.WebhookRepository, jobs *postgres.WebhookJobRepository, workerID string) *Dispatcher {
 	return &Dispatcher{
-		repo:  repo,
-		queue: make(chan job, bufferSize),
+		repo:      repo,
+		jobs:      jobs,
+		workerID:  workerID,
+		pollDelay: time.Second,
 		client: &http.Client{
 			Timeout: 10 * time.Second,
 		},
 	}
 }
 
-// Start processes delivery jobs until ctx is cancelled.
-// Must be called in a goroutine.
+// Start polls and delivers durable webhook jobs until ctx is cancelled.
 func (d *Dispatcher) Start(ctx context.Context) {
 	for {
-		select {
-		case <-ctx.Done():
-			return
-		case j, ok := <-d.queue:
-			if !ok {
+		processed, err := d.processNext(ctx)
+		if err != nil {
+			if !errors.Is(err, context.Canceled) {
+				log.Printf("webhook: process next job: %v", err)
+			}
+			if !waitForNextTick(ctx, d.pollDelay) {
 				return
 			}
-			go d.deliver(ctx, j)
+			continue
+		}
+		if processed {
+			continue
+		}
+		if !waitForNextTick(ctx, d.pollDelay) {
+			return
 		}
 	}
 }
 
-// Stop closes the job queue.
+// Stop is a no-op for the durable dispatcher. The Start context controls shutdown.
 func (d *Dispatcher) Stop() {
-	close(d.queue)
 }
 
-// Dispatch enqueues a webhook event for all webhooks subscribed to that event.
-// Drops the event with a warning if the queue is full.
+// Dispatch creates durable webhook jobs for all subscribers of the given event.
 func (d *Dispatcher) Dispatch(ctx context.Context, projectID int64, event string, payload any) {
 	data, err := json.Marshal(payload)
 	if err != nil {
@@ -90,56 +106,82 @@ func (d *Dispatcher) Dispatch(ctx context.Context, projectID int64, event string
 	}
 
 	for _, wh := range hooks {
-		j := job{webhook: wh, event: event, payload: data}
-		select {
-		case d.queue <- j:
-		default:
-			log.Printf("webhook: queue full, dropping delivery for webhook %d event %s", wh.ID, event)
+		job := &postgres.WebhookJob{
+			WebhookID:     wh.ID,
+			Event:         event,
+			Payload:       data,
+			Status:        "accepted",
+			NextAttemptAt: time.Now().UTC(),
+		}
+		if projectID != 0 {
+			pid := projectID
+			job.ProjectID = &pid
+		}
+		if err := d.jobs.Create(ctx, job); err != nil {
+			log.Printf("webhook: create job for webhook %d event %s: %v", wh.ID, event, err)
 		}
 	}
 }
 
-// deliver sends the payload to the webhook endpoint with retries.
-func (d *Dispatcher) deliver(ctx context.Context, j job) {
-	for attempt, delay := range retryDelays {
-		attempt++ // 1-indexed for logging
-		code, body, err := d.send(j.webhook, j.event, j.payload)
-
-		del := &postgres.WebhookDelivery{
-			WebhookID: j.webhook.ID,
-			Event:     j.event,
-			Payload:   j.payload,
-			Success:   err == nil && code >= 200 && code < 300,
-			Attempt:   attempt,
+func (d *Dispatcher) processNext(ctx context.Context) (bool, error) {
+	job, err := d.jobs.ClaimNext(ctx, d.workerID)
+	if err != nil {
+		if errors.Is(err, postgres.ErrNotFound) {
+			return false, nil
 		}
-		if code > 0 {
-			del.ResponseCode = &code
-		}
-		if body != "" {
-			del.ResponseBody = &body
-		}
-		if err := d.repo.CreateDelivery(ctx, del); err != nil {
-			log.Printf("webhook: record delivery attempt %d for webhook %d: %v", attempt, j.webhook.ID, err)
-		}
-
-		if del.Success {
-			return
-		}
-
-		if attempt >= len(retryDelays) {
-			log.Printf("webhook: dead-letter webhook %d event %s after %d attempts: %v",
-				j.webhook.ID, j.event, attempt, err)
-			return
-		}
-
-		log.Printf("webhook: delivery failed (attempt %d/%d) webhook %d event %s: %v — retry in %s",
-			attempt, len(retryDelays), j.webhook.ID, j.event, err, delay)
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(delay):
-		}
+		return false, err
 	}
+
+	wh, err := d.repo.GetByID(ctx, job.WebhookID)
+	if err != nil {
+		if markErr := d.jobs.MarkFailed(ctx, job.ID, err.Error(), nil, nil); markErr != nil {
+			return true, markErr
+		}
+		return true, nil
+	}
+
+	code, body, sendErr := d.send(wh, job.Event, job.Payload)
+
+	del := &postgres.WebhookDelivery{
+		WebhookID: job.WebhookID,
+		Event:     job.Event,
+		Payload:   job.Payload,
+		Success:   sendErr == nil && code >= 200 && code < 300,
+		Attempt:   job.Attempts,
+	}
+	if code > 0 {
+		del.ResponseCode = &code
+	}
+	if body != "" {
+		del.ResponseBody = &body
+	}
+	if err := d.repo.CreateDelivery(ctx, del); err != nil {
+		log.Printf("webhook: record delivery attempt %d for webhook %d: %v", job.Attempts, job.WebhookID, err)
+	}
+
+	if del.Success {
+		if err := d.jobs.MarkCompleted(ctx, job.ID, del.ResponseCode, del.ResponseBody); err != nil {
+			return true, err
+		}
+		return true, nil
+	}
+
+	if job.Attempts >= len(retryDelays) {
+		log.Printf("webhook: dead-letter webhook %d event %s after %d attempts: %v",
+			job.WebhookID, job.Event, job.Attempts, sendErr)
+		if err := d.jobs.MarkFailed(ctx, job.ID, errorMessage(sendErr, code), del.ResponseCode, del.ResponseBody); err != nil {
+			return true, err
+		}
+		return true, nil
+	}
+
+	delay := retryDelays[job.Attempts-1]
+	log.Printf("webhook: delivery failed (attempt %d/%d) webhook %d event %s: %v — retry in %s",
+		job.Attempts, len(retryDelays), job.WebhookID, job.Event, sendErr, delay)
+	if err := d.jobs.Reschedule(ctx, job.ID, errorMessage(sendErr, code), time.Now().UTC().Add(delay), del.ResponseCode, del.ResponseBody); err != nil {
+		return true, err
+	}
+	return true, nil
 }
 
 // send performs a single HTTP POST with HMAC signing.
@@ -180,4 +222,23 @@ func sign(payload []byte, secret string) string {
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write(payload)
 	return hex.EncodeToString(mac.Sum(nil))
+}
+
+func waitForNextTick(ctx context.Context, delay time.Duration) bool {
+	select {
+	case <-ctx.Done():
+		return false
+	case <-time.After(delay):
+		return true
+	}
+}
+
+func errorMessage(err error, code int) string {
+	if err != nil {
+		return err.Error()
+	}
+	if code > 0 {
+		return fmt.Sprintf("non-2xx response: %d", code)
+	}
+	return "unknown delivery error"
 }

@@ -23,8 +23,7 @@ type IngestRequest = appingest.IngestRequest
 // IngestResult is the response returned after a successful ingest.
 type IngestResult = appingest.IngestResult
 
-// IndexEnqueuer abstracts the mechanism for enqueuing search index jobs.
-// The active runtime currently uses the in-process Worker.
+// IndexEnqueuer abstracts the mechanism for enqueuing durable search index jobs.
 type IndexEnqueuer interface {
 	Enqueue(ctx context.Context, scanID, projectID int64, projectKey string) error
 }

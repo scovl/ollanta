@@ -27,6 +27,15 @@ type IScanRepo interface {
 	ListByProject(ctx context.Context, projectID int64) ([]*model.Scan, error)
 }
 
+// IScanJobRepo is the outbound port for durable scan intake state.
+type IScanJobRepo interface {
+	Create(ctx context.Context, job *model.ScanJob) error
+	GetByID(ctx context.Context, id int64) (*model.ScanJob, error)
+	ClaimNext(ctx context.Context, workerID string) (*model.ScanJob, error)
+	MarkCompleted(ctx context.Context, id, scanID int64) error
+	MarkFailed(ctx context.Context, id int64, lastError string) error
+}
+
 // IIssueRepo is the outbound port for issue persistence.
 type IIssueRepo interface {
 	BulkInsert(ctx context.Context, issues []model.IssueRow) error

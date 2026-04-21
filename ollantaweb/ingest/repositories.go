@@ -14,6 +14,7 @@ const repoPageSize = 1000
 
 var _ port.IProjectRepo = (*projectRepoAdapter)(nil)
 var _ port.IScanRepo = (*scanRepoAdapter)(nil)
+var _ port.IScanJobRepo = (*scanJobRepoAdapter)(nil)
 var _ port.IIssueRepo = (*issueRepoAdapter)(nil)
 var _ port.IMeasureRepo = (*measureRepoAdapter)(nil)
 
@@ -134,6 +135,43 @@ func (a *scanRepoAdapter) ListByProject(ctx context.Context, projectID int64) ([
 		out = []*model.Scan{}
 	}
 	return out, nil
+}
+
+type scanJobRepoAdapter struct {
+	inner *postgres.ScanJobRepository
+}
+
+func (a *scanJobRepoAdapter) Create(ctx context.Context, job *model.ScanJob) error {
+	store := toStoreScanJob(job)
+	if err := a.inner.Create(ctx, store); err != nil {
+		return mapStoreErr(err)
+	}
+	copyScanJobFromStore(job, store)
+	return nil
+}
+
+func (a *scanJobRepoAdapter) GetByID(ctx context.Context, id int64) (*model.ScanJob, error) {
+	job, err := a.inner.GetByID(ctx, id)
+	if err != nil {
+		return nil, mapStoreErr(err)
+	}
+	return toDomainScanJob(job), nil
+}
+
+func (a *scanJobRepoAdapter) ClaimNext(ctx context.Context, workerID string) (*model.ScanJob, error) {
+	job, err := a.inner.ClaimNext(ctx, workerID)
+	if err != nil {
+		return nil, mapStoreErr(err)
+	}
+	return toDomainScanJob(job), nil
+}
+
+func (a *scanJobRepoAdapter) MarkCompleted(ctx context.Context, id, scanID int64) error {
+	return mapStoreErr(a.inner.MarkCompleted(ctx, id, scanID))
+}
+
+func (a *scanJobRepoAdapter) MarkFailed(ctx context.Context, id int64, lastError string) error {
+	return mapStoreErr(a.inner.MarkFailed(ctx, id, lastError))
 }
 
 type issueRepoAdapter struct {
@@ -327,6 +365,61 @@ func toStoreScan(scan *model.Scan) *postgres.Scan {
 		NewIssues:            scan.NewIssues,
 		ClosedIssues:         scan.ClosedIssues,
 	}
+}
+
+func toDomainScanJob(job *postgres.ScanJob) *model.ScanJob {
+	if job == nil {
+		return nil
+	}
+	return &model.ScanJob{
+		ID:          job.ID,
+		ProjectKey:  job.ProjectKey,
+		Status:      model.ScanJobStatus(job.Status),
+		Payload:     job.Payload,
+		ScanID:      job.ScanID,
+		WorkerID:    job.WorkerID,
+		LastError:   job.LastError,
+		CreatedAt:   job.CreatedAt,
+		UpdatedAt:   job.UpdatedAt,
+		StartedAt:   job.StartedAt,
+		CompletedAt: job.CompletedAt,
+	}
+}
+
+func toStoreScanJob(job *model.ScanJob) *postgres.ScanJob {
+	if job == nil {
+		return nil
+	}
+	return &postgres.ScanJob{
+		ID:          job.ID,
+		ProjectKey:  job.ProjectKey,
+		Status:      string(job.Status),
+		Payload:     job.Payload,
+		ScanID:      job.ScanID,
+		WorkerID:    job.WorkerID,
+		LastError:   job.LastError,
+		CreatedAt:   job.CreatedAt,
+		UpdatedAt:   job.UpdatedAt,
+		StartedAt:   job.StartedAt,
+		CompletedAt: job.CompletedAt,
+	}
+}
+
+func copyScanJobFromStore(dst *model.ScanJob, src *postgres.ScanJob) {
+	if dst == nil || src == nil {
+		return
+	}
+	dst.ID = src.ID
+	dst.ProjectKey = src.ProjectKey
+	dst.Status = model.ScanJobStatus(src.Status)
+	dst.Payload = src.Payload
+	dst.ScanID = src.ScanID
+	dst.WorkerID = src.WorkerID
+	dst.LastError = src.LastError
+	dst.CreatedAt = src.CreatedAt
+	dst.UpdatedAt = src.UpdatedAt
+	dst.StartedAt = src.StartedAt
+	dst.CompletedAt = src.CompletedAt
 }
 
 func copyScanFromStore(dst *model.Scan, src *postgres.Scan) {
