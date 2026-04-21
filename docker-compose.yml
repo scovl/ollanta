@@ -15,17 +15,18 @@
 #   docker compose run --rm scan-only
 #
 #   # Scan and push results to the centralized server
-#   docker compose run --rm push
+#   docker compose run --build --rm push
 #
 # Server usage:
 #
-#   # Start PostgreSQL + ZincSearch + ollantaweb API
+#   # Start PostgreSQL + ZincSearch + ollantaweb API + workers
 #   docker compose --profile server up -d
 #
 # Reports are written to <PROJECT_DIR>/.ollanta/
 # Scanner UI available at http://localhost:7777
 # Local AI agents are configured through environment variables on the serve service
 # API server available at http://localhost:8080
+# Background roles: compute, index projection, webhook delivery
 
 name: ollanta
 
@@ -89,6 +90,9 @@ services:
       - -format=all
       - -server=${OLLANTA_SERVER:-http://ollantaweb:8080}
       - -server-token=${OLLANTA_TOKEN:-ollanta-dev-scanner-token}
+      - -server-wait=${OLLANTA_SERVER_WAIT:-false}
+      - -server-wait-timeout=${OLLANTA_SERVER_WAIT_TIMEOUT:-10m}
+      - -server-wait-poll=${OLLANTA_SERVER_WAIT_POLL:-2s}
     restart: "no"
     profiles: ["push"]
 
@@ -150,6 +154,58 @@ services:
       OLLANTA_SCANNER_TOKEN: "${OLLANTA_SCANNER_TOKEN:-ollanta-dev-scanner-token}"
     ports:
       - "8080:8080"
+    restart: unless-stopped
+    profiles: ["server"]
+
+  # ── ollantaworker: background compute role ────────────────────────────────
+  ollantaworker:
+    build:
+      context: .
+      dockerfile: ollantaweb/Dockerfile
+    entrypoint: ["/ollantaworker"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      zincsearch:
+        condition: service_started
+    environment:
+      OLLANTA_DATABASE_URL: "postgres://ollanta:${PG_PASSWORD:-ollanta_dev}@postgres:5432/ollanta?sslmode=disable"
+      OLLANTA_LOG_LEVEL: "info"
+    restart: unless-stopped
+    profiles: ["server"]
+
+  # ── ollantaindexer: durable search projection role ───────────────────────
+  ollantaindexer:
+    build:
+      context: .
+      dockerfile: ollantaweb/Dockerfile
+    entrypoint: ["/ollantaindexer"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      zincsearch:
+        condition: service_started
+    environment:
+      OLLANTA_DATABASE_URL: "postgres://ollanta:${PG_PASSWORD:-ollanta_dev}@postgres:5432/ollanta?sslmode=disable"
+      OLLANTA_ZINCSEARCH_URL: "http://zincsearch:4080"
+      OLLANTA_ZINCSEARCH_USER: "${ZINC_USER:-admin}"
+      OLLANTA_ZINCSEARCH_PASSWORD: "${ZINC_PASSWORD:-ollanta_dev}"
+      OLLANTA_LOG_LEVEL: "info"
+    restart: unless-stopped
+    profiles: ["server"]
+
+  # ── ollantawebhookworker: durable webhook delivery role ──────────────────
+  ollantawebhookworker:
+    build:
+      context: .
+      dockerfile: ollantaweb/Dockerfile
+    entrypoint: ["/ollantawebhookworker"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      OLLANTA_DATABASE_URL: "postgres://ollanta:${PG_PASSWORD:-ollanta_dev}@postgres:5432/ollanta?sslmode=disable"
+      OLLANTA_LOG_LEVEL: "info"
     restart: unless-stopped
     profiles: ["server"]
 

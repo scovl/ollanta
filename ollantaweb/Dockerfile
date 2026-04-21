@@ -29,11 +29,17 @@ COPY ollantastore/  ./ollantastore/
 COPY ollantaweb/    ./ollantaweb/
 
 ENV CGO_ENABLED=0 GOOS=linux
-RUN go build -trimpath -ldflags="-s -w" -o /ollantaweb ./ollantaweb/cmd/ollantaweb
+RUN go build -trimpath -ldflags="-s -w" -o /ollantaweb ./ollantaweb/cmd/ollantaweb \
+ && go build -trimpath -ldflags="-s -w" -o /ollantaworker ./ollantaweb/cmd/ollantaworker \
+ && go build -trimpath -ldflags="-s -w" -o /ollantaindexer ./ollantaweb/cmd/ollantaindexer \
+ && go build -trimpath -ldflags="-s -w" -o /ollantawebhookworker ./ollantaweb/cmd/ollantawebhookworker
 
 FROM gcr.io/distroless/static-debian12:nonroot AS final
 
 COPY --from=builder /ollantaweb /ollantaweb
+COPY --from=builder /ollantaworker /ollantaworker
+COPY --from=builder /ollantaindexer /ollantaindexer
+COPY --from=builder /ollantawebhookworker /ollantawebhookworker
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 
 EXPOSE 8080
