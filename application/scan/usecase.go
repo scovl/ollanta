@@ -23,11 +23,14 @@ type ScanOptions struct {
 	ProjectKey  string
 	Format      string // "summary" | "json" | "sarif" | "all"
 	Debug       bool
-	Serve       bool   // open local web UI after scan
-	Port        int    // port for -serve (default 7777)
-	Bind        string // bind address for -serve (default 127.0.0.1)
-	Server      string // URL of ollantaweb server for push mode (empty = disabled)
-	ServerToken string // Bearer token for authenticating with ollantaweb
+	Serve       bool          // open local web UI after scan
+	Port        int           // port for -serve (default 7777)
+	Bind        string        // bind address for -serve (default 127.0.0.1)
+	Server      string        // URL of ollantaweb server for push mode (empty = disabled)
+	ServerToken string        // Bearer token for authenticating with ollantaweb
+	ServerWait  bool          // wait for accepted server job until completion
+	WaitTimeout time.Duration // maximum time to wait for server-side job completion
+	WaitPoll    time.Duration // polling interval while waiting for server-side job completion
 }
 
 // ParseFlags parses args (typically os.Args[1:]) into ScanOptions.
@@ -46,6 +49,9 @@ func ParseFlags(args []string) (*ScanOptions, error) {
 	bind := fs.String("bind", "127.0.0.1", "Bind address for -serve (use 0.0.0.0 inside Docker)")
 	serverURL := fs.String("server", "", "URL of ollantaweb server to push results to (e.g. http://localhost:8080)")
 	serverToken := fs.String("server-token", "", "API token for authenticating with ollantaweb (Bearer)")
+	serverWait := fs.Bool("server-wait", false, "Wait for an accepted server-side scan job to complete")
+	waitTimeout := fs.Duration("server-wait-timeout", 10*time.Minute, "Maximum time to wait for a server-side scan job")
+	waitPoll := fs.Duration("server-wait-poll", 2*time.Second, "Polling interval while waiting for a server-side scan job")
 
 	if err := fs.Parse(args); err != nil {
 		return nil, err
@@ -67,6 +73,9 @@ func ParseFlags(args []string) (*ScanOptions, error) {
 		Bind:        *bind,
 		Server:      *serverURL,
 		ServerToken: *serverToken,
+		ServerWait:  *serverWait,
+		WaitTimeout: *waitTimeout,
+		WaitPoll:    *waitPoll,
 	}
 
 	for _, s := range strings.Split(*sources, ",") {
