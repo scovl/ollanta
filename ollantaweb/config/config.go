@@ -31,10 +31,6 @@ type Config struct {
 	// SearchBackend selects the search engine: "zincsearch" (default), "postgres".
 	SearchBackend string
 
-	// IndexCoordinator selects the index job coordinator: "memory" (default) or "pgnotify".
-	// "pgnotify" uses Postgres LISTEN/NOTIFY for multi-replica coordination.
-	IndexCoordinator string
-
 	// LogLevel controls log verbosity ("debug", "info", "warn", "error").
 	LogLevel string
 
@@ -89,18 +85,17 @@ func Load() (*Config, error) {
 	}
 
 	cfg := &Config{
-		Addr:              envOr("OLLANTA_ADDR", ":8080"),
-		DatabaseURL:       os.Getenv("OLLANTA_DATABASE_URL"),
+		Addr:               envOr("OLLANTA_ADDR", ":8080"),
+		DatabaseURL:        os.Getenv("OLLANTA_DATABASE_URL"),
 		ZincSearchURL:      envOr("OLLANTA_ZINCSEARCH_URL", "http://localhost:4080"),
 		ZincSearchUser:     envOr("OLLANTA_ZINCSEARCH_USER", "admin"),
 		ZincSearchPassword: envOr("OLLANTA_ZINCSEARCH_PASSWORD", "admin"),
 		SearchBackend:      envOr("OLLANTA_SEARCH_BACKEND", "zincsearch"),
-		IndexCoordinator:  envOr("OLLANTA_INDEX_COORDINATOR", "memory"),
-		LogLevel:          envOr("OLLANTA_LOG_LEVEL", "info"),
-		JWTSecret:         jwtSecret,
-		JWTExpiry:         jwtExpiry,
-		RefreshExpiry:     refreshExpiry,
-		OAuthRedirectBase: os.Getenv("OLLANTA_OAUTH_REDIRECT_BASE"),
+		LogLevel:           envOr("OLLANTA_LOG_LEVEL", "info"),
+		JWTSecret:          jwtSecret,
+		JWTExpiry:          jwtExpiry,
+		RefreshExpiry:      refreshExpiry,
+		OAuthRedirectBase:  os.Getenv("OLLANTA_OAUTH_REDIRECT_BASE"),
 		GitHubClientID:     os.Getenv("OLLANTA_GITHUB_CLIENT_ID"),
 		GitHubClientSecret: os.Getenv("OLLANTA_GITHUB_CLIENT_SECRET"),
 		GitLabClientID:     os.Getenv("OLLANTA_GITLAB_CLIENT_ID"),

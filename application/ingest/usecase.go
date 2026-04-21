@@ -53,7 +53,7 @@ type IngestResult struct {
 }
 
 // ISearchEnqueuer is an optional outbound port for async search indexing.
-// Implementations live in adapter/secondary/search/.
+// Implementations live in the outer layer chosen by the active runtime.
 type ISearchEnqueuer interface {
 	// Enqueue submits an index job without blocking. Dropping is acceptable.
 	Enqueue(scanID, projectID int64, projectKey string)

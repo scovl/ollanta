@@ -18,7 +18,6 @@ import (
 	"github.com/scovl/ollanta/ollantaweb/api"
 	"github.com/scovl/ollanta/ollantaweb/config"
 	"github.com/scovl/ollanta/ollantaweb/ingest"
-	"github.com/scovl/ollanta/ollantaweb/pgnotify"
 	"github.com/scovl/ollanta/ollantaweb/telemetry"
 	"github.com/scovl/ollanta/ollantaweb/webhook"
 )
@@ -84,24 +83,13 @@ func main() {
 	wdispatcher := webhook.NewDispatcher(webhookRepo, 256)
 	go wdispatcher.Start(ctx)
 
-	// ── Index coordinator ──────────────────────────────────────────────────
-	var enqueuer ingest.IndexEnqueuer
-	switch cfg.IndexCoordinator {
-	case "pgnotify":
-		coord := pgnotify.NewCoordinator(db.Pool, indexer, issueRepo)
-		if err := coord.EnsureTable(ctx); err != nil {
-			log.Fatalf("ollantaweb: pgnotify ensure table: %v", err)
-		}
-		go coord.Start(ctx)
-		enqueuer = coord
-	default: // "memory"
-		worker := ingest.NewWorker(indexer, issueRepo, 256)
-		go worker.Start(ctx)
-		enqueuer = worker
-	}
+	// ── Index worker ───────────────────────────────────────────────────────
+	worker := ingest.NewWorker(indexer, issueRepo, 256)
+	go worker.Start(ctx)
+	var enqueuer ingest.IndexEnqueuer = worker
 
 	// ── Ingest pipeline ────────────────────────────────────────────────────
-	pipeline := ingest.NewPipeline(db, projectRepo, scanRepo, issueRepo, measureRepo, indexer, enqueuer)
+	pipeline := ingest.NewPipeline(projectRepo, scanRepo, issueRepo, measureRepo, enqueuer)
 
 	// ── HTTP server ────────────────────────────────────────────────────────
 	router := api.NewRouter(&api.RouterDeps{
@@ -145,9 +133,7 @@ func main() {
 	<-ctx.Done()
 	log.Println("ollantaweb: shutting down...")
 
-	if stopper, ok := enqueuer.(interface{ Stop() }); ok {
-		stopper.Stop()
-	}
+	worker.Stop()
 	wdispatcher.Stop()
 
 	shutCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
