@@ -1,16 +1,15 @@
-'use strict';
-
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
-const vm = require('node:vm');
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import path from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const apiPrefix = '/api/v1';
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const app = await import(pathToFileURL(path.join(__dirname, 'app/main.js')).href);
 
 function createHarness(options = {}) {
   const search = options.search || '';
-  const source = fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8');
   const storage = new Map();
   const requests = [];
   const historyCalls = [];
@@ -29,50 +28,44 @@ function createHarness(options = {}) {
     return elements.get(id);
   }
 
-  const context = {
-    console,
-    URLSearchParams,
-    history: {
-      pushState(_state, _title, url) { historyCalls.push({ type: 'push', url }); },
-      replaceState(_state, _title, url) { historyCalls.push({ type: 'replace', url }); },
-    },
-    location: { search, pathname: '/ui' },
-    window: { addEventListener() {} },
-    localStorage: {
-      getItem(key) { return storage.has(key) ? storage.get(key) : null; },
-      setItem(key, value) { storage.set(key, String(value)); },
-      removeItem(key) { storage.delete(key); },
-    },
-    document: {
-      addEventListener() {},
-        getElementById(id) { return getElement(id); },
-      querySelectorAll() { return []; },
-      createElement() { return { classList: { add() {}, remove() {} }, remove() {}, textContent: '' }; },
-      body: { appendChild() {} },
-    },
-    fetch: async (url, requestOptions) => {
-      requests.push(String(url));
-      const response = options.fetchHandler ? await options.fetchHandler(String(url), requestOptions) : { body: {} };
-      return {
-        status: response.status ?? 200,
-        ok: response.ok ?? true,
-        json: async () => response.body ?? {},
-      };
-    },
-    setTimeout() { return 0; },
-    clearTimeout() {},
-    requestAnimationFrame(callback) { callback(); },
-    confirm() { return true; },
+  app.replaceState(app.createInitialState());
+
+  globalThis.history = {
+    pushState(_state, _title, url) { historyCalls.push({ type: 'push', url }); },
+    replaceState(_state, _title, url) { historyCalls.push({ type: 'replace', url }); },
   };
-  context.globalThis = context;
-  vm.createContext(context);
-  vm.runInContext(
-    source + '\n;globalThis.__appExports = { state, normalizeScope, parseProjectRoute, buildProjectRoute, buildScopeQuery, changeScope, loadProject, loadCodeTreeData, renderCodeTab, renderProjectInformationTab, renderScopeToolbar };',
-    context,
-    { filename: 'app.js' },
-  );
+  globalThis.location = { search, pathname: '/ui' };
+  globalThis.window = { addEventListener() {} };
+  globalThis.localStorage = {
+    getItem(key) { return storage.has(key) ? storage.get(key) : null; },
+    setItem(key, value) { storage.set(key, String(value)); },
+    removeItem(key) { storage.delete(key); },
+  };
+  globalThis.document = {
+    readyState: 'loading',
+    addEventListener() {},
+    getElementById(id) { return getElement(id); },
+    querySelectorAll() { return []; },
+    createElement() { return { classList: { add() {}, remove() {} }, remove() {}, textContent: '' }; },
+    body: { appendChild() {} },
+  };
+  globalThis.fetch = async (url, requestOptions) => {
+    const requestUrl = typeof url === 'string' ? url : url instanceof URL ? url.href : String(url);
+    requests.push(requestUrl);
+    const response = options.fetchHandler ? await options.fetchHandler(requestUrl, requestOptions) : { body: {} };
+    return {
+      status: response.status ?? 200,
+      ok: response.ok ?? true,
+      json: async () => response.body ?? {},
+    };
+  };
+  globalThis.setTimeout = () => 0;
+  globalThis.clearTimeout = () => {};
+  globalThis.requestAnimationFrame = callback => { callback(); };
+  globalThis.confirm = () => true;
+
   return {
-    app: context.__appExports,
+    app,
     requests,
     historyCalls,
     elements,
@@ -80,8 +73,8 @@ function createHarness(options = {}) {
 }
 
 test('normalizeScope maps snake_case scope fields', () => {
-  const { app } = createHarness();
-  const scope = app.normalizeScope({
+  const { app: harnessApp } = createHarness();
+  const scope = harnessApp.normalizeScope({
     type: 'pull_request',
     branch: 'feature/login',
     pull_request: '42',
@@ -96,8 +89,8 @@ test('normalizeScope maps snake_case scope fields', () => {
 });
 
 test('parseProjectRoute reads project, tab and branch scope from query string', () => {
-  const { app } = createHarness({ search: '?project=demo&tab=code&branch=release%2F1.2' });
-  const route = { ...app.parseProjectRoute() };
+  const { app: harnessApp } = createHarness({ search: '?project=demo&tab=code&branch=release%2F1.2' });
+  const route = { ...harnessApp.parseProjectRoute() };
 
   assert.deepEqual(route, {
     project: 'demo',
@@ -108,8 +101,8 @@ test('parseProjectRoute reads project, tab and branch scope from query string', 
 });
 
 test('buildProjectRoute preserves pull request scope in the URL', () => {
-	const { app } = createHarness();
-  const route = app.buildProjectRoute('demo', 'information', {
+  const { app: harnessApp } = createHarness();
+  const route = harnessApp.buildProjectRoute('demo', 'information', {
     type: 'pull_request',
     pullRequestKey: '42',
     branch: 'feature/login',
@@ -119,23 +112,23 @@ test('buildProjectRoute preserves pull request scope in the URL', () => {
 });
 
 test('renderScopeToolbar shows the real default branch name in the branch selector', () => {
-  const { app } = createHarness();
+  const { app: harnessApp } = createHarness();
 
-  app.state.scope = app.normalizeScope({ type: 'branch', branch: 'main', defaultBranch: 'main' });
-  app.state.branchesData = [
+  harnessApp.state.scope = harnessApp.normalizeScope({ type: 'branch', branch: 'main', defaultBranch: 'main' });
+  harnessApp.state.branchesData = [
     { name: '', is_default: false },
     { name: 'main', is_default: true },
     { name: 'release', is_default: false },
   ];
-  app.state.pullRequestsData = [];
+  harnessApp.state.pullRequestsData = [];
 
-  const html = app.renderScopeToolbar();
+  const html = harnessApp.renderScopeToolbar();
   assert.match(html, /<option value="main">main · default<\/option>/);
   assert.doesNotMatch(html, /<option value="">Default branch<\/option>/);
 });
 
 test('changeScope refreshes scoped data and persists the branch in the URL', async () => {
-  const { app, requests, historyCalls } = createHarness({
+  const { app: harnessApp, requests, historyCalls } = createHarness({
     fetchHandler(url) {
       if (url === apiPrefix + '/projects/demo/overview?branch=release') {
         return { body: { scope: { type: 'branch', branch: 'release', default_branch: 'main' } } };
@@ -150,23 +143,23 @@ test('changeScope refreshes scoped data and persists the branch in the URL', asy
     },
   });
 
-  app.state.currentProject = { key: 'demo' };
-  app.state.projectTab = 'overview';
-  app.state.scope = app.normalizeScope({ type: 'branch', branch: 'main', defaultBranch: 'main' });
+  harnessApp.state.currentProject = { key: 'demo' };
+  harnessApp.state.projectTab = 'overview';
+  harnessApp.state.scope = harnessApp.normalizeScope({ type: 'branch', branch: 'main', defaultBranch: 'main' });
 
-  await app.changeScope({ type: 'branch', branch: 'release', defaultBranch: 'main' });
+  await harnessApp.changeScope({ type: 'branch', branch: 'release', defaultBranch: 'main' });
 
   assert.deepEqual(requests, [
     apiPrefix + '/projects/demo/overview?branch=release',
     apiPrefix + '/projects/demo/branches',
     apiPrefix + '/projects/demo/pull-requests',
   ]);
-  assert.equal(app.state.scope.branch, 'release');
+  assert.equal(harnessApp.state.scope.branch, 'release');
   assert.equal(historyCalls.at(-1).url, '?project=demo&tab=overview&branch=release');
 });
 
 test('loadProject preserves branch scope in reloads and refreshes project information', async () => {
-  const { app, requests, historyCalls } = createHarness({
+  const { app: harnessApp, requests, historyCalls } = createHarness({
     fetchHandler(url) {
       if (url === apiPrefix + '/projects/demo') {
         return { body: { key: 'demo', name: 'Demo', main_branch: 'main' } };
@@ -199,18 +192,18 @@ test('loadProject preserves branch scope in reloads and refreshes project inform
     },
   });
 
-  await app.loadProject('demo', { project: 'demo', tab: 'information', branch: 'release', pullRequest: '' });
+  await harnessApp.loadProject('demo', { project: 'demo', tab: 'information', branch: 'release', pullRequest: '' });
 
-  assert.equal(app.state.projectTab, 'information');
-  assert.equal(app.state.scope.branch, 'release');
+  assert.equal(harnessApp.state.projectTab, 'information');
+  assert.equal(harnessApp.state.scope.branch, 'release');
   assert.ok(requests.includes(apiPrefix + '/projects/demo/overview?branch=release'));
   assert.ok(requests.includes(apiPrefix + '/projects/demo/information?branch=release'));
   assert.equal(historyCalls.at(-1).url, '?project=demo&tab=information&branch=release');
-  assert.match(app.renderProjectInformationTab(), /release/);
+  assert.match(harnessApp.renderProjectInformationTab(), /release/);
 });
 
 test('changeScope refreshes project information for a selected pull request', async () => {
-  const { app, requests, historyCalls } = createHarness({
+  const { app: harnessApp, requests, historyCalls } = createHarness({
     fetchHandler(url) {
       if (url === apiPrefix + '/projects/demo/overview?pull_request=128') {
         return { body: { scope: { type: 'pull_request', branch: 'feature/login', pull_request_key: '128', pull_request_base: 'main', default_branch: 'main' } } };
@@ -235,20 +228,20 @@ test('changeScope refreshes project information for a selected pull request', as
     },
   });
 
-  app.state.currentProject = { key: 'demo' };
-  app.state.projectTab = 'information';
-  app.state.scope = app.normalizeScope({ type: 'branch', branch: 'main', defaultBranch: 'main' });
+  harnessApp.state.currentProject = { key: 'demo' };
+  harnessApp.state.projectTab = 'information';
+  harnessApp.state.scope = harnessApp.normalizeScope({ type: 'branch', branch: 'main', defaultBranch: 'main' });
 
-  await app.changeScope({ type: 'pull_request', pullRequestKey: '128', branch: 'feature/login', pullRequestBase: 'main', defaultBranch: 'main' });
+  await harnessApp.changeScope({ type: 'pull_request', pullRequestKey: '128', branch: 'feature/login', pullRequestBase: 'main', defaultBranch: 'main' });
 
   assert.ok(requests.includes(apiPrefix + '/projects/demo/information?pull_request=128'));
-  assert.equal(app.state.scope.pullRequestKey, '128');
+  assert.equal(harnessApp.state.scope.pullRequestKey, '128');
   assert.equal(historyCalls.at(-1).url, '?project=demo&tab=information&pull_request=128');
-  assert.match(app.renderProjectInformationTab(), /Pull request/i);
+  assert.match(harnessApp.renderProjectInformationTab(), /Pull request/i);
 });
 
 test('loadCodeTreeData fetches the scoped file and renderCodeTab shows issue markers', async () => {
-  const { app, requests } = createHarness({
+  const { app: harnessApp, requests } = createHarness({
     fetchHandler(url) {
       if (url === apiPrefix + '/projects/demo/code/tree?branch=release') {
         return {
@@ -276,18 +269,65 @@ test('loadCodeTreeData fetches the scoped file and renderCodeTab shows issue mar
     },
   });
 
-  app.state.currentProject = { key: 'demo' };
-  app.state.scope = app.normalizeScope({ type: 'branch', branch: 'release', defaultBranch: 'main' });
+  harnessApp.state.currentProject = { key: 'demo' };
+  harnessApp.state.scope = harnessApp.normalizeScope({ type: 'branch', branch: 'release', defaultBranch: 'main' });
 
-  await app.loadCodeTreeData();
+  await harnessApp.loadCodeTreeData();
 
   assert.deepEqual(requests, [
     apiPrefix + '/projects/demo/code/tree?branch=release',
     apiPrefix + '/projects/demo/code/file?path=src%2Fapp.go&branch=release',
   ]);
-  const html = app.renderCodeTab();
+  const html = harnessApp.renderCodeTab();
   assert.match(html, /src\/app\.go/);
   assert.match(html, /go:no-large-functions/);
   assert.match(html, /has-issue/);
   assert.match(html, /sev-major/);
+});
+
+test('renderOverviewTab keeps overview sections intact after helper extraction', () => {
+  const { app: harnessApp } = createHarness();
+
+  harnessApp.state.overviewData = {
+    last_scan: {
+      version: '1.2.3',
+      branch: 'main',
+      commit_sha: 'abcdef123456',
+      status: 'completed',
+      analysis_date: '2026-04-21T12:00:00Z',
+      elapsed_ms: 1200,
+    },
+    quality_gate: { status: 'OK' },
+    measures: {
+      bugs: 1,
+      vulnerabilities: 0,
+      code_smells: 3,
+      coverage: 82.1,
+      duplicated_lines_density: 2.5,
+      ncloc: 200,
+    },
+    facets: {
+      by_severity: { major: 2 },
+      by_type: { bug: 1, code_smell: 2 },
+      by_file: { 'src/foo/bar.js': 3, 'src/app.js': 1 },
+    },
+    new_code: { new_issues: 2, closed_issues: 1 },
+  };
+
+  const html = harnessApp.renderOverviewTab();
+  assert.match(html, /Quality Gate/);
+  assert.match(html, /New Code/);
+  assert.match(html, /Hotspot Files/);
+  assert.match(html, /src\/foo\/bar\.js/);
+  assert.match(html, /Latest Scan/);
+  assert.match(html, /1\.2s/);
+});
+
+test('renderOverviewTab shows the empty state when there is no overview data', () => {
+  const { app: harnessApp } = createHarness();
+
+  harnessApp.state.overviewData = null;
+
+  const html = harnessApp.renderOverviewTab();
+  assert.match(html, /No scans yet for this project/);
 });
