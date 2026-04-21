@@ -1,50 +1,78 @@
 # Contributing to Ollanta
 
-This document is the fast path for contributing to Ollanta. It focuses on the commands, validation flow, and repository conventions you need when changing scanner, server, frontend, or shared modules.
+This is the short contributor checklist. Use it when you already know the codebase and need the right commands fast.
 
-For architecture details, see [docs/architecture.md](docs/architecture.md). For a docs-friendly version of this workflow, see [docs/contributing.md](docs/contributing.md).
+For the canonical guide with rationale, validation notes, and documentation expectations, see [docs/contributing.md](docs/contributing.md).
 
-## Prerequisites
+## Why There Are Two Contribution Guides
 
-- Go 1.21+
-- CGO toolchain available locally
-- Docker and Docker Compose
-- Node.js for the local scanner frontend in `ollantascanner/server/static`
-- `golangci-lint` available in PATH
+- `CONTRIBUTIONS.md`: quick operational reference from the repository root
+- `docs/contributing.md`: canonical contributor guide with context and validation guidance
 
-On Windows, the project expects an MSYS2/MinGW toolchain for CGO-backed modules.
+## Core Rules
 
-## Repository layout
+- Keep changes focused and avoid unrelated refactors.
+- Preserve the hexagonal boundaries and keep types in their canonical packages.
+- Do not duplicate rule metadata or shared structs.
+- Do not silently ignore errors.
+- Update documentation when workflows, flags, environment variables, or user-facing behavior change.
 
-Ollanta is a multi-module Go workspace. Important areas:
+## Validation Matrix
 
-- `domain/` and `application/`: hexagonal core
-- `adapter/`: HTTP, telemetry, persistence and bridge adapters
-- `ollantascanner/`: CLI scanner and local UI server
-- `ollantaweb/`: centralized API server
-- `ollantarules/`: rule registry and rule metadata
-- `ollantaparser/`: tree-sitter boundary and the only true CGo-heavy parser module
+### 1. Scanner-side CGO modules
 
-## Development workflow
+The root `Makefile` currently covers only these modules:
 
-### 1. Make the smallest change that solves the problem
+- `ollantacore`
+- `ollantaparser`
+- `ollantarules`
+- `ollantascanner`
+- `ollantaengine`
 
-- Prefer updating existing modules over adding new abstractions
-- Keep types in their canonical package
-- Do not duplicate rule metadata or shared structs
-- Do not silently ignore errors
-
-### 2. Rebuild what your change actually touches
-
-General validation:
+Use:
 
 ```sh
 make build
 make test
 make lint
+make fmt
 ```
 
-Frontend changes in `ollantascanner/server/static`:
+These targets do not validate or format `application/`, `domain/`, `ollantastore/`, `ollantaweb/`, or `adapter/`.
+
+### 2. Server-side and hexagonal modules
+
+For `application/`, `domain/`, `ollantastore/`, and `ollantaweb/`, run targeted Go commands from the repository root:
+
+```sh
+go build ./application/... ./domain/... ./ollantastore/... ./ollantaweb/...
+go test ./application/... ./domain/... ./ollantastore/... ./ollantaweb/...
+```
+
+There is no root `make lint` target for these modules today. If you need lint coverage there, run `golangci-lint` only on the module you touched and treat it as module-specific validation.
+
+### 3. Adapter module
+
+`adapter/` is also outside the root `Makefile`. Validate it directly.
+
+On Windows, if you run `go` or `golangci-lint` directly against CGO-backed packages, export the same environment that the `Makefile` uses first:
+
+```powershell
+$env:CGO_ENABLED = '1'
+$env:PATH = 'C:\msys64\mingw64\bin;' + $env:PATH
+```
+
+Then run:
+
+```sh
+go build ./adapter/...
+go test ./adapter/...
+golangci-lint run ./adapter/...
+```
+
+### 4. Local scanner frontend
+
+For changes under `ollantascanner/server/static`:
 
 ```sh
 cd ollantascanner/server/static
@@ -52,55 +80,34 @@ npm test
 npm run build
 ```
 
-Scanner UI changes served through Docker:
+### 5. Docker rebuilds
+
+- Recreate `serve` after scanner UI or scanner runtime changes:
 
 ```sh
 docker compose up -d --build --force-recreate serve
 ```
 
-Server-only changes:
+- Rebuild `ollantaweb` after centralized server changes when validating through Docker:
 
 ```sh
 docker compose --profile server build ollantaweb
 ```
 
-## Linting and testing rules
-
-- Run `make lint` from the repository root
-- Do not run `golangci-lint` at the workspace root manually across all modules with a custom glob; the Makefile already runs the module-aware commands
-- If you changed the scanner frontend, run both `npm test` and `npm run build`
-- If you changed Docker-served scanner assets, recreate `serve` after rebuilding the frontend bundle
-
-## Scanner UI and Fix with AI
-
-The local scanner UI is embedded into the scanner binary via `go:embed`. That means:
-
-1. Changes in `ollantascanner/server/static/src` do not reach the browser until you run `npm run build`
-2. Docker users must recreate `serve` after that rebuild
-3. Browser cache should not be relied on during development
-
-To enable the mock AI agent locally:
+- Bring up the full server stack when validating end-to-end behavior:
 
 ```sh
-export OLLANTA_AI_ENABLE_MOCK=1
-ollanta -project-dir . -project-key my-project -format all -serve
+docker compose --profile server up -d
 ```
 
-To enable the mock agent with Docker Compose:
+## Pull Request Checklist
 
-```sh
-export OLLANTA_AI_ENABLE_MOCK=1
-docker compose up -d --build --force-recreate serve
-```
+- Run the relevant validation for the area you changed.
+- Update docs when behavior, workflows, or configuration changed.
+- Call out security implications explicitly when applicable.
+- Keep the scope focused.
 
-## Pull request checklist
-
-- Update docs when the behavior, workflow, or configuration changed
-- Run the relevant validation commands before opening the PR
-- Call out security implications explicitly when applicable
-- Keep the scope focused; avoid unrelated refactors
-
-## Commit guidance
+## Commit Guidance
 
 Use conventional commit prefixes:
 
@@ -114,10 +121,9 @@ Recommended branch format:
 
 - `username/brief-description`
 
-## Common mistakes to avoid
+## Common Mistakes
 
-- Duplicating rule metadata across packages without a clear canonical source
-- Importing CGo-heavy packages into layers that must stay CGo-free
+- Assuming `make build`, `make test`, `make lint`, or `make fmt` cover every module in the workspace
 - Forgetting to rebuild `ollantascanner/server/static/dist/app.js` after frontend changes
-- Assuming a browser reload is enough when the embedded scanner assets were not rebuilt into the binary
-- Ignoring `make lint` failures caused by scanner or rule packages
+- Recreating the browser session without rebuilding the embedded scanner assets
+- Running direct CGO-backed commands on Windows without the MSYS2/MinGW toolchain on `PATH`

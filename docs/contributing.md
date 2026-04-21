@@ -1,53 +1,95 @@
 # Contributing
 
-This guide explains how to contribute to Ollanta without having to infer the workflow from multiple modules.
+This is the canonical contributor guide for Ollanta.
 
-If you want the short operational version, see [../CONTRIBUTIONS.md](../CONTRIBUTIONS.md).
+If you only need the short operational version, see [../CONTRIBUTIONS.md](../CONTRIBUTIONS.md).
 
-## Before you start
+## Why There Are Two Contribution Guides
 
-Ollanta is split into multiple Go modules inside a single workspace. The project mixes:
+Ollanta keeps two contributor documents on purpose, but they should not duplicate each other:
 
-- pure Go modules
-- scanner and rules packages that depend on tree-sitter through CGo
-- an embedded frontend bundle for the local scanner UI
-- a separate server stack for centralized history, auth, and APIs
+- `CONTRIBUTIONS.md` is the quick reference from the repository root.
+- `docs/contributing.md` is the canonical guide with context, validation notes, and documentation expectations.
+
+If both files start saying the same thing in the same amount of detail, maintenance drift wins. The root file should stay short; this file should stay authoritative.
+
+## Project Shape
+
+Ollanta is a multi-module Go workspace. The repository mixes:
+
+- pure Go modules such as `application/`, `domain/`, `ollantastore/`, and `ollantaweb/`
+- scanner-side modules that depend on tree-sitter through CGo
+- an embedded TypeScript frontend for the local scanner UI
+- Docker-managed services for centralized history, auth, search, and webhook delivery
 
 Because of that, the right validation depends on what you changed.
 
-## Local setup
+## Local Setup
 
 Minimum tooling:
 
 - Go 1.21+
-- C compiler available for CGo-backed modules
+- a working C compiler for CGo-backed modules
 - Docker and Docker Compose
 - Node.js for `ollantascanner/server/static`
 - `golangci-lint`
 
-Useful baseline commands:
+On Windows, the root `Makefile` exports the expected CGO environment for its own targets:
+
+- `CGO_ENABLED=1`
+- `C:\msys64\mingw64\bin` prepended to `PATH`
+
+If you run `go` or `golangci-lint` directly against CGO-backed packages outside `make`, export the same values in your shell first.
+
+## Validation By Area
+
+### Scanner-side CGO modules
+
+The root `Makefile` currently validates only these modules:
+
+- `ollantacore`
+- `ollantaparser`
+- `ollantarules`
+- `ollantascanner`
+- `ollantaengine`
+
+Use:
 
 ```sh
 make build
 make test
 make lint
+make fmt
 ```
 
-## Which commands to run
+Important: those targets do not cover `application/`, `domain/`, `ollantastore/`, `ollantaweb/`, or `adapter/`.
 
-### If you changed scanner, rules, parser, or shared Go code
+### Server-side and hexagonal modules
 
-Run:
+For `application/`, `domain/`, `ollantastore/`, and `ollantaweb/`, run targeted commands from the repository root:
 
 ```sh
-make build
-make test
-make lint
+go build ./application/... ./domain/... ./ollantastore/... ./ollantaweb/...
+go test ./application/... ./domain/... ./ollantastore/... ./ollantaweb/...
 ```
 
-### If you changed the local scanner frontend
+There is no root `make lint` target for these modules today. If you need lint coverage there, run `golangci-lint` only on the module you touched and treat it as module-specific validation rather than part of the root checklist.
 
-Run:
+### Adapter module
+
+`adapter/` is outside the root `Makefile` as well and shares the CGO-sensitive parser boundary.
+
+After exporting the CGO-capable shell environment, run:
+
+```sh
+go build ./adapter/...
+go test ./adapter/...
+golangci-lint run ./adapter/...
+```
+
+### Local scanner frontend
+
+For changes under `ollantascanner/server/static`:
 
 ```sh
 cd ollantascanner/server/static
@@ -55,37 +97,35 @@ npm test
 npm run build
 ```
 
-Then, if you use Docker for the scanner UI:
+The scanner UI is compiled from TypeScript into `ollantascanner/server/static/dist/app.js` and then embedded into the scanner binary.
+
+That means:
+
+1. Editing `src/*.ts` is not enough; you must regenerate `dist/app.js`.
+2. Docker users must recreate `serve` after that rebuild.
+3. A browser refresh alone is not enough if the embedded assets were not rebuilt into the running binary.
+
+### Docker rebuilds
+
+- Recreate `serve` after scanner runtime or scanner UI changes:
 
 ```sh
-cd ../../..
 docker compose up -d --build --force-recreate serve
 ```
 
-### If you changed the centralized server
-
-Run the standard Go validation, then rebuild the server image when you need to test through Docker:
+- Rebuild `ollantaweb` after centralized server changes when validating through Docker:
 
 ```sh
 docker compose --profile server build ollantaweb
 ```
 
-## Embedded scanner UI
+- Bring up the full centralized stack when validating end-to-end behavior:
 
-The scanner UI is compiled from TypeScript into `ollantascanner/server/static/dist/app.js` and then embedded into the scanner binary.
+```sh
+docker compose --profile server up -d
+```
 
-That has two consequences:
-
-1. Editing `src/*.ts` is not enough; you must regenerate `dist/app.js`
-2. Rebuilding Docker `serve` is required if you want the containerized scanner to pick up the new frontend
-
-If the browser keeps showing old behavior after a frontend change, confirm these steps in order:
-
-1. `npm run build` was executed in `ollantascanner/server/static`
-2. `docker compose up -d --build --force-recreate serve` was executed if you are using Docker
-3. the browser was refreshed after the new container came up
-
-## AI fix workflow
+## AI Fix Workflow
 
 The local scanner UI includes a `Fix with AI` tab in issue details.
 
@@ -97,12 +137,12 @@ Supported local configuration patterns:
 
 The apply step is intentionally guarded: if the target file changed after preview generation, Ollanta rejects the apply request and asks for a fresh preview.
 
-## Documentation expectations
+## Documentation Expectations
 
 Update documentation when you change:
 
 - CLI flags
-- Docker workflows
+- validation or Docker workflows
 - environment variables
 - server routes or auth requirements
 - scanner UI behavior that users rely on
@@ -113,14 +153,16 @@ Relevant docs include:
 - [api.md](api.md)
 - [quality-gates.md](quality-gates.md)
 - [rules.md](rules.md)
+- [authentication.md](authentication.md)
+- [webhooks.md](webhooks.md)
 
-## Review expectations
+## Review Expectations
 
 Good contributions in Ollanta usually have these properties:
 
 - they solve the root cause instead of patching symptoms
 - they preserve the hexagonal boundaries
 - they do not duplicate types or data sources
-- they leave the repo with passing validation for the touched area
+- they leave the repo with the relevant validation passing for the touched area
 
 If your change affects scanner UX, include the exact commands another contributor can run to verify the behavior.
