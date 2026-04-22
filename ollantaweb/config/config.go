@@ -295,7 +295,7 @@ func buildDatabaseURL(cfg struct {
 		Scheme:   "postgres",
 		User:     user,
 		Host:     net.JoinHostPort(cfg.Host, strconv.Itoa(port)),
-		Path:     cfg.Name,
+		Path:     "/" + strings.TrimPrefix(cfg.Name, "/"),
 		RawQuery: "sslmode=" + url.QueryEscape(sslMode),
 	}).String()
 }

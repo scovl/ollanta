@@ -195,10 +195,11 @@ func resolveScannerServerURL(addr, host string, port int, publicURL string) stri
 }
 
 func normalizeScannerServerHost(host string) string {
-	switch strings.TrimSpace(host) {
+	trimmed := strings.TrimSpace(host)
+	switch trimmed {
 	case "", "0.0.0.0", "::":
 		return "localhost"
 	default:
-		return host
+		return trimmed
 	}
 }
