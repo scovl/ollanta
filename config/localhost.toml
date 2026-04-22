@@ -1,5 +1,5 @@
-# Backward-compatible localhost alias for the shared local config.
-# Prefer config/config.toml for new setups.
+# Backward-compatible localhost-focused copy of the shared local config.
+# Prefer config/config.toml for new setups; keep this file only for older commands/docs.
 
 [scanner]
 project_dir = "."

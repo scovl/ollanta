@@ -182,7 +182,7 @@ func resolveScannerServerURL(addr, host string, port int, publicURL string) stri
 		return publicURL
 	}
 	if host != "" && port > 0 {
-		return "http://" + net.JoinHostPort(host, strconv.Itoa(port))
+		return "http://" + net.JoinHostPort(normalizeScannerServerHost(host), strconv.Itoa(port))
 	}
 	if addr == "" {
 		return ""
@@ -191,8 +191,14 @@ func resolveScannerServerURL(addr, host string, port int, publicURL string) stri
 	if err != nil || resolvedPort == "" {
 		return ""
 	}
-	if resolvedHost == "" {
-		resolvedHost = "localhost"
+	return "http://" + net.JoinHostPort(normalizeScannerServerHost(resolvedHost), resolvedPort)
+}
+
+func normalizeScannerServerHost(host string) string {
+	switch strings.TrimSpace(host) {
+	case "", "0.0.0.0", "::":
+		return "localhost"
+	default:
+		return host
 	}
-	return "http://" + net.JoinHostPort(resolvedHost, resolvedPort)
 }

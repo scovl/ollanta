@@ -85,3 +85,22 @@ port = 9091
 		t.Fatalf("expected shared server url, got %q", opts.Server)
 	}
 }
+
+func TestParseFlags_MapsWildcardServerHostToLocalhost(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "ollanta.toml")
+	if err := os.WriteFile(configPath, []byte(`
+[server]
+host = "0.0.0.0"
+port = 8080
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	opts, err := scan.ParseFlags([]string{"-config", configPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if opts.Server != "http://localhost:8080" {
+		t.Fatalf("expected localhost server url, got %q", opts.Server)
+	}
+}

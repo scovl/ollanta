@@ -2,7 +2,10 @@ module github.com/scovl/ollanta/ollantastore
 
 go 1.21
 
-require github.com/jackc/pgx/v5 v5.7.2
+require (
+	github.com/jackc/pgx/v5 v5.7.2
+	github.com/scovl/ollanta/domain v0.0.0-20260421181029-9c41db0d1e0c
+)
 
 require (
 	github.com/jackc/pgpassfile v1.0.0 // indirect
