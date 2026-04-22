@@ -234,8 +234,8 @@ func parseDuration(s string, fallback time.Duration) (time.Duration, error) {
 
 func firstNonEmpty(values ...string) string {
 	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return value
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
 		}
 	}
 	return ""
@@ -255,10 +255,12 @@ func resolveServerAddr(addr, host string, port int) string {
 }
 
 func buildHTTPURL(scheme, host string, port int) string {
-	if strings.TrimSpace(host) == "" || port <= 0 {
+	host = strings.TrimSpace(host)
+	if host == "" || port <= 0 {
 		return ""
 	}
-	if strings.TrimSpace(scheme) == "" {
+	scheme = strings.TrimSpace(scheme)
+	if scheme == "" {
 		scheme = "http"
 	}
 	return (&url.URL{
@@ -276,26 +278,30 @@ func buildDatabaseURL(cfg struct {
 	Password string `toml:"password"`
 	SSLMode  string `toml:"sslmode"`
 }) string {
-	if strings.TrimSpace(cfg.Host) == "" || strings.TrimSpace(cfg.User) == "" || strings.TrimSpace(cfg.Name) == "" {
+	host := strings.TrimSpace(cfg.Host)
+	userName := strings.TrimSpace(cfg.User)
+	databaseName := strings.TrimSpace(cfg.Name)
+	if host == "" || userName == "" || databaseName == "" {
 		return ""
 	}
 	port := cfg.Port
 	if port <= 0 {
 		port = 5432
 	}
-	user := url.User(cfg.User)
-	if cfg.Password != "" {
-		user = url.UserPassword(cfg.User, cfg.Password)
+	password := strings.TrimSpace(cfg.Password)
+	user := url.User(userName)
+	if password != "" {
+		user = url.UserPassword(userName, password)
 	}
-	sslMode := cfg.SSLMode
-	if strings.TrimSpace(sslMode) == "" {
+	sslMode := strings.TrimSpace(cfg.SSLMode)
+	if sslMode == "" {
 		sslMode = "disable"
 	}
 	return (&url.URL{
 		Scheme:   "postgres",
 		User:     user,
-		Host:     net.JoinHostPort(cfg.Host, strconv.Itoa(port)),
-		Path:     "/" + strings.TrimPrefix(cfg.Name, "/"),
+		Host:     net.JoinHostPort(host, strconv.Itoa(port)),
+		Path:     "/" + strings.TrimPrefix(databaseName, "/"),
 		RawQuery: "sslmode=" + url.QueryEscape(sslMode),
 	}).String()
 }

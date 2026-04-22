@@ -1,5 +1,5 @@
 # Backward-compatible localhost-focused copy of the shared local config.
-# Prefer config/config.toml for new setups; keep this file only for older commands/docs.
+# Prefer config/config.toml for new setups; this file remains available for existing local workflows.
 
 [scanner]
 project_dir = "."
