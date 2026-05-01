@@ -68,7 +68,7 @@ graph LR
 
 | Situação | Comando | O que acontece |
 |----------|---------|----------------|
-| "Quero ver os problemas do meu código agora" | `ollanta -project-dir . -serve` | Scanner roda, abre UI local na porta 7777 |
+| "Quero ver os problemas do meu código agora" | `ollanta -project-dir . -local-ui` | Scanner roda, abre UI local na porta 7777 |
 | "Quero um relatório para o CI" | `ollanta -project-dir . -format sarif` | Scanner gera `.ollanta/report.sarif` |
 | "Quero histórico centralizado" | `ollanta -project-dir . -server http://host:8080` | Scanner envia relatório ao servidor |
 | "Quero acessar resultados via API" | `curl http://host:8080/api/v1/issues` | Servidor expõe dados via REST |
