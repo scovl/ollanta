@@ -22,6 +22,9 @@
 #   # Start PostgreSQL + ZincSearch + ollantaweb API + workers
 #   docker compose --profile server up -d
 #
+#   # Start the local observability stack alongside the server profile
+#   docker compose --profile server --profile observability up -d
+#
 # Reports are written to <PROJECT_DIR>/.ollanta/
 # Scanner UI available at http://localhost:7777
 # Local AI agents are configured through environment variables on the serve service
@@ -45,11 +48,13 @@ services:
       - "${PORT:-7777}:7777"
     environment:
       - PROJECT_KEY=${PROJECT_KEY:-project}
+      - OLLANTA_LOG_LEVEL=${OLLANTA_LOG_LEVEL:-info}
       - OLLANTA_AI_ENABLE_MOCK=${OLLANTA_AI_ENABLE_MOCK:-}
       - OLLANTA_AI_AGENTS=${OLLANTA_AI_AGENTS:-}
       - OLLANTA_AI_OPENAI_MODEL=${OLLANTA_AI_OPENAI_MODEL:-}
       - OLLANTA_AI_OPENAI_BASE_URL=${OLLANTA_AI_OPENAI_BASE_URL:-}
       - OLLANTA_AI_OPENAI_LABEL=${OLLANTA_AI_OPENAI_LABEL:-}
+      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-http://jaeger:4318}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
     command:
       - -project-dir=/project
@@ -151,6 +156,7 @@ services:
       OLLANTA_ZINCSEARCH_USER: "${ZINC_USER:-admin}"
       OLLANTA_ZINCSEARCH_PASSWORD: "${ZINC_PASSWORD:-ollanta_dev}"
       OLLANTA_LOG_LEVEL: "info"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "${OTEL_EXPORTER_OTLP_ENDPOINT:-http://jaeger:4318}"
       OLLANTA_SCANNER_TOKEN: "${OLLANTA_SCANNER_TOKEN:-ollanta-dev-scanner-token}"
     ports:
       - "8080:8080"
@@ -169,8 +175,10 @@ services:
       zincsearch:
         condition: service_started
     environment:
+      OLLANTA_ADMIN_ADDR: ":9090"
       OLLANTA_DATABASE_URL: "postgres://ollanta:${PG_PASSWORD:-ollanta_dev}@postgres:5432/ollanta?sslmode=disable"
       OLLANTA_LOG_LEVEL: "info"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "${OTEL_EXPORTER_OTLP_ENDPOINT:-http://jaeger:4318}"
     restart: unless-stopped
     profiles: ["server"]
 
@@ -186,11 +194,13 @@ services:
       zincsearch:
         condition: service_started
     environment:
+      OLLANTA_ADMIN_ADDR: ":9090"
       OLLANTA_DATABASE_URL: "postgres://ollanta:${PG_PASSWORD:-ollanta_dev}@postgres:5432/ollanta?sslmode=disable"
       OLLANTA_ZINCSEARCH_URL: "http://zincsearch:4080"
       OLLANTA_ZINCSEARCH_USER: "${ZINC_USER:-admin}"
       OLLANTA_ZINCSEARCH_PASSWORD: "${ZINC_PASSWORD:-ollanta_dev}"
       OLLANTA_LOG_LEVEL: "info"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "${OTEL_EXPORTER_OTLP_ENDPOINT:-http://jaeger:4318}"
     restart: unless-stopped
     profiles: ["server"]
 
@@ -204,11 +214,74 @@ services:
       postgres:
         condition: service_healthy
     environment:
+      OLLANTA_ADMIN_ADDR: ":9090"
       OLLANTA_DATABASE_URL: "postgres://ollanta:${PG_PASSWORD:-ollanta_dev}@postgres:5432/ollanta?sslmode=disable"
       OLLANTA_LOG_LEVEL: "info"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "${OTEL_EXPORTER_OTLP_ENDPOINT:-http://jaeger:4318}"
     restart: unless-stopped
     profiles: ["server"]
+
+  # ── prometheus: metrics scraping and local query UI ────────────────────────
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-lifecycle
+    volumes:
+      - type: bind
+        source: ./deploy/observability/prometheus.yml
+        target: /etc/prometheus/prometheus.yml
+        read_only: true
+      - prometheusdata:/prometheus
+    ports:
+      - "9091:9090"
+    profiles: ["observability"]
+
+  # ── jaeger: tracing backend and UI ────────────────────────────────────────
+  jaeger:
+    image: jaegertracing/all-in-one:1.67.0
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "16686:16686"
+      - "4318:4318"
+    profiles: ["observability"]
+
+  # ── loki: log storage and query API ───────────────────────────────────────
+  loki:
+    image: grafana/loki:3.1.1
+    command:
+      - -config.file=/etc/loki/config.yml
+    volumes:
+      - type: bind
+        source: ./deploy/observability/loki-config.yml
+        target: /etc/loki/config.yml
+        read_only: true
+      - lokidata:/loki
+    ports:
+      - "3100:3100"
+    profiles: ["observability"]
+
+  # ── promtail: collects container stdout for Loki ──────────────────────────
+  promtail:
+    image: grafana/promtail:3.1.1
+    command:
+      - -config.file=/etc/promtail/config.yml
+    volumes:
+      - type: bind
+        source: ./deploy/observability/promtail.yml
+        target: /etc/promtail/config.yml
+        read_only: true
+      - /var/run/docker.sock:/var/run/docker.sock
+      - promtaildata:/tmp
+    depends_on:
+      - loki
+    profiles: ["observability"]
 
 volumes:
   pgdata:
   zsdata:
+  prometheusdata:
+  lokidata:
+  promtaildata:

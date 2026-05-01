@@ -1,0 +1,43 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["prometheus:9090"]
+
+  - job_name: ollantaweb
+    static_configs:
+      - targets: ["ollantaweb:8080"]
+        labels:
+          service: ollantaweb
+          role: api
+
+  - job_name: ollantaworker
+    static_configs:
+      - targets: ["ollantaworker:9090"]
+        labels:
+          service: ollantaworker
+          role: worker
+
+  - job_name: ollantaindexer
+    static_configs:
+      - targets: ["ollantaindexer:9090"]
+        labels:
+          service: ollantaindexer
+          role: indexer
+
+  - job_name: ollantawebhookworker
+    static_configs:
+      - targets: ["ollantawebhookworker:9090"]
+        labels:
+          service: ollantawebhookworker
+          role: webhookworker
+
+  - job_name: ollantascanner
+    static_configs:
+      - targets: ["serve:7777"]
+        labels:
+          service: ollantascanner
+          role: server
