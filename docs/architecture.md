@@ -70,8 +70,8 @@ The local scanner UI is embedded into the scanner binary. It serves an interacti
 
 | Scenario | Command | What happens |
 |----------|---------|--------------|
-| "I want to see my code's issues right now" | `ollanta -project-dir . -serve` | Scanner runs, opens local UI on port 7777 |
-| "I want AI-assisted local remediation" | `OLLANTA_AI_ENABLE_MOCK=1 ollanta -project-dir . -serve` | Scanner opens the local UI with a mock AI agent enabled |
+| "I want to see my code's issues right now" | `ollanta -project-dir . -local-ui` | Scanner runs, opens local UI on port 7777 |
+| "I want AI-assisted local remediation" | `OLLANTA_AI_ENABLE_MOCK=1 ollanta -project-dir . -local-ui` | Scanner opens the local UI with a mock AI agent enabled |
 | "I need a report for CI" | `ollanta -project-dir . -format sarif` | Scanner writes `.ollanta/report.sarif` |
 | "I want centralized history" | `ollanta -project-dir . -server http://host:8080` | Scanner sends report to the server |
 | "I want to query results via API" | `curl http://host:8080/api/v1/issues` | Server exposes data via REST |
@@ -1060,6 +1060,7 @@ The most important ones for configuring the server:
 |----------|---------|--------------|
 | `OLLANTA_DATABASE_URL` | *(required)* | PostgreSQL connection string |
 | `OLLANTA_ADDR` | `:8080` | Address the server listens on |
+| `OLLANTA_CONFIG_FILE` | *(empty)* | Explicit path to `config.toml` for scanner or server binaries |
 | `OLLANTA_SEARCH_BACKEND` | `zincsearch` | Search backend (`zincsearch` or `postgres`) |
 | `OLLANTA_SCANNER_TOKEN` | *(empty)* | Shared token accepted for scanner pushes to `POST /api/v1/scans` |
 | `OLLANTA_JWT_SECRET` | *(auto-generated)* | Secret for signing JWTs |

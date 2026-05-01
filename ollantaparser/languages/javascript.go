@@ -5,8 +5,8 @@
 package languages
 
 import (
-	javascript "github.com/smacker/go-tree-sitter/javascript"
 	ollantaparser "github.com/scovl/ollanta/ollantaparser"
+	javascript "github.com/smacker/go-tree-sitter/javascript"
 )
 
 // JavaScript is the tree-sitter grammar for .js / .mjs files.

@@ -27,9 +27,9 @@ import (
 var staticFiles embed.FS
 
 const (
-	contentTypeHeader = "Content-Type"
+	contentTypeHeader  = "Content-Type"
 	cacheControlHeader = "Cache-Control"
-	jsonContentType   = "application/json"
+	jsonContentType    = "application/json"
 )
 
 // Serve starts a local HTTP server that exposes:

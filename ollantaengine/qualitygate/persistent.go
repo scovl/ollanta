@@ -3,12 +3,12 @@ package qualitygate
 // PersistentCondition is a gate condition loaded from the database.
 // It extends the in-memory Condition with on_new_code awareness.
 type PersistentCondition struct {
-	ID         int64    `json:"id"`
-	GateID     int64    `json:"gate_id"`
-	MetricKey  string   `json:"metric_key"`
-	Op         Operator `json:"operator"`
-	Threshold  float64  `json:"threshold"`
-	OnNewCode  bool     `json:"on_new_code"`
+	ID        int64    `json:"id"`
+	GateID    int64    `json:"gate_id"`
+	MetricKey string   `json:"metric_key"`
+	Op        Operator `json:"operator"`
+	Threshold float64  `json:"threshold"`
+	OnNewCode bool     `json:"on_new_code"`
 }
 
 // EvalRequest carries all data needed for a persistent gate evaluation.

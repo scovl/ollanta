@@ -1,0 +1,37 @@
+[scanner]
+project_dir = "."
+sources = ["./..."]
+format = "all"
+local_ui = true
+bind = "127.0.0.1"
+port = 7777
+server_url = "http://localhost:8080"
+server_token = "ollanta-dev-scanner-token"
+server_wait = false
+server_wait_timeout = "10m"
+server_wait_poll = "2s"
+
+[server]
+addr = ":8080"
+admin_addr = ":9090"
+log_level = "info"
+scanner_token = "ollanta-dev-scanner-token"
+
+[database]
+host = "localhost"
+port = 5432
+name = "ollanta"
+user = "ollanta"
+password = "ollanta_dev"
+sslmode = "disable"
+# Optional override when you prefer to provide a full connection string:
+# url = "postgres://ollanta:ollanta_dev@localhost:5432/ollanta?sslmode=disable"
+
+[search]
+backend = "zincsearch"
+host = "localhost"
+port = 4080
+user = "admin"
+password = "ollanta_dev"
+# Optional override when you prefer to provide a full endpoint:
+# url = "http://localhost:4080"

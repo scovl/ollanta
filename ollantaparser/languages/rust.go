@@ -1,8 +1,8 @@
 package languages
 
 import (
-	rust "github.com/smacker/go-tree-sitter/rust"
 	ollantaparser "github.com/scovl/ollanta/ollantaparser"
+	rust "github.com/smacker/go-tree-sitter/rust"
 )
 
 // Rust is the tree-sitter grammar for .rs files.
