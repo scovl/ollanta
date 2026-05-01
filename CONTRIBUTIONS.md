@@ -100,6 +100,28 @@ docker compose --profile server build ollantaweb
 docker compose --profile server up -d
 ```
 
+### 6. Local smoke validation
+
+Use the repository-owned smoke workflow when you want one fast happy-path check for scanner to server ingestion from the current source tree:
+
+```sh
+make smoke-local
+```
+
+Current behavior:
+
+- starts `postgres` and `zincsearch` with Docker Compose
+- runs `ollantaweb` from source on a dedicated smoke-test port starting at `18080`
+- creates a minimal temporary Git-backed Go project
+- runs the scanner with `-server-wait`
+- verifies `/readyz` and `GET /api/v1/projects/{key}/scans/latest`
+
+Notes:
+
+- the current implementation is PowerShell-based and intended for local Windows validation first
+- override the backend port with `make smoke-local SMOKE_BACKEND_PORT=18082`
+- on failure, the workflow preserves the temporary project path and server log path for debugging
+
 ## Pull Request Checklist
 
 - Run the relevant validation for the area you changed.

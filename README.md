@@ -41,7 +41,7 @@ ollanta \
   -project-dir . \
   -project-key my-project \
   -format all \
-  -serve
+  -local-ui
 ```
 
 This runs a local scan and opens the embedded web UI at `http://localhost:7777`.
@@ -75,6 +75,23 @@ ollanta \
 
 Add `-server-wait` if you want the CLI to wait for the accepted server-side scan job to finish instead of stopping at `202 Accepted`.
 
+### Configure with `config.toml`
+
+Both the scanner CLI and `ollantaweb` can load runtime settings from `config.toml` in the current working directory.
+Use `OLLANTA_CONFIG_FILE=/path/to/config.toml` or `-config /path/to/config.toml` on the scanner CLI when the file lives elsewhere.
+
+Use `[scanner]` for scanner-local settings such as `local_ui`, `port`, `bind`, `server_url`, and `server_wait`.
+Use `[server]` for the Ollanta backend itself, such as `addr`, `admin_addr`, `log_level`, and `scanner_token`.
+Use `[database]` for PostgreSQL connectivity and `[search]` for the configured search backend.
+For both `[database]` and `[search]`, you can either provide a full `url` or explicit connection fields such as `host`, `port`, and credentials.
+
+Precedence is:
+
+- scanner: built-in defaults, then `config.toml`, then CLI flags
+- server: built-in defaults, then `config.toml`, then `OLLANTA_*` environment variables
+
+An end-to-end example lives in [config.toml.example](d:\projects\ollanta\config.toml.example).
+
 ---
 
 ## Prerequisites
@@ -101,6 +118,9 @@ make lint
 
 # Format those same modules
 make fmt
+
+# Run the supported local smoke validation workflow
+make smoke-local
 ```
 
 Those targets cover `ollantacore`, `ollantaparser`, `ollantarules`, `ollantascanner`, and `ollantaengine`.
@@ -108,6 +128,22 @@ Those targets cover `ollantacore`, `ollantaparser`, `ollantarules`, `ollantascan
 For `application/`, `domain/`, `ollantastore/`, `ollantaweb/`, and `adapter/`, use the module-aware workflow documented in [CONTRIBUTIONS.md](CONTRIBUTIONS.md) and [docs/contributing.md](docs/contributing.md).
 
 On Windows, the `Makefile` prepends `C:\msys64\mingw64\bin` to `PATH` and sets `CGO_ENABLED=1` for its own targets.
+
+`make smoke-local` is the supported local smoke test for the critical scanner to server path. The current implementation is PowerShell-based and Windows-oriented. It:
+
+- starts `postgres` and `zincsearch` with `docker compose`
+- runs `ollantaweb` from the local source tree using [config.toml.example](config.toml.example)
+- chooses a dedicated backend port starting at `18080` and moves to the next free port if needed
+- creates a minimal temporary Git-backed Go project for deterministic scanning
+- runs the scanner with `-server-wait` enabled and verifies both `/readyz` and the latest-scan API
+
+If you need a specific backend port, override it with:
+
+```sh
+make smoke-local SMOKE_BACKEND_PORT=18082
+```
+
+If the smoke workflow fails, it keeps the temporary project and server log paths so you can inspect the failure locally.
 
 ---
 
@@ -120,11 +156,12 @@ On Windows, the `Makefile` prepends `C:\msys64\mingw64\bin` to `PATH` and sets `
 | `-sources` | `./...` | Comma-separated source patterns |
 | `-exclusions` | none | Comma-separated glob patterns to exclude |
 | `-format` | `all` | `summary`, `json`, `sarif`, or `all` |
-| `-serve` | `false` | Open the local scanner UI after the scan |
-| `-port` | `7777` | Port for `-serve` |
-| `-bind` | `127.0.0.1` | Bind address for `-serve` |
+| `-local-ui` | `false` | Open the local scanner UI after the scan |
+| `-port` | `7777` | Port for `-local-ui` |
+| `-bind` | `127.0.0.1` | Bind address for `-local-ui` |
 | `-server` | none | URL of `ollantaweb` for pushed scans |
 | `-server-token` | none | Bearer token used when pushing to `ollantaweb` |
+| `-config` | none | Explicit path to `config.toml` for scanner settings |
 
 Scope flags:
 
@@ -202,6 +239,7 @@ OLLANTA_SERVER=http://your-server:8080 docker compose --profile push run --build
 | `OLLANTA_SERVER` | `http://ollantaweb:8080` | API server URL for push mode |
 | `OLLANTA_TOKEN` | `ollanta-dev-scanner-token` | Scanner token used by `push` |
 | `OLLANTA_SERVER_WAIT` | `false` | Wait for the accepted scan job to finish |
+| `OLLANTA_CONFIG_FILE` | none | Explicit path to `config.toml` for scanner or server binaries |
 | `PG_PASSWORD` | `ollanta_dev` | PostgreSQL password |
 | `ZINC_USER` | `admin` | ZincSearch admin user |
 | `ZINC_PASSWORD` | `ollanta_dev` | ZincSearch admin password |

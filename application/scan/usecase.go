@@ -17,25 +17,25 @@ import (
 
 // ScanOptions holds every parameter that controls a scan run.
 type ScanOptions struct {
-	ProjectDir  string
-	Sources     []string // source directory patterns (Go-style ./... accepted)
-	Exclusions  []string // glob patterns relative to ProjectDir
-	ProjectKey  string
-	Branch      string
-	CommitSHA   string
-	PullRequestKey   string
+	ProjectDir        string
+	Sources           []string // source directory patterns (Go-style ./... accepted)
+	Exclusions        []string // glob patterns relative to ProjectDir
+	ProjectKey        string
+	Branch            string
+	CommitSHA         string
+	PullRequestKey    string
 	PullRequestBranch string
 	PullRequestBase   string
-	Format      string // "summary" | "json" | "sarif" | "all"
-	Debug       bool
-	Serve       bool          // open local web UI after scan
-	Port        int           // port for -serve (default 7777)
-	Bind        string        // bind address for -serve (default 127.0.0.1)
-	Server      string        // URL of ollantaweb server for push mode (empty = disabled)
-	ServerToken string        // Bearer token for authenticating with ollantaweb
-	ServerWait  bool          // wait for accepted server job until completion
-	WaitTimeout time.Duration // maximum time to wait for server-side job completion
-	WaitPoll    time.Duration // polling interval while waiting for server-side job completion
+	Format            string // "summary" | "json" | "sarif" | "all"
+	Debug             bool
+	Serve             bool          // open local web UI after scan
+	Port              int           // port for -local-ui (default 7777)
+	Bind              string        // bind address for -local-ui (default 127.0.0.1)
+	Server            string        // URL of ollantaweb server for push mode (empty = disabled)
+	ServerToken       string        // Bearer token for authenticating with ollantaweb
+	ServerWait        bool          // wait for accepted server job until completion
+	WaitTimeout       time.Duration // maximum time to wait for server-side job completion
+	WaitPoll          time.Duration // polling interval while waiting for server-side job completion
 }
 
 // ParseFlags parses args (typically os.Args[1:]) into ScanOptions.
@@ -54,9 +54,9 @@ func ParseFlags(args []string) (*ScanOptions, error) {
 	pullRequestBase := fs.String("pull-request-base", "", "Explicit target/base branch for pull request analysis")
 	format := fs.String("format", "all", "Output format: summary, json, sarif, all")
 	debug := fs.Bool("debug", false, "Enable debug output")
-	serve := fs.Bool("serve", false, "Open interactive web UI after scan")
-	port := fs.Int("port", 7777, "Port for -serve")
-	bind := fs.String("bind", "127.0.0.1", "Bind address for -serve (use 0.0.0.0 inside Docker)")
+	localUI := fs.Bool("local-ui", false, "Open the embedded local web UI after scan")
+	port := fs.Int("port", 7777, "Port for -local-ui")
+	bind := fs.String("bind", "127.0.0.1", "Bind address for -local-ui (use 0.0.0.0 inside Docker)")
 	serverURL := fs.String("server", "", "URL of ollantaweb server to push results to (e.g. http://localhost:8080)")
 	serverToken := fs.String("server-token", "", "API token for authenticating with ollantaweb (Bearer)")
 	serverWait := fs.Bool("server-wait", false, "Wait for an accepted server-side scan job to complete")
@@ -75,22 +75,22 @@ func ParseFlags(args []string) (*ScanOptions, error) {
 	}
 
 	opts := &ScanOptions{
-		ProjectDir:  *projectDir,
-		Branch:      *branch,
-		CommitSHA:   *commitSHA,
-		PullRequestKey: *pullRequestKey,
+		ProjectDir:        *projectDir,
+		Branch:            *branch,
+		CommitSHA:         *commitSHA,
+		PullRequestKey:    *pullRequestKey,
 		PullRequestBranch: *pullRequestBranch,
-		PullRequestBase: *pullRequestBase,
-		Format:      *format,
-		Debug:       *debug,
-		Serve:       *serve,
-		Port:        *port,
-		Bind:        *bind,
-		Server:      *serverURL,
-		ServerToken: *serverToken,
-		ServerWait:  *serverWait,
-		WaitTimeout: *waitTimeout,
-		WaitPoll:    *waitPoll,
+		PullRequestBase:   *pullRequestBase,
+		Format:            *format,
+		Debug:             *debug,
+		Serve:             *localUI,
+		Port:              *port,
+		Bind:              *bind,
+		Server:            *serverURL,
+		ServerToken:       *serverToken,
+		ServerWait:        *serverWait,
+		WaitTimeout:       *waitTimeout,
+		WaitPoll:          *waitPoll,
 	}
 
 	for _, s := range strings.Split(*sources, ",") {

@@ -56,7 +56,7 @@ func main() {
 }
 
 func mustParseOptions() *scan.ScanOptions {
-	opts, err := scan.ParseFlags(os.Args[1:])
+	opts, err := parseOptions(os.Args[1:])
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)

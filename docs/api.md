@@ -13,6 +13,10 @@ The server listens on `:8080` by default. Start it with:
 docker compose --profile server up -d
 ```
 
+`ollantaweb` also reads a local `config.toml` file when present. To point at a different path, start the binary with `OLLANTA_CONFIG_FILE=/path/to/config.toml`.
+The backend reads its own settings from `[server]`, PostgreSQL connectivity from `[database]`, and search configuration from `[search]`.
+Database and search settings can be expressed either as a full `url` or as explicit host/port/credential fields in `config.toml`.
+
 ---
 
 ## Auth
@@ -75,6 +79,7 @@ docker compose --profile push run --build --rm push
 ```
 
 If `OLLANTA_SCANNER_TOKEN` is empty on the server, ingestion falls back to regular token-based authentication.
+The same value can also be provided through `[server].scanner_token` in `config.toml`.
 
 ### Scope-aware project endpoints
 

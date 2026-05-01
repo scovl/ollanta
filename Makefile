@@ -1,4 +1,4 @@
-.PHONY: build test lint fmt clean run
+.PHONY: build test lint fmt clean run smoke-local
 
 PKGS := \
 	github.com/scovl/ollanta/ollantacore/... \
@@ -43,5 +43,10 @@ run:
 		-project-dir "$(PROJECT_DIR)" \
 		-project-key "$(PROJECT_KEY)" \
 		-format all \
-		-serve \
+		-local-ui \
 		-port $(PORT)
+
+SMOKE_BACKEND_PORT ?= 18080
+
+smoke-local:
+	powershell -ExecutionPolicy Bypass -File scripts/smoke-local.ps1 -BackendPort $(SMOKE_BACKEND_PORT)

@@ -112,25 +112,25 @@ type aiProvider interface {
 }
 
 type storedPreview struct {
-	response        *aiFixPreviewResponse
-	filePath        string
-	originalSnippet string
+	response         *aiFixPreviewResponse
+	filePath         string
+	originalSnippet  string
 	originalFileHash string
-	originalHash    string
-	replacement     string
-	startLine       int
-	endLine         int
+	originalHash     string
+	replacement      string
+	startLine        int
+	endLine          int
 }
 
 type aiFixService struct {
-	projectRoot string
-	rules       map[string]*ollantarules.RuleMeta
-	agents      map[string]aiAgentConfig
+	projectRoot     string
+	rules           map[string]*ollantarules.RuleMeta
+	agents          map[string]aiAgentConfig
 	providerOptions []aiProviderOption
-	providers   map[string]aiProvider
-	previews    map[string]storedPreview
-	mu          sync.Mutex
-	logger      *slog.Logger
+	providers       map[string]aiProvider
+	previews        map[string]storedPreview
+	mu              sync.Mutex
+	logger          *slog.Logger
 }
 
 func newAIFixService(projectRoot string, rules map[string]*ollantarules.RuleMeta, logger *slog.Logger) *aiFixService {
@@ -147,9 +147,9 @@ func newAIFixService(projectRoot string, rules map[string]*ollantarules.RuleMeta
 	providerOptions := loadAIProviderOptionsFromEnv(agents)
 
 	return &aiFixService{
-		projectRoot: projectRoot,
-		rules:       rules,
-		agents:      agentMap,
+		projectRoot:     projectRoot,
+		rules:           rules,
+		agents:          agentMap,
 		providerOptions: providerOptions,
 		providers: map[string]aiProvider{
 			"mock":   mockAIProvider{},
@@ -494,14 +494,14 @@ func (s *aiFixService) generatePreview(ctx context.Context, request aiFixRequest
 
 	s.mu.Lock()
 	s.previews[previewID] = storedPreview{
-		response:        response,
-		filePath:        filePath,
-		originalSnippet: snippet,
+		response:         response,
+		filePath:         filePath,
+		originalSnippet:  snippet,
 		originalFileHash: hashText(content),
-		originalHash:    hashText(snippet),
-		replacement:     providerResponse.Replacement,
-		startLine:       startLine,
-		endLine:         endLine,
+		originalHash:     hashText(snippet),
+		replacement:      providerResponse.Replacement,
+		startLine:        startLine,
+		endLine:          endLine,
 	}
 	s.mu.Unlock()
 
@@ -761,11 +761,11 @@ func (p openAIProvider) GenerateFix(ctx context.Context, agent aiAgentConfig, re
 		"model": agent.Model,
 		"messages": []map[string]string{
 			{
-				"role": "system",
+				"role":    "system",
 				"content": "You fix one static-analysis issue in user code. Return strict JSON with keys summary, explanation, replacement. replacement must contain only the code snippet that replaces the original snippet, with no markdown fences.",
 			},
 			{
-				"role": "user",
+				"role":    "user",
 				"content": prompt,
 			},
 		},
