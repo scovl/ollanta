@@ -113,10 +113,11 @@ Individual findings. **Partitioned by `created_at`** (range partitioning) with a
 | `end_line` | INT | NOT NULL | End line |
 | `end_column` | INT | NOT NULL | End column |
 | `message` | TEXT | NOT NULL | Human-readable description |
-| `type` | TEXT | NOT NULL | `bug` / `vulnerability` / `code_smell` |
+| `type` | TEXT | NOT NULL | `bug` / `vulnerability` / `code_smell` / `security_hotspot` |
 | `severity` | TEXT | NOT NULL | `blocker` / `critical` / `major` / `minor` / `info` |
-| `status` | TEXT | NOT NULL | `open` / `closed` / `resolved` |
-| `resolution` | TEXT | NOT NULL | `fixed` / `wontfix` / `false-positive` / empty |
+| `status` | TEXT | NOT NULL | `open` / `confirmed` / `closed` / `reopened` |
+| `resolution` | TEXT | NOT NULL | `fixed` / `wont_fix` / `false_positive` / `confirmed` / empty |
+| `tracking_state` | TEXT | NOT NULL | Scope lifecycle: `unknown` / `new` / `unchanged` / `reopened` |
 | `effort_minutes` | INT | NOT NULL | Estimated remediation effort |
 | `line_hash` | TEXT | NOT NULL | SHA-256 of line content (whitespace-trimmed) for tracking |
 | `tags` | TEXT[] | NOT NULL | |
@@ -127,6 +128,8 @@ Individual findings. **Partitioned by `created_at`** (range partitioning) with a
 | `resolved_at` | TIMESTAMPTZ | | When the issue was resolved |
 | `created_at` | TIMESTAMPTZ | NOT NULL | Partition key |
 | `updated_at` | TIMESTAMPTZ | NOT NULL | |
+
+`quality_domain` and `language` are API/model facets derived from `type`, `tags`, and `component_path`; they are not currently stored as physical columns.
 
 **Indexes:**
 - `idx_issues_scan (scan_id)`
@@ -147,7 +150,7 @@ Metric values per scan, either at project level or per file.
 | `id` | BIGSERIAL | PK | |
 | `scan_id` | BIGINT | FK → scans, NOT NULL | |
 | `project_id` | BIGINT | FK → projects, NOT NULL | |
-| `metric_key` | TEXT | NOT NULL | e.g. `ncloc`, `coverage`, `duplications` |
+| `metric_key` | TEXT | NOT NULL | e.g. `ncloc`, `coverage`, `tests`, `mutation_score`, `duplications` |
 | `component_path` | TEXT | NOT NULL | File path (empty string = project-level) |
 | `value` | DOUBLE PRECISION | NOT NULL | Metric value |
 | `created_at` | TIMESTAMPTZ | NOT NULL | |
@@ -405,6 +408,11 @@ Defines how "new code" is determined for quality gate evaluation.
 | 017 | `add_engine_id_secondary_locations` | `engine_id`, `secondary_locations` on issues |
 | 018 | `add_issue_changelog` | `updated_at` on issues; `issue_changelog` table |
 | 019 | `fix_quality_profiles_languages` | Remove java/csharp profiles, add rust |
+| 020 | `create_scan_jobs` | Durable asynchronous scan intake jobs |
+| 021 | `create_outbox_jobs` | Durable search-index and webhook delivery jobs |
+| 022 | `add_branch_aware_analysis` | Branch and pull request metadata on scans/code snapshots |
+| 023 | `add_job_trace_context` | Trace context on durable jobs |
+| 024 | `add_issue_tracking_state` | `tracking_state` on issues |
 
 ## ETL Recommendations
 

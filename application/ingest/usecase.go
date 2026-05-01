@@ -36,6 +36,18 @@ type IngestMeasures struct {
 	Bugs            int            `json:"bugs"`
 	CodeSmells      int            `json:"code_smells"`
 	Vulnerabilities int            `json:"vulnerabilities"`
+	Coverage        *float64       `json:"coverage,omitempty"`
+	Tests           int            `json:"tests,omitempty"`
+	TestFailures    int            `json:"test_failures,omitempty"`
+	TestErrors      int            `json:"test_errors,omitempty"`
+	TestSkipped     int            `json:"test_skipped,omitempty"`
+	TestDurationMs  int64          `json:"test_duration_ms,omitempty"`
+	MutationScore   *float64       `json:"mutation_score,omitempty"`
+	MutantsTotal    int            `json:"mutants_total,omitempty"`
+	MutantsKilled   int            `json:"mutants_killed,omitempty"`
+	MutantsSurvived int            `json:"mutants_survived,omitempty"`
+	MutantsTimeout  int            `json:"mutants_timeout,omitempty"`
+	MutantsError    int            `json:"mutants_error,omitempty"`
 	ByLang          map[string]int `json:"by_language"`
 }
 
@@ -74,13 +86,13 @@ type IWebhookDispatcher interface {
 
 // IngestUseCase orchestrates the full ingest workflow using domain port interfaces.
 type IngestUseCase struct {
-	projects port.IProjectRepo
-	scans    port.IScanRepo
-	issues   port.IIssueRepo
-	measures port.IMeasureRepo
+	projects  port.IProjectRepo
+	scans     port.IScanRepo
+	issues    port.IIssueRepo
+	measures  port.IMeasureRepo
 	snapshots port.ICodeSnapshotRepo
-	indexer  ISearchEnqueuer    // optional — nil disables search indexing
-	webhooks IWebhookDispatcher // optional — nil disables webhook dispatch
+	indexer   ISearchEnqueuer    // optional — nil disables search indexing
+	webhooks  IWebhookDispatcher // optional — nil disables webhook dispatch
 }
 
 // NewIngestUseCase creates an IngestUseCase with all required dependencies.
@@ -95,13 +107,13 @@ func NewIngestUseCase(
 	webhooks IWebhookDispatcher,
 ) *IngestUseCase {
 	return &IngestUseCase{
-		projects: projects,
-		scans:    scans,
-		issues:   issues,
-		measures: measures,
+		projects:  projects,
+		scans:     scans,
+		issues:    issues,
+		measures:  measures,
 		snapshots: snapshots,
-		indexer:  indexer,
-		webhooks: webhooks,
+		indexer:   indexer,
+		webhooks:  webhooks,
 	}
 }
 
@@ -199,16 +211,18 @@ func (uc *IngestUseCase) Ingest(ctx context.Context, req *IngestRequest) (*Inges
 	// ── 3. Issue tracking ────────────────────────────────────────────────────
 	prevIssues := uc.fetchPrevIssues(ctx, project.ID, prevScan)
 	trackResult := service.Track(req.Issues, prevIssues)
+	trackingStates := buildTrackingStateMap(trackResult)
 
 	// ── 4. Quality gate evaluation ───────────────────────────────────────────
 	measures := map[string]float64{
-		"bugs":            float64(req.Measures.Bugs),
-		"vulnerabilities": float64(req.Measures.Vulnerabilities),
-		"code_smells":     float64(req.Measures.CodeSmells),
-		"files":           float64(req.Measures.Files),
-		"lines":           float64(req.Measures.Lines),
-		"ncloc":           float64(req.Measures.Ncloc),
+		model.MetricBugs:            float64(req.Measures.Bugs),
+		model.MetricVulnerabilities: float64(req.Measures.Vulnerabilities),
+		model.MetricCodeSmells:      float64(req.Measures.CodeSmells),
+		model.MetricFiles:           float64(req.Measures.Files),
+		model.MetricLines:           float64(req.Measures.Lines),
+		model.MetricNcloc:           float64(req.Measures.Ncloc),
 	}
+	addOptionalTestMeasures(measures, req.Measures)
 	gateStatus := service.Evaluate(service.DefaultConditions(), measures)
 	gateStr := string(gateStatus.Status)
 
@@ -245,7 +259,7 @@ func (uc *IngestUseCase) Ingest(ctx context.Context, req *IngestRequest) (*Inges
 	// ── 6. Bulk insert issues ────────────────────────────────────────────────
 	issueRows := make([]model.IssueRow, len(req.Issues))
 	for i, iss := range req.Issues {
-		issueRows[i] = domainToIssueRow(iss, scan.ID, project.ID)
+		issueRows[i] = domainToIssueRow(iss, scan.ID, project.ID, trackingStates[iss])
 	}
 	if err := pipelineSteps.bulkInsIssues.run(ctx, func(ctx context.Context) error {
 		return uc.issues.BulkInsert(ctx, issueRows)
@@ -312,6 +326,8 @@ func issueRowToDomain(r *model.IssueRow) *model.Issue {
 		Message:       r.Message,
 		Type:          model.IssueType(r.Type),
 		Severity:      model.Severity(r.Severity),
+		QualityDomain: model.IssueQualityDomain(r.QualityDomain),
+		Language:      r.Language,
 		Status:        model.Status(r.Status),
 		Resolution:    r.Resolution,
 		EffortMinutes: r.EffortMinutes,
@@ -320,10 +336,30 @@ func issueRowToDomain(r *model.IssueRow) *model.Issue {
 	}
 }
 
-func domainToIssueRow(iss *model.Issue, scanID, projectID int64) model.IssueRow {
+func buildTrackingStateMap(result *service.TrackingResult) map[*model.Issue]string {
+	tracking := make(map[*model.Issue]string)
+	if result == nil {
+		return tracking
+	}
+	for _, issue := range result.New {
+		tracking[issue] = string(model.IssueTrackingStateNew)
+	}
+	for _, pair := range result.Unchanged {
+		tracking[pair.Current] = string(model.IssueTrackingStateUnchanged)
+	}
+	for _, pair := range result.Reopened {
+		tracking[pair.Current] = string(model.IssueTrackingStateReopened)
+	}
+	return tracking
+}
+
+func domainToIssueRow(iss *model.Issue, scanID, projectID int64, trackingState string) model.IssueRow {
 	tags := iss.Tags
 	if tags == nil {
 		tags = []string{}
+	}
+	if trackingState == "" {
+		trackingState = string(model.IssueTrackingStateUnknown)
 	}
 	return model.IssueRow{
 		ScanID:        scanID,
@@ -337,8 +373,11 @@ func domainToIssueRow(iss *model.Issue, scanID, projectID int64) model.IssueRow 
 		Message:       iss.Message,
 		Type:          string(iss.Type),
 		Severity:      string(iss.Severity),
+		QualityDomain: string(issueQualityDomain(iss)),
+		Language:      issueLanguage(iss),
 		Status:        string(iss.Status),
 		Resolution:    iss.Resolution,
+		TrackingState: trackingState,
 		EffortMinutes: iss.EffortMinutes,
 		LineHash:      iss.LineHash,
 		Tags:          tags,
@@ -355,6 +394,42 @@ func buildMeasureRows(m IngestMeasures, scanID, projectID int64) []model.Measure
 		{ScanID: scanID, ProjectID: projectID, MetricKey: "code_smells", Value: float64(m.CodeSmells)},
 		{ScanID: scanID, ProjectID: projectID, MetricKey: "vulnerabilities", Value: float64(m.Vulnerabilities)},
 	}
+	if m.Coverage != nil {
+		rows = append(rows, model.MeasureRow{ScanID: scanID, ProjectID: projectID, MetricKey: model.MetricCoverage, Value: *m.Coverage})
+	}
+	if m.Tests > 0 {
+		rows = append(rows, model.MeasureRow{ScanID: scanID, ProjectID: projectID, MetricKey: model.MetricTests, Value: float64(m.Tests)})
+	}
+	if m.TestFailures > 0 {
+		rows = append(rows, model.MeasureRow{ScanID: scanID, ProjectID: projectID, MetricKey: model.MetricTestFailures, Value: float64(m.TestFailures)})
+	}
+	if m.TestErrors > 0 {
+		rows = append(rows, model.MeasureRow{ScanID: scanID, ProjectID: projectID, MetricKey: model.MetricTestErrors, Value: float64(m.TestErrors)})
+	}
+	if m.TestSkipped > 0 {
+		rows = append(rows, model.MeasureRow{ScanID: scanID, ProjectID: projectID, MetricKey: model.MetricTestSkipped, Value: float64(m.TestSkipped)})
+	}
+	if m.TestDurationMs > 0 {
+		rows = append(rows, model.MeasureRow{ScanID: scanID, ProjectID: projectID, MetricKey: model.MetricTestDurationMs, Value: float64(m.TestDurationMs)})
+	}
+	if m.MutationScore != nil {
+		rows = append(rows, model.MeasureRow{ScanID: scanID, ProjectID: projectID, MetricKey: model.MetricMutationScore, Value: *m.MutationScore})
+	}
+	if m.MutantsTotal > 0 {
+		rows = append(rows, model.MeasureRow{ScanID: scanID, ProjectID: projectID, MetricKey: model.MetricMutantsTotal, Value: float64(m.MutantsTotal)})
+	}
+	if m.MutantsKilled > 0 {
+		rows = append(rows, model.MeasureRow{ScanID: scanID, ProjectID: projectID, MetricKey: model.MetricMutantsKilled, Value: float64(m.MutantsKilled)})
+	}
+	if m.MutantsSurvived > 0 {
+		rows = append(rows, model.MeasureRow{ScanID: scanID, ProjectID: projectID, MetricKey: model.MetricMutantsSurvived, Value: float64(m.MutantsSurvived)})
+	}
+	if m.MutantsTimeout > 0 {
+		rows = append(rows, model.MeasureRow{ScanID: scanID, ProjectID: projectID, MetricKey: model.MetricMutantsTimeout, Value: float64(m.MutantsTimeout)})
+	}
+	if m.MutantsError > 0 {
+		rows = append(rows, model.MeasureRow{ScanID: scanID, ProjectID: projectID, MetricKey: model.MetricMutantsError, Value: float64(m.MutantsError)})
+	}
 	for lang, count := range m.ByLang {
 		rows = append(rows, model.MeasureRow{
 			ScanID:        scanID,
@@ -365,4 +440,57 @@ func buildMeasureRows(m IngestMeasures, scanID, projectID int64) []model.Measure
 		})
 	}
 	return rows
+}
+
+func issueQualityDomain(issue *model.Issue) model.IssueQualityDomain {
+	if issue.QualityDomain != "" {
+		return issue.QualityDomain
+	}
+	return model.DeriveIssueQualityDomain(issue.Type, issue.Tags)
+}
+
+func issueLanguage(issue *model.Issue) string {
+	if issue.Language != "" {
+		return issue.Language
+	}
+	return model.LanguageFromPath(issue.ComponentPath)
+}
+
+func addOptionalTestMeasures(measures map[string]float64, m IngestMeasures) {
+	if m.Coverage != nil {
+		measures[model.MetricCoverage] = *m.Coverage
+	}
+	if m.Tests > 0 {
+		measures[model.MetricTests] = float64(m.Tests)
+	}
+	if m.TestFailures > 0 {
+		measures[model.MetricTestFailures] = float64(m.TestFailures)
+	}
+	if m.TestErrors > 0 {
+		measures[model.MetricTestErrors] = float64(m.TestErrors)
+	}
+	if m.TestSkipped > 0 {
+		measures[model.MetricTestSkipped] = float64(m.TestSkipped)
+	}
+	if m.TestDurationMs > 0 {
+		measures[model.MetricTestDurationMs] = float64(m.TestDurationMs)
+	}
+	if m.MutationScore != nil {
+		measures[model.MetricMutationScore] = *m.MutationScore
+	}
+	if m.MutantsTotal > 0 {
+		measures[model.MetricMutantsTotal] = float64(m.MutantsTotal)
+	}
+	if m.MutantsKilled > 0 {
+		measures[model.MetricMutantsKilled] = float64(m.MutantsKilled)
+	}
+	if m.MutantsSurvived > 0 {
+		measures[model.MetricMutantsSurvived] = float64(m.MutantsSurvived)
+	}
+	if m.MutantsTimeout > 0 {
+		measures[model.MetricMutantsTimeout] = float64(m.MutantsTimeout)
+	}
+	if m.MutantsError > 0 {
+		measures[model.MetricMutantsError] = float64(m.MutantsError)
+	}
 }

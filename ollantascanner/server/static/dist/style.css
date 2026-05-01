@@ -249,6 +249,81 @@ main {
 /* ── Panel common ──────────────────────────────────────────────────────── */
 .panel { margin-top: 20px; }
 
+/* ── Overview composition ─────────────────────────────────────────────── */
+.overview-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
+  gap: 16px;
+  align-items: start;
+}
+.overview-main,
+.overview-aside {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.overview-aside {
+  position: sticky;
+  top: 84px;
+}
+.overview-split {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.overview-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+  min-width: 0;
+}
+.overview-panel h3 {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: .45px;
+  margin-bottom: 12px;
+}
+
+.metric-table {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.metric-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding: 12px 14px;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  border-left: 3px solid var(--border);
+  background: rgba(255,255,255,.015);
+}
+.metric-row:nth-child(3n) { border-right: 0; }
+.metric-row.card-green { border-left-color: var(--sev-minor); }
+.metric-row.card-yellow { border-left-color: var(--sev-major); }
+.metric-row.card-red { border-left-color: var(--sev-blocker); }
+.metric-row.card-neutral { border-left-color: var(--accent); }
+.metric-row .metric-label {
+  margin: 0;
+  min-width: 0;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 13px;
+}
+.metric-row .metric-value {
+  font-size: 20px;
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+
 /* ── Measures Row ──────────────────────────────────────────────────────── */
 .measures-row {
   display: grid;
@@ -294,6 +369,20 @@ main {
   margin-bottom: 20px;
 }
 @media (max-width: 800px) { .overview-grid { grid-template-columns: 1fr; } }
+@media (max-width: 960px) {
+  .overview-layout,
+  .overview-split { grid-template-columns: 1fr; }
+  .overview-aside { position: static; }
+  .metric-table { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .metric-row:nth-child(3n) { border-right: 1px solid var(--border); }
+  .metric-row:nth-child(2n) { border-right: 0; }
+}
+@media (max-width: 560px) {
+  .metric-table { grid-template-columns: 1fr; }
+  .metric-row,
+  .metric-row:nth-child(2n),
+  .metric-row:nth-child(3n) { border-right: 0; }
+}
 .overview-card {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -307,6 +396,50 @@ main {
   text-transform: uppercase;
   letter-spacing: .3px;
   margin-bottom: 14px;
+}
+
+.priority-list { display: grid; gap: 8px; }
+.priority-row {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  padding: 10px 0;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.priority-row:last-child { border-bottom: 0; }
+.priority-row:hover .priority-title { color: var(--accent); }
+.priority-main {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.priority-title,
+.priority-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.priority-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+.priority-meta {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.priority-severity {
+  color: var(--text-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .35px;
 }
 
 /* Severity bars (horizontal) */
@@ -370,6 +503,15 @@ main {
   font-family: var(--font-mono);
   font-size: 13px;
 }
+.overview-panel .hotspot-list,
+.overview-panel .lang-bars,
+.overview-panel .sev-bars { gap: 8px; }
+.overview-panel .hotspot-row {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+}
+.overview-panel .hotspot-row:last-child { border-bottom: 0; }
 
 /* Language bars */
 .lang-bars { display: flex; flex-direction: column; gap: 8px; }
@@ -534,6 +676,7 @@ select:focus { border-color: var(--accent); }
   padding: 48px 24px;
   font-size: 14px;
 }
+.empty-state.compact { padding: 18px 0; }
 
 /* ── File Tree ─────────────────────────────────────────────────────────── */
 .file-tree { display: flex; flex-direction: column; gap: 4px; }

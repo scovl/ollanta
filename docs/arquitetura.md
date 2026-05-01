@@ -206,9 +206,9 @@ graph LR
 
 Após todas as regras rodarem, o scanner consolida tudo em um relatório que contém:
 
-1. **Metadados** — nome do projeto, data, duração do scan
-2. **Métricas** — quantos arquivos, linhas, bugs, code smells, vulnerabilidades
-3. **Issues** — cada problema encontrado, com arquivo, linha, regra, severidade e mensagem
+1. **Metadados** — chave do projeto, data, duração do scan e escopo de branch ou pull request
+2. **Métricas** — arquivos, linhas, bugs, code smells, vulnerabilidades e, opcionalmente, cobertura, testes e mutação
+3. **Issues** — cada problema encontrado, com arquivo, linha, regra, severidade, mensagem, tags, linguagem e domínio de qualidade derivado
 
 O relatório é salvo em dois formatos:
 - **JSON** (`.ollanta/report.json`) — para consumo pela API/servidor
@@ -217,24 +217,36 @@ Exemplo:
 
 ```json
 {
-  "project": "MeuProjeto",
-  "timestamp": "2024-07-01T12:00:00Z",
-  "metrics": {
+  "metadata": {
+    "project_key": "MeuProjeto",
+    "analysis_date": "2024-07-01T12:00:00Z",
+    "scope_type": "branch",
+    "branch": "main"
+  },
+  "measures": {
     "files": 10,
     "lines": 1000,
     "bugs": 3,
     "code_smells": 15,
-    "vulnerabilities": 0
+    "vulnerabilities": 0,
+    "coverage": 82.5,
+    "tests": 120,
+    "test_failures": 0,
+    "mutation_score": 74.2,
+    "mutants_survived": 8
   },
   "issues": [
     {
       "rule_key": "go:no-large-functions",
-      "file_path": "handler.go",
+      "component_path": "handler.go",
       "line": 42,
+      "type": "code_smell",
       "severity": "major",
+      "quality_domain": "maintainability",
+      "language": "go",
+      "tags": ["size", "maintainability"],
       "message": "Função 'handleRequest' tem 120 linhas, excedendo o limite de 40."
-    },
-    ...
+    }
   ]
 }
 ```

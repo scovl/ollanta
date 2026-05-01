@@ -138,7 +138,17 @@ func (b *analyzerBridge) Check(ctx context.Context, ac port.AnalysisContext, iss
 	}
 
 	for _, issue := range b.inner.Check(ruleCtx) {
-		*issues = append(*issues, toDomainIssue(issue))
+		domainIssue := toDomainIssue(issue)
+		if domainIssue == nil {
+			continue
+		}
+		if domainIssue.Language == "" {
+			domainIssue.Language = ac.Language
+		}
+		if domainIssue.QualityDomain == "" {
+			domainIssue.QualityDomain = model.DeriveIssueQualityDomain(domainIssue.Type, domainIssue.Tags)
+		}
+		*issues = append(*issues, domainIssue)
 	}
 	return ctx.Err()
 }

@@ -207,9 +207,9 @@ graph LR
 
 After all rules run, the scanner consolidates everything into a report containing:
 
-1. **Metadata** — project name, timestamp, scan duration
-2. **Metrics** — file count, line count, bugs, code smells, vulnerabilities
-3. **Issues** — each problem found, with file path, line, rule, severity, and message
+1. **Metadata** — project key, timestamp, scan duration, and branch or pull request scope
+2. **Metrics** — file count, line count, bugs, code smells, vulnerabilities, plus optional coverage, test, and mutation metrics
+3. **Issues** — each problem found, with file path, line, rule, severity, message, tags, language, and derived quality domain
 
 The report is saved in two formats:
 - **JSON** (`.ollanta/report.json`) — consumed by the API/server
@@ -218,24 +218,36 @@ Example:
 
 ```json
 {
-  "project": "MyProject",
-  "timestamp": "2024-07-01T12:00:00Z",
-  "metrics": {
+  "metadata": {
+    "project_key": "MyProject",
+    "analysis_date": "2024-07-01T12:00:00Z",
+    "scope_type": "branch",
+    "branch": "main"
+  },
+  "measures": {
     "files": 10,
     "lines": 1000,
     "bugs": 3,
     "code_smells": 15,
-    "vulnerabilities": 0
+    "vulnerabilities": 0,
+    "coverage": 82.5,
+    "tests": 120,
+    "test_failures": 0,
+    "mutation_score": 74.2,
+    "mutants_survived": 8
   },
   "issues": [
     {
       "rule_key": "go:no-large-functions",
-      "file_path": "handler.go",
+      "component_path": "handler.go",
       "line": 42,
+      "type": "code_smell",
       "severity": "major",
+      "quality_domain": "maintainability",
+      "language": "go",
+      "tags": ["size", "maintainability"],
       "message": "Function 'handleRequest' has 120 lines, exceeding the limit of 40."
-    },
-    ...
+    }
   ]
 }
 ```
@@ -296,7 +308,7 @@ When the scanner sends a report to the server via `POST /api/v1/scans`, a 7-step
 2. **Fetch previous scan** — loads the open and closed issues from the last scan of the same project/branch.
 3. **Compare issues** — applies the tracking algorithm to determine which issues are new, which remain open, which were fixed, and which reopened.
 4. **Evaluate quality gate** — checks whether the project satisfies all configured conditions.
-5. **Persist to database** — saves the scan, issues, and metrics in a single transaction.
+5. **Persist to database** — saves the scan, issues, lifecycle state, and metrics in a single transaction.
 6. **Index for search** — sends issues to the search backend (ZincSearch or Postgres FTS).
 7. **Fire webhooks** — notifies registered external systems (CI, Slack, etc.).
 

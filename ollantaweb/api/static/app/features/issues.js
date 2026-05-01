@@ -5,14 +5,44 @@ import {
   SEV_BG,
   SEV_COLOR,
   SEV_LABEL,
-  SEV_ORDER,
   TYPE_ICON,
   TYPE_LABEL,
+  QUALITY_LABEL,
   state,
 } from '../core/state.js';
 import { escAttr, escHtml } from '../core/utils.js';
 
 let showToastMessage = () => {};
+
+const TRACKING_LABEL = {
+  new: 'New',
+  reopened: 'Reopened',
+  unchanged: 'Existing',
+  unknown: 'Current',
+};
+
+const TRACKING_CLASS = {
+  new: 'track-new',
+  reopened: 'track-reopened',
+  unchanged: 'track-unchanged',
+  unknown: 'track-unknown',
+};
+
+const FACET_LIMIT = 8;
+
+const FACET_GROUPS = [
+  { title: 'Software Quality', field: 'quality', facet: 'by_quality', labels: QUALITY_LABEL },
+  { title: 'Severity', field: 'severity', facet: 'by_severity', labels: SEV_LABEL },
+  { title: 'Lifecycle', field: 'trackingState', facet: 'by_lifecycle', labels: TRACKING_LABEL },
+  { title: 'Type', field: 'type', facet: 'by_type', labels: TYPE_LABEL },
+  { title: 'Status', field: 'status', facet: 'by_status' },
+  { title: 'Security Category', field: 'securityCategory', facet: 'by_security_category' },
+  { title: 'Language', field: 'language', facet: 'by_language' },
+  { title: 'Rule', field: 'rule', facet: 'by_rule' },
+  { title: 'Tag', field: 'tag', facet: 'by_tags' },
+  { title: 'Directory', field: 'directory', facet: 'by_directory' },
+  { title: 'File', field: 'file', facet: 'by_file' },
+];
 
 export function configureIssuesFeature(options) {
   showToastMessage = options.showToast;
@@ -27,31 +57,51 @@ export async function loadIssues(append) {
   renderIssuesSection();
 
   const filter = state.issueFilter;
-  const qs = new URLSearchParams({
+  const qs = buildIssuesQueryParams(filter, {
     project_key: project.key,
     limit: String(ISSUE_PAGE),
     offset: String(state.issueOffset),
   });
   buildScopeQuery(state.scope).forEach((value, key) => qs.set(key, value));
-  if (filter.severity !== 'all') qs.set('severity', filter.severity);
-  if (filter.type !== 'all') qs.set('type', filter.type);
-  if (filter.status !== 'all') qs.set('status', filter.status);
-  if (filter.search) qs.set('file', filter.search);
+
+  const facetQs = buildIssuesQueryParams(filter, { project_key: project.key });
+  buildScopeQuery(state.scope).forEach((value, key) => facetQs.set(key, value));
 
   try {
-    const data = await apiFetch('/issues?' + qs.toString());
+    const [data, facets] = await Promise.all([
+      apiFetch('/issues?' + qs.toString()),
+      apiFetch('/issues/facets?' + facetQs.toString()),
+    ]);
     if (append) {
       state.issues = state.issues.concat(data.items || []);
     } else {
       state.issues = data.items || [];
     }
     state.issuesTotal = data.total || 0;
+    state.issueFacets = facets || null;
   } catch {
     if (!append) state.issues = [];
   }
 
   state.loadingIssues = false;
   renderIssuesSection();
+}
+
+function buildIssuesQueryParams(filter, initial) {
+  const qs = new URLSearchParams(initial);
+  if (filter.quality !== 'all') qs.set('quality', filter.quality);
+  if (filter.severity !== 'all') qs.set('severity', filter.severity);
+  if (filter.type !== 'all') qs.set('type', filter.type);
+  if (filter.status !== 'all') qs.set('status', filter.status);
+  if (filter.trackingState !== 'all') qs.set('tracking_state', filter.trackingState);
+  if (filter.language !== 'all') qs.set('language', filter.language);
+  if (filter.rule !== 'all') qs.set('rule_key', filter.rule);
+  if (filter.tag !== 'all') qs.set('tag', filter.tag);
+  if (filter.securityCategory !== 'all') qs.set('security_category', filter.securityCategory);
+  if (filter.directory !== 'all') qs.set('directory', filter.directory);
+  if (filter.file !== 'all') qs.set('file', filter.file);
+  if (filter.file === 'all' && filter.search) qs.set('file', filter.search);
+  return qs;
 }
 
 export function renderIssuesSection() {
@@ -61,31 +111,13 @@ export function renderIssuesSection() {
   bindIssueControls();
 }
 
-function sevCounts(issues) {
-  const counts = { blocker: 0, critical: 0, major: 0, minor: 0, info: 0 };
-  for (const issue of issues) {
-    if (issue.severity in counts) counts[issue.severity] += 1;
-  }
-  return counts;
-}
-
 function buildIssuesHtml() {
   const issues = state.issues;
   const total = state.issuesTotal;
   const filter = state.issueFilter;
 
-  const counts = sevCounts(issues);
-  const chips = SEV_ORDER.map(sev => {
-    const count = counts[sev];
-    const active = filter.severity === sev;
-    return `<button class="sev-chip${active ? ' active' : ''}" data-sev="${sev}" style="--chip-color:${SEV_COLOR[sev]};--chip-bg:${SEV_BG[sev]}">
-      <span class="chip-dot" style="background:${SEV_COLOR[sev]}"></span>
-      ${SEV_LABEL[sev]}
-      <span class="chip-count">${count}</span>
-    </button>`;
-  }).join('');
-
-  const summaryBar = `<div class="sev-bar">${chips}</div>`;
+  const facets = state.issueFacets || {};
+  const facetSidebar = renderFacetSidebar(facets, filter);
 
   const filtersHtml = `
     <div class="issues-toolbar">
@@ -93,49 +125,42 @@ function buildIssuesHtml() {
         <span style="font-size:13px;font-weight:400;color:var(--text-muted)">&nbsp;${total.toLocaleString()} total</span>
       </span>
       <div class="issues-filters">
-        <select id="filterType" class="filter-sel">
-          <option value="all"${filter.type === 'all' ? ' selected' : ''}>All types</option>
-          <option value="bug"${filter.type === 'bug' ? ' selected' : ''}>Bug</option>
-          <option value="code_smell"${filter.type === 'code_smell' ? ' selected' : ''}>Code Smell</option>
-          <option value="vulnerability"${filter.type === 'vulnerability' ? ' selected' : ''}>Vulnerability</option>
-        </select>
-        <select id="filterStatus" class="filter-sel">
-          <option value="all"${filter.status === 'all' ? ' selected' : ''}>All statuses</option>
-          <option value="open"${filter.status === 'open' ? ' selected' : ''}>Open</option>
-          <option value="closed"${filter.status === 'closed' ? ' selected' : ''}>Closed</option>
-        </select>
         <input id="filterSearch" class="filter-input" type="text" placeholder="Search file or message\u2026" value="${escAttr(filter.search)}">
       </div>
     </div>`;
 
   if (state.loadingIssues && issues.length === 0) {
-    return summaryBar + filtersHtml + `<div class="loading-state"><div class="spinner"></div></div>`;
+    return `<div class="issues-layout">${facetSidebar}<section class="issues-results">${filtersHtml}<div class="loading-state"><div class="spinner"></div></div></section></div>`;
   }
 
   if (issues.length === 0) {
-    return summaryBar + filtersHtml + `<div class="empty-state" style="padding:32px 0"><p>No issues match the current filters.</p></div>`;
+    return `<div class="issues-layout">${facetSidebar}<section class="issues-results">${filtersHtml}<div class="empty-state" style="padding:32px 0"><p>No issues match the current filters.</p></div></section></div>`;
   }
 
   const rows = issues.map((issue, idx) => {
     const color = SEV_COLOR[issue.severity] || '#64748b';
     const bg = SEV_BG[issue.severity] || 'transparent';
     const icon = TYPE_ICON[issue.type] || '?';
-    const file = (issue.component_path || '').replace(/\\/g, '/').split('/').slice(-3).join('/');
+    const file = (issue.component_path || '').replaceAll('\\', '/').split('/').slice(-3).join('/');
     const loc = issue.end_line && issue.end_line !== issue.line ? `${issue.line}\u2013${issue.end_line}` : `${issue.line}`;
     const status = issue.status || 'open';
+    const trackingState = issue.tracking_state || 'unknown';
+    const trackingLabel = TRACKING_LABEL[trackingState] || 'Current';
+    const trackingClass = TRACKING_CLASS[trackingState] || 'track-unknown';
     const isClosed = status === 'closed';
     let actionBtns = '';
-    if (!isClosed) {
+    if (isClosed) {
+      actionBtns = `<button class="itbtn re-btn" data-id="${issue.id}" data-res="" title="Reopen">\u21A9</button>`;
+    } else {
       actionBtns = `
         <button class="itbtn fp-btn" data-id="${issue.id}" data-res="false_positive" title="False positive">FP</button>
         <button class="itbtn wf-btn" data-id="${issue.id}" data-res="wont_fix" title="Won\u2019t fix">WF</button>
         <button class="itbtn ok-btn" data-id="${issue.id}" data-res="fixed" title="Mark as fixed">\u2713</button>`;
-    } else {
-      actionBtns = `<button class="itbtn re-btn" data-id="${issue.id}" data-res="" title="Reopen">\u21A9</button>`;
     }
     return `<tr style="--row-sev-color:${color};--row-sev-bg:${bg}" class="sev-row${isClosed ? ' row-closed' : ''}" data-issue-idx="${idx}">
       <td><span class="sev-badge" style="background:${color}">${escHtml(issue.severity)}</span></td>
       <td>${icon} ${escHtml((issue.type || '').replace('_', ' '))}</td>
+      <td><span class="issue-track ${trackingClass}">${escHtml(trackingLabel)}</span></td>
       <td class="mono" style="font-size:11px">${escHtml(issue.rule_key || '')}</td>
       <td class="file-cell" title="${escAttr(issue.component_path || '')}"><span class="mono">${escHtml(file)}<span style="color:var(--text-muted)">:${loc}</span></span></td>
       <td>${escHtml(issue.message || '')}</td>
@@ -144,41 +169,93 @@ function buildIssuesHtml() {
   }).join('');
 
   const hasMore = issues.length < total;
+  const loadMoreLabel = state.loadingIssues ? 'Loading\u2026' : `Load more (${total - issues.length} remaining)`;
   const moreBtn = hasMore
     ? `<div style="text-align:center;padding:16px">
         <button class="btn btn-primary" id="loadMoreBtn" style="width:auto;padding:8px 24px">
-          ${state.loadingIssues ? 'Loading\u2026' : `Load more (${total - issues.length} remaining)`}
+          ${loadMoreLabel}
         </button>
        </div>`
     : '';
 
-  return summaryBar + filtersHtml + `
+  return `<div class="issues-layout">
+    ${facetSidebar}
+    <section class="issues-results">
+    ${filtersHtml}
     <div class="issues-table-wrap">
       <table class="issues-table">
         <thead><tr>
-          <th>Severity</th><th>Type</th><th>Rule</th><th>File</th><th>Message</th><th></th>
+          <th>Severity</th><th>Type</th><th>Lifecycle</th><th>Rule</th><th>File</th><th>Message</th><th></th>
         </tr></thead>
         <tbody>${rows}</tbody>
       </table>
     </div>
-    ${moreBtn}`;
+    ${moreBtn}
+    </section>
+  </div>`;
+}
+
+function renderFacetSidebar(facets, filter) {
+  const groups = FACET_GROUPS.map(group => renderFacetGroup(group, facets[group.facet] || {}, filter)).join('');
+  return `<aside class="issue-facet-sidebar">${groups}</aside>`;
+}
+
+function renderFacetGroup(group, values, filter) {
+  const entries = Object.entries(values)
+    .filter(([, count]) => count > 0)
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  const search = (state.issueFacetSearch[group.field] || '').toLowerCase();
+  const filtered = search ? entries.filter(([key]) => facetLabel(group, key).toLowerCase().includes(search) || key.toLowerCase().includes(search)) : entries;
+  const expanded = Boolean(state.issueFacetExpanded[group.field]);
+  const visible = expanded ? filtered : filtered.slice(0, FACET_LIMIT);
+  const active = filter[group.field];
+  const rows = visible.map(([key, count]) => {
+    const selected = active === key;
+    return `<button class="facet-option${selected ? ' active' : ''}" data-facet-field="${escAttr(group.field)}" data-facet-value="${escAttr(key)}">
+      <span class="facet-label">${escHtml(facetLabel(group, key))}</span>
+      <span class="facet-count">${count.toLocaleString()}</span>
+    </button>`;
+  }).join('');
+  const searchInput = entries.length > FACET_LIMIT
+    ? `<input class="facet-search" data-facet-search="${escAttr(group.field)}" placeholder="Search ${escAttr(group.title.toLowerCase())}\u2026" value="${escAttr(state.issueFacetSearch[group.field] || '')}">`
+    : '';
+  const toggleLabel = expanded ? 'Show less' : 'Show more (' + (filtered.length - FACET_LIMIT) + ')';
+  const toggle = filtered.length > FACET_LIMIT
+    ? `<button class="facet-more" data-facet-expand="${escAttr(group.field)}">${toggleLabel}</button>`
+    : '';
+  return `<section class="facet-group">
+    <div class="facet-title">${escHtml(group.title)}</div>
+    ${searchInput}
+    <div class="facet-options">${rows || '<div class="facet-empty">No data</div>'}</div>
+    ${toggle}
+  </section>`;
+}
+
+function facetLabel(group, key) {
+  return group.labels?.[key] || key;
 }
 
 function bindIssueControls() {
-  document.querySelectorAll('.sev-chip').forEach(btn => {
+  document.querySelectorAll('[data-facet-field]').forEach(btn => {
     btn.addEventListener('click', () => {
-      const sev = btn.dataset.sev;
-      state.issueFilter.severity = state.issueFilter.severity === sev ? 'all' : sev;
+      const field = btn.dataset.facetField;
+      const value = btn.dataset.facetValue;
+      state.issueFilter[field] = state.issueFilter[field] === value ? 'all' : value;
       loadIssues();
     });
   });
-  document.getElementById('filterType')?.addEventListener('change', event => {
-    state.issueFilter.type = event.target.value;
-    loadIssues();
+  document.querySelectorAll('[data-facet-expand]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const field = btn.dataset.facetExpand;
+      state.issueFacetExpanded[field] = !state.issueFacetExpanded[field];
+      renderIssuesSection();
+    });
   });
-  document.getElementById('filterStatus')?.addEventListener('change', event => {
-    state.issueFilter.status = event.target.value;
-    loadIssues();
+  document.querySelectorAll('[data-facet-search]').forEach(input => {
+    input.addEventListener('input', event => {
+      state.issueFacetSearch[input.dataset.facetSearch] = event.target.value;
+      renderIssuesSection();
+    });
   });
   let searchTimer;
   document.getElementById('filterSearch')?.addEventListener('input', event => {
@@ -239,14 +316,14 @@ export function openIssueDetail(issue) {
   if (!inner || !panel || !overlay) return;
 
   const currentIssue = issue;
-  const file = (currentIssue.component_path || '').replace(/\\/g, '/');
+  const file = (currentIssue.component_path || '').replaceAll('\\', '/');
   const loc = currentIssue.end_line && currentIssue.end_line !== currentIssue.line ? `${currentIssue.line}\u2013${currentIssue.end_line}` : `${currentIssue.line}`;
   const sevColor = SEV_COLOR[currentIssue.severity] || '#64748b';
 
   let secondaryHtml = '';
   if (currentIssue.secondary_locations && currentIssue.secondary_locations.length > 0) {
     const locs = currentIssue.secondary_locations.map((secondaryLocation, idx) => {
-      const secondaryFile = (secondaryLocation.file_path || secondaryLocation.component_path || '').replace(/\\/g, '/').split('/').slice(-2).join('/');
+      const secondaryFile = (secondaryLocation.file_path || secondaryLocation.component_path || '').replaceAll('\\', '/').split('/').slice(-2).join('/');
       return `<div class="secondary-loc">
         <span class="loc-num">${idx + 1}</span>
         <span class="loc-file">${escHtml(secondaryFile)}:${secondaryLocation.line || ''}</span>
@@ -290,7 +367,11 @@ export function openIssueDetail(issue) {
         <span class="detail-prop-label">Status</span>
         <span class="detail-prop-value">${escHtml(currentIssue.status || 'open')}${currentIssue.resolution ? ' \u2014 ' + escHtml(currentIssue.resolution) : ''}</span>
       </div>
-      ${currentIssue.tags && currentIssue.tags.length ? `<div class="detail-prop">
+      <div class="detail-prop">
+        <span class="detail-prop-label">Lifecycle</span>
+        <span class="detail-prop-value">${escHtml(TRACKING_LABEL[currentIssue.tracking_state || 'unknown'] || 'Current')}</span>
+      </div>
+      ${currentIssue.tags?.length ? `<div class="detail-prop">
         <span class="detail-prop-label">Tags</span>
         <span class="detail-prop-value">${currentIssue.tags.map(tag => `<span class="tag">${escHtml(tag)}</span>`).join(' ')}</span>
       </div>` : ''}

@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	domainmodel "github.com/scovl/ollanta/domain/model"
 )
 
 // IssueRow is the database representation of a single issue.
@@ -25,8 +27,11 @@ type IssueRow struct {
 	Message            string          `json:"message"`
 	Type               string          `json:"type"`
 	Severity           string          `json:"severity"`
+	QualityDomain      string          `json:"quality_domain,omitempty"`
+	Language           string          `json:"language,omitempty"`
 	Status             string          `json:"status"`
 	Resolution         string          `json:"resolution"`
+	TrackingState      string          `json:"tracking_state"`
 	EffortMinutes      int             `json:"effort_minutes"`
 	EngineID           string          `json:"engine_id"`
 	LineHash           string          `json:"line_hash"`
@@ -37,28 +42,41 @@ type IssueRow struct {
 
 // IssueFilter specifies query parameters for listing issues.
 type IssueFilter struct {
-	ProjectID *int64
-	ScanID    *int64
-	RuleKey   *string
-	Severity  *string
-	Type      *string
-	Status    *string
-	FilePath  *string // applied as LIKE pattern against component_path
-	EngineID  *string
-	Limit     int // default 100, max 1000
-	Offset    int
+	ProjectID        *int64
+	ScanID           *int64
+	RuleKey          *string
+	Severity         *string
+	Type             *string
+	QualityDomain    *string
+	Status           *string
+	TrackingState    *string
+	Language         *string
+	Tag              *string
+	SecurityCategory *string
+	Directory        *string
+	FilePath         *string // applied as LIKE pattern against component_path
+	EngineID         *string
+	Limit            int // default 100, max 1000
+	Offset           int
 }
 
 // IssueFacets holds aggregate distributions for the issues index.
 type IssueFacets struct {
-	BySeverity map[string]int `json:"by_severity"`
-	ByType     map[string]int `json:"by_type"`
-	ByRule     map[string]int `json:"by_rule"`
-	ByStatus   map[string]int `json:"by_status"`
-	ByEngineID map[string]int `json:"by_engine_id"`
-	ByFile     map[string]int `json:"by_file"`
-	ByTags     map[string]int `json:"by_tags"`
+	BySeverity         map[string]int `json:"by_severity"`
+	ByType             map[string]int `json:"by_type"`
+	ByQuality          map[string]int `json:"by_quality"`
+	ByRule             map[string]int `json:"by_rule"`
+	ByStatus           map[string]int `json:"by_status"`
+	ByLifecycle        map[string]int `json:"by_lifecycle"`
+	ByLanguage         map[string]int `json:"by_language"`
+	ByEngineID         map[string]int `json:"by_engine_id"`
+	ByFile             map[string]int `json:"by_file"`
+	ByDirectory        map[string]int `json:"by_directory"`
+	ByTags             map[string]int `json:"by_tags"`
+	BySecurityCategory map[string]int `json:"by_security_category"`
 }
+
+var testabilityFacetTags = []string{"testability", "unit-test", "coverage-gap", "mutation", "survived-mutant", "failing-test", "flaky-test", "mutation-testing"}
 
 // IssueRepository provides access to the issues table.
 type IssueRepository struct {
@@ -100,7 +118,7 @@ func (r *IssueRepository) BulkInsert(ctx context.Context, issues []IssueRow) err
 			iss.ScanID, iss.ProjectID, iss.RuleKey, iss.ComponentPath,
 			iss.Line, iss.Column, iss.EndLine, iss.EndColumn,
 			iss.Message, iss.Type, iss.Severity, iss.Status,
-			iss.Resolution, iss.EffortMinutes, engineID, iss.LineHash, tags, sl,
+			iss.Resolution, iss.TrackingState, iss.EffortMinutes, engineID, iss.LineHash, tags, sl,
 		}
 	}
 
@@ -111,7 +129,7 @@ func (r *IssueRepository) BulkInsert(ctx context.Context, issues []IssueRow) err
 			"scan_id", "project_id", "rule_key", "component_path",
 			"line", "column_num", "end_line", "end_column",
 			"message", "type", "severity", "status",
-			"resolution", "effort_minutes", "engine_id", "line_hash", "tags",
+			"resolution", "tracking_state", "effort_minutes", "engine_id", "line_hash", "tags",
 			"secondary_locations",
 		},
 		pgx.CopyFromRows(rows),
@@ -147,10 +165,39 @@ func buildIssueFilter(f IssueFilter) (conds []string, args []interface{}) {
 		args = append(args, *f.Type)
 		n++
 	}
+	if f.QualityDomain != nil {
+		conds = append(conds, qualityDomainCondition(*f.QualityDomain, n))
+		args = append(args, testabilityFacetTags)
+		n++
+	}
 	if f.Status != nil {
 		conds = append(conds, fmt.Sprintf("status = $%d", n))
 		args = append(args, *f.Status)
 		n++
+	}
+	if f.TrackingState != nil {
+		conds = append(conds, fmt.Sprintf("tracking_state = $%d", n))
+		args = append(args, *f.TrackingState)
+		n++
+	}
+	if f.Language != nil {
+		conds = append(conds, languageCondition(*f.Language))
+	}
+	if f.Tag != nil {
+		conds = append(conds, fmt.Sprintf("$%d = ANY(tags)", n))
+		args = append(args, *f.Tag)
+		n++
+	}
+	if f.SecurityCategory != nil {
+		conds = append(conds, fmt.Sprintf("$%d = ANY(tags)", n))
+		args = append(args, *f.SecurityCategory)
+		n++
+	}
+	if f.Directory != nil {
+		directory := strings.Trim(strings.ReplaceAll(*f.Directory, "\\", "/"), "/")
+		conds = append(conds, fmt.Sprintf("(component_path = $%d OR component_path LIKE $%d)", n, n+1))
+		args = append(args, directory, directory+"/%")
+		n += 2
 	}
 	if f.FilePath != nil {
 		conds = append(conds, fmt.Sprintf("component_path LIKE $%d", n))
@@ -163,6 +210,38 @@ func buildIssueFilter(f IssueFilter) (conds []string, args []interface{}) {
 		n++
 	}
 	return
+}
+
+func qualityDomainCondition(quality string, argIndex int) string {
+	testTagPredicate := fmt.Sprintf("tags && $%d::text[]", argIndex)
+	switch quality {
+	case string(domainmodel.QualitySecurity):
+		return fmt.Sprintf("(NOT (%s) AND type IN ('vulnerability', 'security_hotspot'))", testTagPredicate)
+	case string(domainmodel.QualityReliability):
+		return fmt.Sprintf("(NOT (%s) AND type = 'bug')", testTagPredicate)
+	case string(domainmodel.QualityTestability):
+		return testTagPredicate
+	default:
+		return fmt.Sprintf("(NOT (%s) AND type = 'code_smell')", testTagPredicate)
+	}
+}
+
+func languageCondition(language string) string {
+	pathExpr := "LOWER(REPLACE(component_path, '\\\\', '/'))"
+	switch language {
+	case domainmodel.LangGo:
+		return pathExpr + " LIKE '%.go'"
+	case domainmodel.LangJavaScript:
+		return "(" + pathExpr + " LIKE '%.js' OR " + pathExpr + " LIKE '%.mjs')"
+	case domainmodel.LangTypeScript:
+		return "(" + pathExpr + " LIKE '%.ts' OR " + pathExpr + " LIKE '%.tsx')"
+	case domainmodel.LangPython:
+		return pathExpr + " LIKE '%.py'"
+	case domainmodel.LangRust:
+		return pathExpr + " LIKE '%.rs'"
+	default:
+		return "NOT (" + pathExpr + " LIKE '%.go' OR " + pathExpr + " LIKE '%.js' OR " + pathExpr + " LIKE '%.mjs' OR " + pathExpr + " LIKE '%.ts' OR " + pathExpr + " LIKE '%.tsx' OR " + pathExpr + " LIKE '%.py' OR " + pathExpr + " LIKE '%.rs')"
+	}
 }
 
 // Query returns issues matching the filter, plus the total count before LIMIT/OFFSET.
@@ -192,7 +271,7 @@ func (r *IssueRepository) Query(ctx context.Context, f IssueFilter) ([]*IssueRow
 	listQuery := fmt.Sprintf(`
 		SELECT id, scan_id, project_id, rule_key, component_path,
 		       line, column_num, end_line, end_column, message,
-		       type, severity, status, resolution, effort_minutes,
+		       type, severity, status, resolution, tracking_state, effort_minutes,
 		       engine_id, line_hash, tags, secondary_locations, created_at
 		FROM issues %s
 		ORDER BY created_at DESC, id DESC
@@ -210,14 +289,54 @@ func (r *IssueRepository) Query(ctx context.Context, f IssueFilter) ([]*IssueRow
 		if err := rows.Scan(
 			&iss.ID, &iss.ScanID, &iss.ProjectID, &iss.RuleKey, &iss.ComponentPath,
 			&iss.Line, &iss.Column, &iss.EndLine, &iss.EndColumn, &iss.Message,
-			&iss.Type, &iss.Severity, &iss.Status, &iss.Resolution, &iss.EffortMinutes,
+			&iss.Type, &iss.Severity, &iss.Status, &iss.Resolution, &iss.TrackingState, &iss.EffortMinutes,
 			&iss.EngineID, &iss.LineHash, &iss.Tags, &iss.SecondaryLocations, &iss.CreatedAt,
 		); err != nil {
 			return nil, 0, err
 		}
 		issues = append(issues, iss)
 	}
+	for _, issue := range issues {
+		enrichIssueRow(issue)
+	}
 	return issues, total, rows.Err()
+}
+
+// UpdateTrackingStates backfills tracking_state for existing issues.
+// Only rows still marked as unknown are updated so the operation is safe to rerun.
+func (r *IssueRepository) UpdateTrackingStates(ctx context.Context, states map[int64]string) (int64, error) {
+	if len(states) == 0 {
+		return 0, nil
+	}
+
+	ids := make([]int64, 0, len(states))
+	for id := range states {
+		ids = append(ids, id)
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+
+	batch := &pgx.Batch{}
+	for _, id := range ids {
+		batch.Queue(`
+			UPDATE issues
+			SET tracking_state = $2
+			WHERE id = $1 AND tracking_state = 'unknown'`, id, states[id])
+	}
+
+	results := r.db.Pool.SendBatch(ctx, batch)
+	var updated int64
+	for range ids {
+		ct, err := results.Exec()
+		if err != nil {
+			_ = results.Close()
+			return updated, err
+		}
+		updated += ct.RowsAffected()
+	}
+	if err := results.Close(); err != nil {
+		return updated, err
+	}
+	return updated, nil
 }
 
 // facetRow holds a single facet result: a column value and its issue count.
@@ -279,77 +398,93 @@ func (r *IssueRepository) queryTopFacet(ctx context.Context, column string, limi
 // engine_id, file (top 10), and tags for a given scan.
 // Inspired by SonarQube's sticky faceted search pattern.
 func (r *IssueRepository) Facets(ctx context.Context, projectID, scanID int64) (*IssueFacets, error) {
+	return r.FacetsForFilter(ctx, IssueFilter{ProjectID: &projectID, ScanID: &scanID})
+}
+
+func (r *IssueRepository) FacetsForFilter(ctx context.Context, filter IssueFilter) (*IssueFacets, error) {
 	facets := &IssueFacets{
-		BySeverity: make(map[string]int),
-		ByType:     make(map[string]int),
-		ByRule:     make(map[string]int),
-		ByStatus:   make(map[string]int),
-		ByEngineID: make(map[string]int),
-		ByFile:     make(map[string]int),
-		ByTags:     make(map[string]int),
+		BySeverity:         make(map[string]int),
+		ByType:             make(map[string]int),
+		ByQuality:          make(map[string]int),
+		ByRule:             make(map[string]int),
+		ByStatus:           make(map[string]int),
+		ByLifecycle:        make(map[string]int),
+		ByLanguage:         make(map[string]int),
+		ByEngineID:         make(map[string]int),
+		ByFile:             make(map[string]int),
+		ByDirectory:        make(map[string]int),
+		ByTags:             make(map[string]int),
+		BySecurityCategory: make(map[string]int),
 	}
-
-	sev, err := r.queryFacet(ctx, "severity", projectID, scanID)
+	conds, args := buildIssueFilter(filter)
+	where := ""
+	if len(conds) > 0 {
+		where = "WHERE " + strings.Join(conds, " AND ")
+	}
+	query := `
+		SELECT type, severity, status, tracking_state, rule_key, component_path, engine_id, tags
+		FROM issues ` + where
+	rows, err := r.db.Pool.Query(ctx, query, args...)
 	if err != nil {
-		return nil, fmt.Errorf("facet severity: %w", err)
+		return nil, fmt.Errorf("query issue facets: %w", err)
 	}
-	applyFacet(facets.BySeverity, sev)
-
-	typ, err := r.queryFacet(ctx, "type", projectID, scanID)
-	if err != nil {
-		return nil, fmt.Errorf("facet type: %w", err)
-	}
-	applyFacet(facets.ByType, typ)
-
-	rule, err := r.queryTopFacet(ctx, "rule_key", 20, projectID, scanID)
-	if err != nil {
-		return nil, fmt.Errorf("facet rule: %w", err)
-	}
-	applyFacet(facets.ByRule, rule)
-
-	st, err := r.queryFacet(ctx, "status", projectID, scanID)
-	if err != nil {
-		return nil, fmt.Errorf("facet status: %w", err)
-	}
-	applyFacet(facets.ByStatus, st)
-
-	eng, err := r.queryFacet(ctx, "engine_id", projectID, scanID)
-	if err != nil {
-		return nil, fmt.Errorf("facet engine_id: %w", err)
-	}
-	applyFacet(facets.ByEngineID, eng)
-
-	file, err := r.queryTopFacet(ctx, "component_path", 10, projectID, scanID)
-	if err != nil {
-		return nil, fmt.Errorf("facet file: %w", err)
-	}
-	applyFacet(facets.ByFile, file)
-
-	// Tags facet uses unnest since tags is an array column.
-	tagRows, err := r.db.Pool.Query(ctx, `
-		SELECT t, COUNT(*) AS cnt
-		FROM issues, unnest(tags) AS t
-		WHERE project_id = $1 AND scan_id = $2
-		GROUP BY t
-		ORDER BY cnt DESC
-		LIMIT 20`, projectID, scanID)
-	if err != nil {
-		return nil, fmt.Errorf("facet tags: %w", err)
-	}
-	defer tagRows.Close()
-	for tagRows.Next() {
-		var tag string
-		var cnt int
-		if err := tagRows.Scan(&tag, &cnt); err != nil {
-			return nil, fmt.Errorf("facet tags scan: %w", err)
+	defer rows.Close()
+	for rows.Next() {
+		issue := &IssueRow{}
+		if err := rows.Scan(&issue.Type, &issue.Severity, &issue.Status, &issue.TrackingState, &issue.RuleKey, &issue.ComponentPath, &issue.EngineID, &issue.Tags); err != nil {
+			return nil, fmt.Errorf("scan issue facet row: %w", err)
 		}
-		facets.ByTags[tag] = cnt
+		enrichIssueRow(issue)
+		increment(facets.BySeverity, issue.Severity)
+		increment(facets.ByType, issue.Type)
+		increment(facets.ByQuality, issue.QualityDomain)
+		increment(facets.ByRule, issue.RuleKey)
+		increment(facets.ByStatus, issue.Status)
+		increment(facets.ByLifecycle, issue.TrackingState)
+		increment(facets.ByLanguage, issue.Language)
+		increment(facets.ByEngineID, issue.EngineID)
+		increment(facets.ByFile, issue.ComponentPath)
+		increment(facets.ByDirectory, issueDirectory(issue.ComponentPath))
+		for _, tag := range issue.Tags {
+			increment(facets.ByTags, tag)
+		}
+		for _, category := range domainmodel.SecurityCategories(issue.Tags) {
+			increment(facets.BySecurityCategory, category)
+		}
 	}
-	if err := tagRows.Err(); err != nil {
-		return nil, fmt.Errorf("facet tags iter: %w", err)
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate issue facets: %w", err)
 	}
 
 	return facets, nil
+}
+
+func increment(target map[string]int, key string) {
+	if key == "" {
+		return
+	}
+	target[key]++
+}
+
+func issueDirectory(path string) string {
+	normalized := strings.Trim(strings.ReplaceAll(path, "\\", "/"), "/")
+	idx := strings.LastIndex(normalized, "/")
+	if idx <= 0 {
+		return "./"
+	}
+	return normalized[:idx]
+}
+
+func enrichIssueRow(issue *IssueRow) {
+	if issue == nil {
+		return
+	}
+	if issue.Language == "" {
+		issue.Language = domainmodel.LanguageFromPath(issue.ComponentPath)
+	}
+	if issue.QualityDomain == "" {
+		issue.QualityDomain = string(domainmodel.DeriveIssueQualityDomain(domainmodel.IssueType(issue.Type), issue.Tags))
+	}
 }
 
 // CountByProject returns the total number of issues for a project.
@@ -367,18 +502,19 @@ func (r *IssueRepository) GetByID(ctx context.Context, id int64) (*IssueRow, err
 	err := r.db.Pool.QueryRow(ctx, `
 		SELECT id, scan_id, project_id, rule_key, component_path,
 		       line, column_num, end_line, end_column, message,
-		       type, severity, status, resolution, effort_minutes,
+		       type, severity, status, resolution, tracking_state, effort_minutes,
 		       engine_id, line_hash, tags, secondary_locations, created_at
 		FROM issues WHERE id = $1 LIMIT 1`, id,
 	).Scan(
 		&iss.ID, &iss.ScanID, &iss.ProjectID, &iss.RuleKey, &iss.ComponentPath,
 		&iss.Line, &iss.Column, &iss.EndLine, &iss.EndColumn, &iss.Message,
-		&iss.Type, &iss.Severity, &iss.Status, &iss.Resolution, &iss.EffortMinutes,
+		&iss.Type, &iss.Severity, &iss.Status, &iss.Resolution, &iss.TrackingState, &iss.EffortMinutes,
 		&iss.EngineID, &iss.LineHash, &iss.Tags, &iss.SecondaryLocations, &iss.CreatedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
+	enrichIssueRow(iss)
 	return iss, err
 }
 

@@ -17,6 +17,30 @@ if !status.Passed() {
 
 The server persists gates in PostgreSQL. Each scan stores its `gate_status` (`OK` / `WARN` / `ERROR`). The scanner CLI exits with code 1 when the gate fails.
 
+## Supported Metric Keys
+
+Quality gates can evaluate any numeric measure persisted for the scan. Common project-level keys include:
+
+| Metric key | Meaning |
+|------------|---------|
+| `bugs` | Reliability findings. |
+| `vulnerabilities` | Security vulnerabilities. |
+| `code_smells` | Maintainability findings. |
+| `coverage` | Coverage percentage, when supplied in the report. |
+| `tests` | Total unit tests. |
+| `test_failures` | Failed tests. |
+| `test_errors` | Test execution errors. |
+| `test_skipped` | Skipped tests. |
+| `test_duration_ms` | Test duration in milliseconds. |
+| `mutation_score` | Mutation score percentage. |
+| `mutants_total` | Total mutants. |
+| `mutants_killed` | Killed mutants. |
+| `mutants_survived` | Survived mutants. |
+| `mutants_timeout` | Timed-out mutants. |
+| `mutants_error` | Errored mutants. |
+
+Missing optional test or mutation metrics do not fail a gate condition. They are reported as missing values and pass by default, which keeps legacy reports compatible.
+
 ## API Endpoints
 
 | Method | Endpoint                                 | Description |

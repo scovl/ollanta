@@ -26,16 +26,26 @@ export const TYPE_ICON = {
   bug: '\uD83D\uDC1B',
   code_smell: '\uD83C\uDF3F',
   vulnerability: '\uD83D\uDD12',
+  security_hotspot: '\uD83D\uDD0E',
 };
 export const TYPE_COLOR = {
   bug: '#ef4444',
   code_smell: '#22c55e',
   vulnerability: '#f97316',
+  security_hotspot: '#eab308',
 };
 export const TYPE_LABEL = {
   bug: 'Bug',
   code_smell: 'Code Smell',
   vulnerability: 'Vulnerability',
+  security_hotspot: 'Security Hotspot',
+};
+
+export const QUALITY_LABEL = {
+  security: 'Security',
+  reliability: 'Reliability',
+  maintainability: 'Maintainability',
+  testability: 'Testability',
 };
 
 export function emptyScope() {
@@ -52,9 +62,12 @@ export function createInitialState() {
     scope: emptyScope(),
     overviewData: null,
     issues: [],
+    issueFacets: null,
     issuesTotal: 0,
     issueOffset: 0,
-    issueFilter: { severity: 'all', type: 'all', status: 'all', search: '' },
+    issueFilter: { quality: 'all', severity: 'all', type: 'all', status: 'all', trackingState: 'all', language: 'all', rule: 'all', tag: 'all', securityCategory: 'all', directory: 'all', file: 'all', search: '' },
+    issueFacetExpanded: {},
+    issueFacetSearch: {},
     loading: false,
     loadingIssues: false,
     projectTab: 'overview',
@@ -86,9 +99,12 @@ export function resetProjectState() {
   state.scope = emptyScope();
   state.overviewData = null;
   state.issues = [];
+  state.issueFacets = null;
   state.issuesTotal = 0;
   state.issueOffset = 0;
-  state.issueFilter = { severity: 'all', type: 'all', status: 'all', search: '' };
+  state.issueFilter = { quality: 'all', severity: 'all', type: 'all', status: 'all', trackingState: 'all', language: 'all', rule: 'all', tag: 'all', securityCategory: 'all', directory: 'all', file: 'all', search: '' };
+  state.issueFacetExpanded = {};
+  state.issueFacetSearch = {};
   state.projectTab = 'overview';
   state.gateData = null;
   state.webhooksData = null;

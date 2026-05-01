@@ -57,8 +57,9 @@ Database and search settings can be expressed either as a full `url` or as expli
 | GET    | `/api/v1/projects/{key}/information`      | Project metadata plus active-scope metadata |
 | GET    | `/api/v1/projects/{key}/code/tree`        | Latest code snapshot manifest for the selected scope |
 | GET    | `/api/v1/projects/{key}/code/file`        | Snapshot file content and matching issues for the selected scope |
-| GET    | `/api/v1/issues`                          | List/filter issues (project, severity, rule, status) |
-| GET    | `/api/v1/issues/facets`                   | Issue distribution facets |
+| GET    | `/api/v1/issues`                          | List/filter issues by scope, quality, severity, lifecycle, language, rule, tag, directory, or file |
+| GET    | `/api/v1/issues/facets`                   | Issue distribution facets for the active filtered result set |
+| POST   | `/api/v1/projects/{key}/issues/backfill-tracking-state` | Backfill legacy `tracking_state` values for the project's issue history |
 | GET    | `/api/v1/projects/{key}/measures/trend`   | Metric trend over time |
 | GET    | `/api/v1/search`                          | Full-text search (ZincSearch / Postgres FTS) |
 | GET    | `/api/v1/admin/index-jobs`                | List durable search-index jobs |
@@ -121,6 +122,34 @@ Every successful ingest stores the latest successful code snapshot for the selec
 - `GET /api/v1/projects/{key}/code/file?path=...` returns the selected file content together with issues from the latest scan in the same scope.
 - Snapshot storage is bounded to `128 KB` per file and `4 MB` total per scope. Truncated or omitted files expose flags and omission reasons in the response.
 
+### Issue filtering and facets
+
+`GET /api/v1/issues` and `GET /api/v1/issues/facets` share the same filter query parameters. Facets are calculated from the full filtered result set before list pagination is applied.
+
+Common filters:
+
+| Query parameter | Meaning |
+|-----------------|---------|
+| `project_id` / `project_key` | Project selector. `project_key` is required for branch or pull request scoped queries. |
+| `scan_id` | Exact scan selector. Cannot be combined with `branch` or `pull_request`. |
+| `branch` / `pull_request` | Resolve the latest scan for a branch or pull request scope. |
+| `quality` | Software quality domain: `security`, `reliability`, `maintainability`, `testability`. |
+| `severity` | `blocker`, `critical`, `major`, `minor`, `info`. |
+| `type` | `bug`, `vulnerability`, `code_smell`, `security_hotspot`. |
+| `status` | Current issue status, such as `open` or `closed`. |
+| `tracking_state` | Lifecycle in the selected scope: `new`, `unchanged`, `reopened`, `unknown`. |
+| `language` | Derived from file extension, for example `go`, `javascript`, `typescript`, `python`, `rust`. |
+| `rule_key` | Exact rule key. |
+| `tag` | Exact rule or issue tag. |
+| `security_category` | Security-oriented tag such as `owasp-*`, `cwe-*`, `injection`, `auth`, `crypto`, or `secrets`. |
+| `directory` | Directory prefix. |
+| `file` | File path substring search. |
+| `limit`, `offset` | List pagination for `/issues`; facets ignore pagination. |
+
+`GET /api/v1/issues/facets` returns maps named `by_quality`, `by_severity`, `by_lifecycle`, `by_type`, `by_status`, `by_language`, `by_rule`, `by_tags`, `by_security_category`, `by_directory`, `by_file`, and `by_engine_id`.
+
+Quality domains and languages are derived during report generation and API reads, so older reports remain queryable. Testability is selected by tags such as `testability`, `coverage-gap`, `mutation`, `survived-mutant`, `failing-test`, or `flaky-test`.
+
 ### Asynchronous scan intake
 
 `POST /api/v1/scans` now returns `202 Accepted` after the report is durably stored as a `scan_job`.
@@ -143,6 +172,23 @@ Useful flags:
 - `-server-wait`: wait for the accepted scan job to finish
 - `-server-wait-timeout=10m`: fail if the job does not finish in time
 - `-server-wait-poll=2s`: polling interval while waiting
+
+Scan reports may include optional aggregate test and mutation fields inside `measures`. Missing fields are ignored for backward compatibility.
+
+| Measure key | Meaning |
+|-------------|---------|
+| `coverage` | Project coverage percentage, when supplied by an external test/coverage tool. |
+| `tests` | Total unit tests. |
+| `test_failures` | Failed tests. |
+| `test_errors` | Tests that errored before assertion completion. |
+| `test_skipped` | Skipped tests. |
+| `test_duration_ms` | Total test duration in milliseconds. |
+| `mutation_score` | Mutation score percentage. |
+| `mutants_total` | Total generated mutants. |
+| `mutants_killed` | Mutants killed by tests. |
+| `mutants_survived` | Mutants that survived. |
+| `mutants_timeout` | Mutants that timed out. |
+| `mutants_error` | Mutants that errored. |
 
 ### Durable side-effect inspection
 

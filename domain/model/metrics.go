@@ -35,6 +35,17 @@ var builtinMetrics = []MetricDef{
 	{Key: "duplicated_blocks", Name: "Duplicated Blocks", Type: "int", Domain: "Duplication", Levels: []string{"file", "project"}},
 	{Key: "comment_lines", Name: "Comment Lines (CLOC)", Type: "int", Domain: "Documentation", Levels: []string{"file", "package"}},
 	{Key: "comment_density", Name: "Comment Density (CD)", Type: "percent", Domain: "Documentation", Levels: []string{"file", "package"}},
+	{Key: MetricTests, Name: "Tests", Type: "int", Domain: "Testability", Levels: []string{"project"}},
+	{Key: MetricTestFailures, Name: "Test Failures", Type: "int", Domain: "Testability", Levels: []string{"project"}},
+	{Key: MetricTestErrors, Name: "Test Errors", Type: "int", Domain: "Testability", Levels: []string{"project"}},
+	{Key: MetricTestSkipped, Name: "Skipped Tests", Type: "int", Domain: "Testability", Levels: []string{"project"}},
+	{Key: MetricTestDurationMs, Name: "Test Duration", Type: "int", Domain: "Testability", Levels: []string{"project"}},
+	{Key: MetricMutationScore, Name: "Mutation Score", Type: "percent", Domain: "Testability", Levels: []string{"project"}},
+	{Key: MetricMutantsTotal, Name: "Total Mutants", Type: "int", Domain: "Testability", Levels: []string{"project"}},
+	{Key: MetricMutantsKilled, Name: "Killed Mutants", Type: "int", Domain: "Testability", Levels: []string{"project"}},
+	{Key: MetricMutantsSurvived, Name: "Survived Mutants", Type: "int", Domain: "Testability", Levels: []string{"project"}},
+	{Key: MetricMutantsTimeout, Name: "Timed Out Mutants", Type: "int", Domain: "Testability", Levels: []string{"project"}},
+	{Key: MetricMutantsError, Name: "Errored Mutants", Type: "int", Domain: "Testability", Levels: []string{"project"}},
 }
 
 // AllMetrics returns a copy of all built-in MetricDefs.

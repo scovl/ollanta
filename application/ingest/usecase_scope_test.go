@@ -245,6 +245,159 @@ func TestIngestReplacesLatestCodeSnapshotForSameScope(t *testing.T) {
 	}
 }
 
+func TestIngestPersistsTrackingStateForCurrentIssues(t *testing.T) {
+	t.Parallel()
+
+	projectRepo := &scopeAwareProjectRepo{
+		project: &model.Project{ID: 1, Key: "shop", MainBranch: defaultMainBranch},
+	}
+	previous := &model.Scan{ID: 44, ProjectID: 1, ScopeType: model.ScopeTypeBranch, Branch: defaultMainBranch}
+	scanRepo := &observingScanRepo{
+		defaultBranch: defaultMainBranch,
+		previous: map[string]*model.Scan{
+			"legacy:main": previous,
+		},
+	}
+
+	unchangedPrev := newTestIssue("go:unchanged", "same.go")
+	unchangedPrev.Status = model.StatusOpen
+	reopenedPrev := newTestIssue("go:reopened", "reopened.go")
+	reopenedPrev.Status = model.StatusClosed
+
+	issueRepo := &queryIssueRepo{
+		rowsByScanID: map[int64][]*model.IssueRow{
+			44: {
+				toIssueRow(unchangedPrev, 44, 1),
+				toIssueRow(reopenedPrev, 44, 1),
+			},
+		},
+	}
+
+	currentUnchanged := newTestIssue("go:unchanged", "same.go")
+	currentReopened := newTestIssue("go:reopened", "reopened.go")
+	currentNew := newTestIssue("go:new", "new.go")
+
+	uc := NewIngestUseCase(projectRepo, scanRepo, issueRepo, &fakeMeasureRepo{}, nil, nil, nil)
+	_, err := uc.Ingest(context.Background(), &IngestRequest{
+		Metadata: IngestMetadata{
+			ProjectKey:   "shop",
+			AnalysisDate: time.Now().UTC().Format(time.RFC3339),
+		},
+		Measures: IngestMeasures{Files: 3, Lines: 18, Ncloc: 18},
+		Issues:   []*model.Issue{currentUnchanged, currentReopened, currentNew},
+	})
+	if err != nil {
+		t.Fatalf(ingestErrorMessage, err)
+	}
+	if len(issueRepo.inserted) != 3 {
+		t.Fatalf("inserted issues = %d, want 3", len(issueRepo.inserted))
+	}
+
+	trackingByRule := map[string]string{}
+	for _, issue := range issueRepo.inserted {
+		trackingByRule[issue.RuleKey] = issue.TrackingState
+	}
+	if trackingByRule["go:unchanged"] != string(model.IssueTrackingStateUnchanged) {
+		t.Fatalf("tracking_state for unchanged = %q, want unchanged", trackingByRule["go:unchanged"])
+	}
+	if trackingByRule["go:reopened"] != string(model.IssueTrackingStateReopened) {
+		t.Fatalf("tracking_state for reopened = %q, want reopened", trackingByRule["go:reopened"])
+	}
+	if trackingByRule["go:new"] != string(model.IssueTrackingStateNew) {
+		t.Fatalf("tracking_state for new = %q, want new", trackingByRule["go:new"])
+	}
+}
+
+func TestIngestPersistsTestAndMutationMetrics(t *testing.T) {
+	t.Parallel()
+
+	measureRepo := &fakeMeasureRepo{}
+	uc := NewIngestUseCase(
+		&scopeAwareProjectRepo{project: &model.Project{ID: 1, Key: "shop", MainBranch: defaultMainBranch}},
+		&observingScanRepo{defaultBranch: defaultMainBranch},
+		&queryIssueRepo{},
+		measureRepo,
+		nil,
+		nil,
+		nil,
+	)
+	mutationScore := 83.5
+	coverage := 91.2
+	_, err := uc.Ingest(context.Background(), &IngestRequest{
+		Metadata: IngestMetadata{ProjectKey: "shop", AnalysisDate: time.Now().UTC().Format(time.RFC3339)},
+		Measures: IngestMeasures{
+			Files:           1,
+			Lines:           8,
+			Ncloc:           8,
+			Coverage:        &coverage,
+			Tests:           12,
+			TestFailures:    1,
+			MutationScore:   &mutationScore,
+			MutantsTotal:    10,
+			MutantsKilled:   8,
+			MutantsSurvived: 2,
+		},
+	})
+	if err != nil {
+		t.Fatalf(ingestErrorMessage, err)
+	}
+
+	values := map[string]float64{}
+	for _, measure := range measureRepo.inserted {
+		values[measure.MetricKey] = measure.Value
+	}
+	if values[model.MetricTests] != 12 {
+		t.Fatalf("tests measure = %v, want 12", values[model.MetricTests])
+	}
+	if values[model.MetricCoverage] != coverage {
+		t.Fatalf("coverage measure = %v, want %v", values[model.MetricCoverage], coverage)
+	}
+	if values[model.MetricTestFailures] != 1 {
+		t.Fatalf("test_failures measure = %v, want 1", values[model.MetricTestFailures])
+	}
+	if values[model.MetricMutationScore] != mutationScore {
+		t.Fatalf("mutation_score measure = %v, want %v", values[model.MetricMutationScore], mutationScore)
+	}
+	if values[model.MetricMutantsSurvived] != 2 {
+		t.Fatalf("mutants_survived measure = %v, want 2", values[model.MetricMutantsSurvived])
+	}
+}
+
+func TestIngestDerivesLanguageAndTestabilityForActionableFindings(t *testing.T) {
+	t.Parallel()
+
+	issueRepo := &queryIssueRepo{}
+	uc := NewIngestUseCase(
+		&scopeAwareProjectRepo{project: &model.Project{ID: 1, Key: "shop", MainBranch: defaultMainBranch}},
+		&observingScanRepo{defaultBranch: defaultMainBranch},
+		issueRepo,
+		&fakeMeasureRepo{},
+		nil,
+		nil,
+		nil,
+	)
+	issue := newTestIssue("test:survived-mutant", "internal/cart_test.go")
+	issue.Tags = []string{"mutation", "survived-mutant"}
+	_, err := uc.Ingest(context.Background(), &IngestRequest{
+		Metadata: IngestMetadata{ProjectKey: "shop", AnalysisDate: time.Now().UTC().Format(time.RFC3339)},
+		Measures: IngestMeasures{Files: 1, Lines: 8, Ncloc: 8},
+		Issues:   []*model.Issue{issue},
+	})
+	if err != nil {
+		t.Fatalf(ingestErrorMessage, err)
+	}
+	if len(issueRepo.inserted) != 1 {
+		t.Fatalf("inserted issues = %d, want 1", len(issueRepo.inserted))
+	}
+	inserted := issueRepo.inserted[0]
+	if inserted.QualityDomain != string(model.QualityTestability) {
+		t.Fatalf("quality_domain = %q, want testability", inserted.QualityDomain)
+	}
+	if inserted.Language != model.LangGo {
+		t.Fatalf("language = %q, want go", inserted.Language)
+	}
+}
+
 type scopeAwareProjectRepo struct {
 	project *model.Project
 }
@@ -416,7 +569,7 @@ func newTestIssue(ruleKey, path string) *model.Issue {
 }
 
 func toIssueRow(issue *model.Issue, scanID, projectID int64) *model.IssueRow {
-	row := domainToIssueRow(issue, scanID, projectID)
+	row := domainToIssueRow(issue, scanID, projectID, string(model.IssueTrackingStateUnknown))
 	return &row
 }
 
