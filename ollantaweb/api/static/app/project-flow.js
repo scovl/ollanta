@@ -227,7 +227,7 @@ export function renderProjectDetail() {
 
 export function renderScopeToolbar() {
   const scope = normalizeScope(state.scope);
-  const branches = (state.branchesData || []).filter(item => item && item.name);
+  const branches = (state.branchesData || []).filter(item => item?.name);
   const pullRequests = state.pullRequestsData || [];
   const branchOptions = branches.length
     ? branches.map(item => `<option value="${escAttr(item.name)}">${escHtml(item.name)}${item.is_default ? ' · default' : ''}</option>`).join('')
@@ -279,7 +279,7 @@ function renderBranchesTab() {
   if (branchItems === null) {
     return `<div class="loading-state"><div class="spinner"></div></div>`;
   }
-  const items = branchItems.filter(item => item && item.name);
+  const items = branchItems.filter(item => item?.name);
   if (items.length === 0) {
     return `<div class="empty-state"><p>No named branches with analyses yet.</p></div>`;
   }
@@ -410,13 +410,14 @@ export function bindProjectViewControls() {
     btn.addEventListener('click', () => switchTab(btn.dataset.tab));
   });
 
-  document.querySelectorAll('.metric-card.clickable').forEach(btn => {
+  document.querySelectorAll('.metric-card.clickable, .metric-signal.clickable').forEach(btn => {
     btn.addEventListener('click', () => {
       const type = btn.dataset.mcType;
       if (type) {
         state.issueFilter.type = type === 'all' ? 'all' : type;
         state.issueFilter.severity = 'all';
         state.issueFilter.status = 'all';
+        state.issueFilter.trackingState = 'all';
         state.issueFilter.search = '';
         state.issues = [];
         switchTab('issues');
@@ -432,6 +433,7 @@ export function bindProjectViewControls() {
         state.issueFilter.type = 'all';
         state.issueFilter.severity = 'all';
         state.issueFilter.status = 'all';
+        state.issueFilter.trackingState = 'all';
         state.issues = [];
         switchTab('issues');
       }

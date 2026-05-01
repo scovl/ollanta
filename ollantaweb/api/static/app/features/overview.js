@@ -41,25 +41,27 @@ function duplicationCardClass(dupDensity) {
   return 'card-red';
 }
 
-function metricCard(label, value, colorCls, cardCls, typeFilter) {
-  return `<div class="metric-card ${cardCls} clickable" data-mc-type="${typeFilter || ''}">
-    <div class="metric-value ${colorCls}">${fmtNum(value)}</div>
-    <div class="metric-label">${label}</div>
-    <div class="metric-hint">View issues \u203A</div>
+function metricSignal(label, value, colorCls, statusCls, typeFilter) {
+  const interactive = typeFilter ? ' clickable' : '';
+  const dataAttr = typeFilter ? ` data-mc-type="${typeFilter}"` : '';
+  return `<button class="metric-signal ${statusCls}${interactive}"${dataAttr}>
+    <span class="metric-signal-label">${label}</span>
+    <span class="metric-signal-value ${colorCls}">${fmtNum(value)}</span>
+  </button>`;
+}
+
+function metricSignalPct(label, value, statusCls) {
+  const displayValue = value == null ? '\u2014' : fmtPct(value);
+  return `<div class="metric-signal ${statusCls}">
+    <span class="metric-signal-label">${label}</span>
+    <span class="metric-signal-value">${displayValue}</span>
   </div>`;
 }
 
-function metricCardPct(label, value, cardCls) {
-  return `<div class="metric-card ${cardCls}">
-    <div class="metric-value">${value != null ? fmtPct(value) : '\u2014'}</div>
-    <div class="metric-label">${label}</div>
-  </div>`;
-}
-
-function metricCardK(label, value, cardCls) {
-  return `<div class="metric-card ${cardCls}">
-    <div class="metric-value">${fmtK(value)}</div>
-    <div class="metric-label">${label}</div>
+function metricSignalK(label, value, statusCls) {
+  return `<div class="metric-signal ${statusCls}">
+    <span class="metric-signal-label">${label}</span>
+    <span class="metric-signal-value">${fmtK(value)}</span>
   </div>`;
 }
 
@@ -98,13 +100,13 @@ function renderOverviewMetrics(measures) {
   const vulnColorClass = vulns > 0 ? 'warning' : 'success';
   const smellCardClass = smells > 20 ? 'card-yellow' : 'card-green';
 
-  return `<div class="measures-row">
-    ${metricCard('Bugs', bugs, bugColorClass, bugCardClass, 'bug')}
-    ${metricCard('Vulnerabilities', vulns, vulnColorClass, vulnCardClass, 'vulnerability')}
-    ${metricCard('Code Smells', smells, 'muted', smellCardClass, 'code_smell')}
-    ${metricCardPct('Coverage', coverage, coverageCardClass(coverage))}
-    ${metricCardPct('Duplication', dupDensity, duplicationCardClass(dupDensity))}
-    ${metricCardK('Lines of Code', ncloc, 'card-neutral')}
+  return `<div class="metric-signals">
+    ${metricSignal('Bugs', bugs, bugColorClass, bugCardClass, 'bug')}
+    ${metricSignal('Vulnerabilities', vulns, vulnColorClass, vulnCardClass, 'vulnerability')}
+    ${metricSignal('Code Smells', smells, 'muted', smellCardClass, 'code_smell')}
+    ${metricSignalPct('Coverage', coverage, coverageCardClass(coverage))}
+    ${metricSignalPct('Duplication', dupDensity, duplicationCardClass(dupDensity))}
+    ${metricSignalK('Lines of Code', ncloc, 'card-neutral')}
   </div>`;
 }
 
@@ -119,7 +121,7 @@ function renderOverviewHotspots(fileDist) {
       <p class="section-title">Hotspot Files</p>
       <div class="hotspot-list">
         ${fileEntries.map(([filePath, count]) => {
-          const short = filePath.replace(/\\/g, '/').split('/').slice(-3).join('/');
+          const short = filePath.replaceAll('\\', '/').split('/').slice(-3).join('/');
           return `<div class="hotspot-row" data-file="${escAttr(filePath)}">
             <span class="hotspot-file">${escHtml(short)}</span>
             <span class="hotspot-count">${count}</span>
@@ -184,9 +186,45 @@ function renderOverviewScanInfo(scan) {
     </div>`;
 }
 
+function gatePresentation(status) {
+  if (status === 'OK') {
+    return { cls: 'gate-passed', icon: '\u2713', text: 'Passed' };
+  }
+  if (status === 'WARN') {
+    return { cls: 'gate-warn', icon: '!', text: 'Warning' };
+  }
+  return { cls: 'gate-failed', icon: '\u2717', text: 'Failed' };
+}
+
+function plural(value, singular, pluralValue) {
+  return value === 1 ? singular : pluralValue;
+}
+
+function violatesGateCondition(condition, value) {
+  if (condition.operator === 'GT') return value > condition.threshold;
+  if (condition.operator === 'LT') return value < condition.threshold;
+  if (condition.operator === 'GTE') return value >= condition.threshold;
+  if (condition.operator === 'LTE') return value <= condition.threshold;
+  if (condition.operator === 'EQ') return value === condition.threshold;
+  return value !== condition.threshold;
+}
+
+function gateReasonMessage(metric, value) {
+  const metricMessages = {
+    bugs: count => `${count} ${plural(count, 'bug', 'bugs')} found`,
+    vulnerabilities: count => `${count} ${plural(count, 'vulnerability', 'vulnerabilities')} found`,
+    new_bugs: count => `${count} new ${plural(count, 'bug', 'bugs')} introduced`,
+    new_vulnerabilities: count => `${count} new ${plural(count, 'vulnerability', 'vulnerabilities')} introduced`,
+    code_smells: count => `${count} code ${plural(count, 'smell', 'smells')} detected`,
+    coverage: count => `Code coverage is ${count}%`,
+    duplicated_lines_density: count => `Duplication at ${count}%`,
+  };
+  return metricMessages[metric]?.(value) || null;
+}
+
 function renderGateHero(gate, measures) {
   const gateMeasures = measures || {};
-  if (!gate || !gate.status || gate.status === 'NONE') {
+  if (!gate?.status || gate.status === 'NONE') {
     return `<div class="gate-hero gate-loading">
       <div class="gate-badge">
         <span class="gate-icon">\u2014</span>
@@ -199,37 +237,19 @@ function renderGateHero(gate, measures) {
   }
 
   const status = gate.status;
-  const cls = status === 'OK' ? 'gate-passed' : status === 'WARN' ? 'gate-warn' : 'gate-failed';
-  const icon = status === 'OK' ? '\u2713' : status === 'WARN' ? '!' : '\u2717';
-  const text = status === 'OK' ? 'Passed' : status === 'WARN' ? 'Warning' : 'Failed';
+  const { cls, icon, text } = gatePresentation(status);
 
   let reasonsHtml = '';
   if (status !== 'OK') {
-    const metricMessages = {
-      bugs: value => `${value} bug${value !== 1 ? 's' : ''} found`,
-      vulnerabilities: value => `${value} vulnerability${value !== 1 ? 'ies' : 'y'} found`,
-      new_bugs: value => `${value} new bug${value !== 1 ? 's' : ''} introduced`,
-      new_vulnerabilities: value => `${value} new vulnerability${value !== 1 ? 'ies' : 'y'} introduced`,
-      code_smells: value => `${value} code smell${value !== 1 ? 's' : ''} detected`,
-      coverage: value => `Code coverage is ${value}%`,
-      duplicated_lines_density: value => `Duplication at ${value}%`,
-    };
     const reasons = (gate.conditions || []).map(condition => {
       const value = gateMeasures[condition.metric];
-      const violated = value !== undefined && (
-        condition.operator === 'GT'  ? value > condition.threshold :
-        condition.operator === 'LT'  ? value < condition.threshold :
-        condition.operator === 'GTE' ? value >= condition.threshold :
-        condition.operator === 'LTE' ? value <= condition.threshold :
-        condition.operator === 'EQ'  ? value === condition.threshold :
-        value !== condition.threshold
-      );
+      const violated = value !== undefined && violatesGateCondition(condition, value);
       if (!violated) return null;
-      const formatter = metricMessages[condition.metric];
-      return formatter ? formatter(value) : null;
+      return gateReasonMessage(condition.metric, value);
     }).filter(Boolean);
     if (reasons.length) {
-      reasonsHtml = `<ul class="gate-reasons">${reasons.map(reason => `<li>${reason}</li>`).join('')}</ul>`;
+      const reasonItems = reasons.map(reason => `<li>${reason}</li>`).join('');
+      reasonsHtml = `<ul class="gate-reasons">${reasonItems}</ul>`;
     }
   }
 
@@ -245,10 +265,210 @@ function renderGateHero(gate, measures) {
   </div>`;
 }
 
+function summaryHeroClass(status) {
+  if (status === 'ready') return 'gate-passed';
+  if (status === 'attention') return 'gate-warn';
+  if (status === 'needs_setup' || status === 'empty') return 'gate-loading';
+  return 'gate-failed';
+}
+
+function summaryStatusText(status) {
+  if (status === 'ready') return 'Ready';
+  if (status === 'attention') return 'Attention';
+  if (status === 'needs_setup') return 'Needs setup';
+  if (status === 'empty') return 'Awaiting scans';
+  return 'Blocked';
+}
+
+function comparisonSymbol(operator) {
+  if (operator === 'GT') return '>';
+  if (operator === 'GTE') return '>=';
+  if (operator === 'LT') return '<';
+  if (operator === 'LTE') return '<=';
+  if (operator === 'EQ') return '=';
+  return '!=';
+}
+
+function formatSummaryMetricValue(metric, value) {
+  if (value == null) return '\u2014';
+  if (metric === 'coverage' || metric === 'new_coverage' || metric === 'duplicated_lines_density' || metric === 'new_duplications') {
+    return fmtPct(value);
+  }
+  return fmtNum(value);
+}
+
+function renderSummaryEmptyState(emptyState) {
+  return `<div class="empty-state">
+      <div class="empty-icon">\uD83D\uDD2C</div>
+      <p>${escHtml(emptyState?.headline || 'No completed scans for this scope yet.')}</p>
+      ${emptyState?.recommended_action ? `<p class="summary-empty-note">${escHtml(emptyState.recommended_action)}</p>` : ''}
+    </div>`;
+}
+
+function summaryStatusIcon(status) {
+  if (status === 'ready') return '\u2713';
+  if (status === 'attention') return '!';
+  if (status === 'needs_setup' || status === 'empty') return '\u2014';
+  return '\u2717';
+}
+
+function renderSummaryReason(reason) {
+  const label = reason.label || reason.metric || 'Condition';
+  const actual = formatSummaryMetricValue(reason.metric, reason.actual);
+  const operator = comparisonSymbol(reason.operator || 'NE');
+  const threshold = formatSummaryMetricValue(reason.metric, reason.threshold);
+  return `<li>${escHtml(label)}: ${escHtml(actual)} ${escHtml(operator)} ${escHtml(threshold)}</li>`;
+}
+
+function renderSummaryHero(review) {
+  if (!review) {
+    return '';
+  }
+
+  const cls = summaryHeroClass(review.status);
+  const icon = summaryStatusIcon(review.status);
+  const reasonItems = (review.reasons || []).map(renderSummaryReason).join('');
+  const reasonsHtml = reasonItems ? `<ul class="gate-reasons">${reasonItems}</ul>` : '';
+
+  return `<div class="gate-hero ${cls}">
+    <div class="gate-badge">
+      <span class="gate-icon">${icon}</span>
+      <div class="gate-text">
+        <span class="gate-label">Review Summary</span>
+        <span class="gate-status-text">${summaryStatusText(review.status)}</span>
+      </div>
+    </div>
+    <div class="summary-hero-copy">
+      <div class="summary-headline">${escHtml(review.headline || 'Review Summary')}</div>
+      ${reasonsHtml}
+    </div>
+  </div>`;
+}
+
+function renderSummaryNewCode(newCode) {
+  const metrics = newCode?.metrics || {};
+  const hasMetrics = Object.keys(metrics).length > 0;
+  if (!hasMetrics && !newCode?.baseline) {
+    return '';
+  }
+
+  return `<section class="overview-panel summary-section">
+    <p class="section-title">New Code Focus</p>
+    ${newCode?.baseline?.label ? `<div class="summary-baseline">${escHtml(newCode.baseline.label)}</div>` : ''}
+    <div class="metric-signals compact">
+      ${metricSignal('New Issues', metrics.new_issues || 0, (metrics.new_issues || 0) > 0 ? 'warning' : 'success', (metrics.new_issues || 0) > 0 ? 'card-yellow' : 'card-green')}
+      ${metricSignal('New Bugs', metrics.new_bugs || 0, (metrics.new_bugs || 0) > 0 ? 'danger' : 'success', (metrics.new_bugs || 0) > 0 ? 'card-red' : 'card-green', 'bug')}
+      ${metricSignal('New Vulnerabilities', metrics.new_vulnerabilities || 0, (metrics.new_vulnerabilities || 0) > 0 ? 'warning' : 'success', (metrics.new_vulnerabilities || 0) > 0 ? 'card-yellow' : 'card-green', 'vulnerability')}
+      ${metricSignal('New Code Smells', metrics.new_code_smells || 0, 'muted', (metrics.new_code_smells || 0) > 0 ? 'card-yellow' : 'card-green', 'code_smell')}
+      ${metricSignalPct('New Coverage', metrics.new_coverage, coverageCardClass(metrics.new_coverage))}
+      ${metricSignalPct('New Duplication', metrics.new_duplications, duplicationCardClass(metrics.new_duplications))}
+      ${metricSignal('Closed Issues', metrics.closed_issues || 0, 'success', (metrics.closed_issues || 0) > 0 ? 'card-green' : 'card-neutral')}
+    </div>
+  </section>`;
+}
+
+function severityBadge(severity = 'info') {
+  const value = severity;
+  return `<span class="sev-badge" style="background:var(--sev-${escAttr(value)}, var(--accent));">${escHtml(value)}</span>`;
+}
+
+function renderSummaryMustFixNow(items) {
+  if (!items?.length) {
+    return '';
+  }
+
+  return `<section class="overview-panel summary-section hotspot-section">
+    <p class="section-title">Must Fix Now</p>
+    <div class="hotspot-list">
+      ${items.map(item => {
+        const short = (item.component_path || '').replaceAll('\\', '/').split('/').slice(-3).join('/');
+        const location = item.line ? `:${fmtNum(item.line)}` : '';
+        return `<div class="hotspot-row" data-file="${escAttr(item.component_path || '')}">
+          <div class="summary-row-main">
+            <div class="summary-row-title">${escHtml(short)}${location ? `<span style="color:var(--text-muted)">${escHtml(location)}</span>` : ''}</div>
+            <div class="summary-row-subtitle">${escHtml(item.message || item.rule_key || '')}</div>
+          </div>
+          <div class="summary-row-meta">
+            ${severityBadge(item.severity)}
+            ${item.why_selected ? `<span class="summary-row-note">${escHtml(item.why_selected)}</span>` : ''}
+          </div>
+        </div>`;
+      }).join('')}
+    </div>
+  </section>`;
+}
+
+function renderSummaryImpactedFiles(files) {
+  if (!files?.length) {
+    return '';
+  }
+
+  return `<section class="overview-panel summary-section hotspot-section">
+    <p class="section-title">Impacted Files</p>
+    <div class="hotspot-list">
+      ${files.map(item => {
+        const short = (item.component_path || '').replaceAll('\\', '/').split('/').slice(-3).join('/');
+        const meta = [
+          `${fmtNum(item.issue_count || 0)} issue${(item.issue_count || 0) === 1 ? '' : 's'}`,
+          item.coverage == null ? '' : `${fmtPct(item.coverage)} coverage`,
+          item.duplicated_lines_density == null ? '' : `${fmtPct(item.duplicated_lines_density)} duplication`,
+        ].filter(Boolean);
+        return `<div class="hotspot-row" data-file="${escAttr(item.component_path || '')}">
+          <div class="summary-row-main">
+            <div class="summary-row-title">${escHtml(short)}</div>
+            <div class="summary-row-subtitle">${escHtml(item.component_path || '')}</div>
+          </div>
+          <div class="summary-row-meta">
+            ${meta.map(entry => `<span class="summary-row-note">${escHtml(entry)}</span>`).join('')}
+          </div>
+        </div>`;
+      }).join('')}
+    </div>
+  </section>`;
+}
+
+function renderSummaryOverall(overall) {
+  const metrics = overall?.metrics || {};
+  if (!Object.keys(metrics).length) {
+    return '';
+  }
+
+  return `<section class="overview-panel summary-section">
+    <p class="section-title">Overall Snapshot</p>
+    ${renderOverviewMetrics(metrics)}
+  </section>`;
+}
+
+function renderReviewSummaryTab(overview) {
+  const summary = overview.summary || {};
+  if (summary.empty_state) {
+    return renderSummaryEmptyState(summary.empty_state);
+  }
+
+  return `<div class="overview-shell">
+    <div class="overview-primary">
+      ${renderSummaryHero(summary.review)}
+      ${renderSummaryNewCode(summary.new_code)}
+      <div class="overview-workbench">
+        ${renderSummaryMustFixNow(summary.must_fix_now || [])}
+        ${renderSummaryImpactedFiles(summary.impacted_files || [])}
+      </div>
+    </div>
+    <aside class="overview-rail">
+      ${renderSummaryOverall(summary.overall_code)}
+      <section class="overview-panel">${renderOverviewScanInfo(overview.last_scan)}</section>
+    </aside>
+  </div>`;
+}
+
 export function renderOverviewTab() {
   const overview = state.overviewData;
   if (!overview) {
     return renderOverviewEmptyState();
+  }
+
+  if (overview.summary) {
+    return renderReviewSummaryTab(overview);
   }
 
   const measures = overview.measures || {};
@@ -256,13 +476,19 @@ export function renderOverviewTab() {
   const severityDist = facets.by_severity || {};
   const typeDist = facets.by_type || {};
 
-  return [
-    renderGateHero(overview.quality_gate || {}, measures),
-    renderOverviewNewCode(overview.new_code || {}),
-    renderOverviewMetrics(measures),
-    renderDistribution('Severity', SEV_ORDER, SEV_LABEL, SEV_COLOR, severityDist),
-    renderDistribution('Type', ['bug', 'code_smell', 'vulnerability'], TYPE_LABEL, TYPE_COLOR, typeDist),
-    renderOverviewHotspots(facets.by_file || {}),
-    renderOverviewScanInfo(overview.last_scan),
-  ].join('');
+  return `<div class="overview-shell">
+    <div class="overview-primary">
+      ${renderGateHero(overview.quality_gate || {}, measures)}
+      ${renderOverviewNewCode(overview.new_code || {})}
+      <section class="overview-panel">${renderOverviewMetrics(measures)}</section>
+      <div class="overview-workbench">
+        <section class="overview-panel">${renderDistribution('Severity', SEV_ORDER, SEV_LABEL, SEV_COLOR, severityDist)}</section>
+        <section class="overview-panel">${renderDistribution('Type', ['bug', 'code_smell', 'vulnerability'], TYPE_LABEL, TYPE_COLOR, typeDist)}</section>
+      </div>
+    </div>
+    <aside class="overview-rail">
+      <section class="overview-panel">${renderOverviewHotspots(facets.by_file || {})}</section>
+      <section class="overview-panel">${renderOverviewScanInfo(overview.last_scan)}</section>
+    </aside>
+  </div>`;
 }

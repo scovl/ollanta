@@ -299,6 +299,95 @@ test('loadCodeTreeData fetches the scoped file and renderCodeTab shows issue mar
   assert.match(html, /sev-major/);
 });
 
+test('loadIssues includes tracking_state when lifecycle filter is active', async () => {
+  const { app: harnessApp, requests } = createHarness({
+    fetchHandler(url) {
+      if (url.startsWith(apiPrefix + '/issues?')) {
+        return { body: { items: [], total: 0 } };
+      }
+      if (url.startsWith(apiPrefix + '/issues/facets?')) {
+        return { body: { by_lifecycle: { reopened: 3 } } };
+      }
+      throw new Error('unexpected fetch ' + url);
+    },
+  });
+
+  harnessApp.state.currentProject = { key: 'demo' };
+  harnessApp.state.scope = harnessApp.normalizeScope({ type: 'branch', branch: 'release', defaultBranch: 'main' });
+  harnessApp.state.issueFilter.trackingState = 'reopened';
+
+  await harnessApp.loadIssues();
+
+  assert.equal(requests.length, 2);
+  assert.match(requests[0], /\/issues\?/);
+  assert.match(requests[0], /tracking_state=reopened/);
+  assert.match(requests[0], /branch=release/);
+  assert.match(requests[1], /\/issues\/facets\?/);
+  assert.match(requests[1], /tracking_state=reopened/);
+  assert.match(requests[1], /branch=release/);
+});
+
+test('renderIssuesSection shows lifecycle badges for tracked issues', () => {
+  const { app: harnessApp, elements } = createHarness();
+
+  harnessApp.state.issues = [{
+    id: 7,
+    severity: 'major',
+    type: 'bug',
+    tracking_state: 'new',
+    rule_key: 'go:new-bug',
+    component_path: 'internal/service.go',
+    line: 12,
+    message: 'new bug',
+    status: 'open',
+  }];
+  harnessApp.state.issuesTotal = 1;
+  harnessApp.state.issueFacets = { by_lifecycle: { new: 1, unknown: 2 } };
+
+  harnessApp.renderIssuesSection();
+
+  const html = elements.get('issues-section').innerHTML;
+  assert.match(html, /Lifecycle/);
+  assert.match(html, />Current</);
+  assert.match(html, /issue-track track-new/);
+  assert.match(html, />New</);
+});
+
+test('renderIssuesSection shows issue quality and testability facets', () => {
+  const { app: harnessApp, elements } = createHarness();
+
+  harnessApp.state.issues = [];
+  harnessApp.state.issuesTotal = 0;
+  harnessApp.state.issueFacets = {
+    by_quality: { security: 2, testability: 1 },
+    by_security_category: { injection: 2 },
+    by_language: { go: 3 },
+  };
+
+  harnessApp.renderIssuesSection();
+
+  const html = elements.get('issues-section').innerHTML;
+  assert.match(html, /Software Quality/);
+  assert.match(html, /Security/);
+  assert.match(html, /Testability/);
+  assert.match(html, /Security Category/);
+  assert.match(html, /injection/);
+  assert.match(html, /Language/);
+});
+
+test('renderIssuesSection exposes search and expand controls for long facet groups', () => {
+  const { app: harnessApp, elements } = createHarness();
+  const rules = {};
+  for (let i = 0; i < 10; i += 1) rules[`go:rule-${i}`] = 10 - i;
+
+  harnessApp.state.issueFacets = { by_rule: rules };
+  harnessApp.renderIssuesSection();
+
+  const html = elements.get('issues-section').innerHTML;
+  assert.match(html, /data-facet-search="rule"/);
+  assert.match(html, /Show more \(2\)/);
+});
+
 test('renderOverviewTab keeps overview sections intact after helper extraction', () => {
   const { app: harnessApp } = createHarness();
 
@@ -335,6 +424,77 @@ test('renderOverviewTab keeps overview sections intact after helper extraction',
   assert.match(html, /src\/foo\/bar\.js/);
   assert.match(html, /Latest Scan/);
   assert.match(html, /1\.2s/);
+});
+
+test('renderOverviewTab prefers review summary when summary payload is available', () => {
+  const { app: harnessApp } = createHarness();
+
+  harnessApp.state.overviewData = {
+    last_scan: {
+      version: '2.0.0',
+      branch: 'feature/payments',
+      commit_sha: 'abcdef123456',
+      status: 'completed',
+      analysis_date: '2026-05-01T12:00:00Z',
+      elapsed_ms: 2400,
+    },
+    summary: {
+      review: {
+        status: 'blocked',
+        headline: 'Review blocked by new vulnerabilities',
+        reasons: [
+          { metric: 'new_vulnerabilities', label: 'New vulnerabilities', actual: 1, threshold: 0, operator: 'GT' },
+        ],
+      },
+      new_code: {
+        baseline: { label: 'Reference branch: main' },
+        metrics: {
+          new_issues: 4,
+          new_bugs: 0,
+          new_vulnerabilities: 1,
+          new_code_smells: 3,
+          new_coverage: 54,
+          new_duplications: 2,
+          closed_issues: 1,
+        },
+      },
+      must_fix_now: [
+        {
+          component_path: 'internal/auth/repo.go',
+          line: 84,
+          message: 'SQL query uses unsanitized input',
+          severity: 'critical',
+          why_selected: 'matches failing quality gate',
+        },
+      ],
+      impacted_files: [
+        {
+          component_path: 'internal/auth/repo.go',
+          issue_count: 2,
+          coverage: 45,
+        },
+      ],
+      overall_code: {
+        metrics: {
+          bugs: 2,
+          vulnerabilities: 1,
+          code_smells: 8,
+          coverage: 71.2,
+          duplicated_lines_density: 1.8,
+          ncloc: 58240,
+        },
+      },
+    },
+  };
+
+  const html = harnessApp.renderOverviewTab();
+  assert.match(html, /Review Summary/);
+  assert.match(html, /New Code Focus/);
+  assert.match(html, /Must Fix Now/);
+  assert.match(html, /Impacted Files/);
+  assert.match(html, /Overall Snapshot/);
+  assert.match(html, /Reference branch: main/);
+  assert.match(html, /internal\/auth\/repo\.go/);
 });
 
 test('renderOverviewTab shows the empty state when there is no overview data', () => {
