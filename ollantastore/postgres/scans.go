@@ -360,7 +360,6 @@ func (r *ScanRepository) ListPullRequests(ctx context.Context, projectID int64) 
 	rows, err := r.db.Pool.Query(ctx, `
 		WITH ranked AS (
 			SELECT
-				pull_request_key,
 				`+scanSelectColumns+`,
 				ROW_NUMBER() OVER (
 					PARTITION BY pull_request_key
@@ -385,9 +384,10 @@ func (r *ScanRepository) ListPullRequests(ctx context.Context, projectID int64) 
 	var items []*PullRequestSummary
 	for rows.Next() {
 		item := &PullRequestSummary{LatestScan: &Scan{}}
-		if err := rows.Scan(append([]any{&item.Key}, scanDest(item.LatestScan)...)...); err != nil {
+		if err := rows.Scan(scanDest(item.LatestScan)...); err != nil {
 			return nil, err
 		}
+		item.Key = item.LatestScan.PullRequestKey
 		item.Branch = item.LatestScan.Branch
 		item.BaseBranch = item.LatestScan.PullRequestBase
 		items = append(items, item)

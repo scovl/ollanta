@@ -2,7 +2,10 @@ module github.com/scovl/ollanta/ollantastore
 
 go 1.21
 
-require github.com/jackc/pgx/v5 v5.7.2
+require (
+	github.com/jackc/pgx/v5 v5.7.2
+	go.opentelemetry.io/otel v1.38.0
+)
 
 require (
 	github.com/jackc/pgpassfile v1.0.0 // indirect

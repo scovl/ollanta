@@ -17,6 +17,8 @@ type IndexJob struct {
 	ProjectID     int64      `json:"project_id"`
 	ProjectKey    string     `json:"project_key"`
 	Status        string     `json:"status"`
+	TraceParent   string     `json:"-"`
+	TraceState    string     `json:"-"`
 	WorkerID      string     `json:"worker_id,omitempty"`
 	Attempts      int        `json:"attempts"`
 	LastError     string     `json:"last_error,omitempty"`
@@ -43,10 +45,10 @@ func (r *IndexJobRepository) Create(ctx context.Context, job *IndexJob) error {
 		job.NextAttemptAt = time.Now().UTC()
 	}
 	row := r.db.Pool.QueryRow(ctx, `
-		INSERT INTO index_jobs (scan_id, project_id, project_key, status, worker_id, attempts, last_error, next_attempt_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		INSERT INTO index_jobs (scan_id, project_id, project_key, status, trace_parent, trace_state, worker_id, attempts, last_error, next_attempt_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		RETURNING id, created_at, updated_at`,
-		job.ScanID, job.ProjectID, job.ProjectKey, job.Status, job.WorkerID, job.Attempts, job.LastError, job.NextAttemptAt,
+		job.ScanID, job.ProjectID, job.ProjectKey, job.Status, job.TraceParent, job.TraceState, job.WorkerID, job.Attempts, job.LastError, job.NextAttemptAt,
 	)
 	return row.Scan(&job.ID, &job.CreatedAt, &job.UpdatedAt)
 }
@@ -54,10 +56,24 @@ func (r *IndexJobRepository) Create(ctx context.Context, job *IndexJob) error {
 // GetByID returns an index job by id.
 func (r *IndexJobRepository) GetByID(ctx context.Context, id int64) (*IndexJob, error) {
 	return scanIndexJobRow(r.db.Pool.QueryRow(ctx, `
-		SELECT id, scan_id, project_id, project_key, status, worker_id, attempts, last_error,
+		SELECT id, scan_id, project_id, project_key, status, trace_parent, trace_state, worker_id, attempts, last_error,
 		       next_attempt_at, created_at, updated_at, started_at, completed_at
 		FROM index_jobs WHERE id = $1`, id,
 	))
+}
+
+// CountByStatus returns the number of durable index jobs in the given state.
+func (r *IndexJobRepository) CountByStatus(ctx context.Context, status string) (int, error) {
+	query := "SELECT COUNT(*) FROM index_jobs"
+	args := []any{}
+	if status != "" {
+		query += statusWhereClause
+		args = append(args, status)
+	}
+
+	var total int
+	err := r.db.Pool.QueryRow(ctx, query, args...).Scan(&total)
+	return total, err
 }
 
 // List returns index jobs filtered by status.
@@ -71,13 +87,13 @@ func (r *IndexJobRepository) List(ctx context.Context, status string, limit, off
 
 	countQuery := "SELECT COUNT(*) FROM index_jobs"
 	listQuery := `
-		SELECT id, scan_id, project_id, project_key, status, worker_id, attempts, last_error,
+		SELECT id, scan_id, project_id, project_key, status, trace_parent, trace_state, worker_id, attempts, last_error,
 		       next_attempt_at, created_at, updated_at, started_at, completed_at
 		FROM index_jobs`
 	args := []any{}
 	if status != "" {
-		countQuery += " WHERE status = $1"
-		listQuery += " WHERE status = $1"
+		countQuery += statusWhereClause
+		listQuery += statusWhereClause
 		args = append(args, status)
 	}
 
@@ -133,7 +149,7 @@ func (r *IndexJobRepository) ClaimNext(ctx context.Context, workerID string) (*I
 		    updated_at = now()
 		FROM next_job
 		WHERE j.id = next_job.id
-		RETURNING j.id, j.scan_id, j.project_id, j.project_key, j.status, j.worker_id, j.attempts,
+			RETURNING j.id, j.scan_id, j.project_id, j.project_key, j.status, j.trace_parent, j.trace_state, j.worker_id, j.attempts,
 		          j.last_error, j.next_attempt_at, j.created_at, j.updated_at, j.started_at, j.completed_at`, workerID,
 	))
 	if err != nil {
@@ -230,6 +246,8 @@ func (r *IndexJobRepository) Retry(ctx context.Context, id int64) error {
 
 func scanIndexJobRow(row pgx.Row) (*IndexJob, error) {
 	job := &IndexJob{}
+	var traceParent sql.NullString
+	var traceState sql.NullString
 	var startedAt sql.NullTime
 	var completedAt sql.NullTime
 	err := row.Scan(
@@ -238,6 +256,8 @@ func scanIndexJobRow(row pgx.Row) (*IndexJob, error) {
 		&job.ProjectID,
 		&job.ProjectKey,
 		&job.Status,
+		&traceParent,
+		&traceState,
 		&job.WorkerID,
 		&job.Attempts,
 		&job.LastError,
@@ -252,6 +272,12 @@ func scanIndexJobRow(row pgx.Row) (*IndexJob, error) {
 	}
 	if err != nil {
 		return nil, err
+	}
+	if traceParent.Valid {
+		job.TraceParent = traceParent.String
+	}
+	if traceState.Valid {
+		job.TraceState = traceState.String
 	}
 	if startedAt.Valid {
 		value := startedAt.Time

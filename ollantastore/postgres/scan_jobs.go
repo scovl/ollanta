@@ -10,12 +10,16 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+const statusWhereClause = " WHERE status = $1"
+
 // ScanJob is the durable intake record stored in PostgreSQL.
 type ScanJob struct {
 	ID          int64      `json:"id"`
 	ProjectKey  string     `json:"project_key"`
 	Status      string     `json:"status"`
 	Payload     []byte     `json:"-"`
+	TraceParent string     `json:"-"`
+	TraceState  string     `json:"-"`
 	ScanID      *int64     `json:"scan_id,omitempty"`
 	WorkerID    string     `json:"worker_id,omitempty"`
 	LastError   string     `json:"last_error,omitempty"`
@@ -38,10 +42,10 @@ func NewScanJobRepository(db *DB) *ScanJobRepository {
 // Create inserts a new accepted scan job.
 func (r *ScanJobRepository) Create(ctx context.Context, job *ScanJob) error {
 	row := r.db.Pool.QueryRow(ctx, `
-		INSERT INTO scan_jobs (project_key, status, payload, worker_id, last_error)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO scan_jobs (project_key, status, payload, trace_parent, trace_state, worker_id, last_error)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		RETURNING id, created_at, updated_at`,
-		job.ProjectKey, job.Status, job.Payload, job.WorkerID, job.LastError,
+		job.ProjectKey, job.Status, job.Payload, job.TraceParent, job.TraceState, job.WorkerID, job.LastError,
 	)
 	return row.Scan(&job.ID, &job.CreatedAt, &job.UpdatedAt)
 }
@@ -49,11 +53,25 @@ func (r *ScanJobRepository) Create(ctx context.Context, job *ScanJob) error {
 // GetByID retrieves a scan job by primary key.
 func (r *ScanJobRepository) GetByID(ctx context.Context, id int64) (*ScanJob, error) {
 	return scanJobFromRow(r.db.Pool.QueryRow(ctx, `
-		SELECT id, project_key, status, payload, scan_id, worker_id, last_error,
+		SELECT id, project_key, status, payload, trace_parent, trace_state, scan_id, worker_id, last_error,
 		       created_at, updated_at, started_at, completed_at
 		FROM scan_jobs
 		WHERE id = $1`, id,
 	))
+}
+
+// CountByStatus returns the number of durable scan jobs in the given state.
+func (r *ScanJobRepository) CountByStatus(ctx context.Context, status string) (int, error) {
+	query := "SELECT COUNT(*) FROM scan_jobs"
+	args := []any{}
+	if status != "" {
+		query += statusWhereClause
+		args = append(args, status)
+	}
+
+	var total int
+	err := r.db.Pool.QueryRow(ctx, query, args...).Scan(&total)
+	return total, err
 }
 
 // ClaimNext marks the oldest accepted job as running and returns it.
@@ -81,7 +99,7 @@ func (r *ScanJobRepository) ClaimNext(ctx context.Context, workerID string) (*Sc
 		    updated_at = now()
 		FROM next_job
 		WHERE j.id = next_job.id
-		RETURNING j.id, j.project_key, j.status, j.payload, j.scan_id, j.worker_id, j.last_error,
+		RETURNING j.id, j.project_key, j.status, j.payload, j.trace_parent, j.trace_state, j.scan_id, j.worker_id, j.last_error,
 		          j.created_at, j.updated_at, j.started_at, j.completed_at`, workerID,
 	))
 	if err != nil {
@@ -138,6 +156,8 @@ func (r *ScanJobRepository) MarkFailed(ctx context.Context, id int64, lastError 
 
 func scanJobFromRow(row pgx.Row) (*ScanJob, error) {
 	job := &ScanJob{}
+	var traceParent sql.NullString
+	var traceState sql.NullString
 	var scanID sql.NullInt64
 	var startedAt sql.NullTime
 	var completedAt sql.NullTime
@@ -147,6 +167,8 @@ func scanJobFromRow(row pgx.Row) (*ScanJob, error) {
 		&job.ProjectKey,
 		&job.Status,
 		&job.Payload,
+		&traceParent,
+		&traceState,
 		&scanID,
 		&job.WorkerID,
 		&job.LastError,
@@ -160,6 +182,12 @@ func scanJobFromRow(row pgx.Row) (*ScanJob, error) {
 	}
 	if err != nil {
 		return nil, err
+	}
+	if traceParent.Valid {
+		job.TraceParent = traceParent.String
+	}
+	if traceState.Valid {
+		job.TraceState = traceState.String
 	}
 	if scanID.Valid {
 		value := scanID.Int64
