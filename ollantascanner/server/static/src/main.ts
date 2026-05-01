@@ -66,6 +66,7 @@ async function init(): Promise<void> {
     renderGate();
     renderMeasures();
     renderOverviewCharts();
+    renderPriorityIssues();
     renderHotspotFiles();
     renderLanguages();
     populateFilters();
@@ -215,6 +216,45 @@ function renderOverviewCharts(): void {
     </div>`;
   }
   el("type-bars").innerHTML = typeHtml;
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// Priority Queue (highest-signal issues for the overview)
+// ══════════════════════════════════════════════════════════════════════════
+
+function renderPriorityIssues(): void {
+  const topIssues = [...allIssues]
+    .sort((a, b) => {
+      const severityDelta = (SEV_ORDER[a.severity] ?? 99) - (SEV_ORDER[b.severity] ?? 99);
+      if (severityDelta !== 0) return severityDelta;
+      return a.component_path.localeCompare(b.component_path) || a.line - b.line;
+    })
+    .slice(0, 6);
+
+  if (!topIssues.length) {
+    el("priority-issues").innerHTML = `<div class="empty-state compact">No issues found</div>`;
+    return;
+  }
+
+  el("priority-issues").innerHTML = topIssues.map((issue, idx) => {
+    const color = SEV_COLORS[issue.severity] ?? "#64748b";
+    const file = shortenPath(issue.component_path);
+    return `<button class="priority-row" data-idx="${idx}">
+      <span class="issue-sev-dot" style="background:${color}"></span>
+      <span class="priority-main">
+        <span class="priority-title">${esc(issue.message)}</span>
+        <span class="priority-meta" title="${esc(issue.component_path)}">${esc(file)}:L${issue.line} · ${esc(issue.rule_key)}</span>
+      </span>
+      <span class="priority-severity">${esc(issue.severity)}</span>
+    </button>`;
+  }).join("");
+
+  el("priority-issues").querySelectorAll(".priority-row").forEach(row => {
+    row.addEventListener("click", () => {
+      const idx = Number.parseInt((row as HTMLElement).dataset["idx"]!, 10);
+      openDetail(topIssues[idx]);
+    });
+  });
 }
 
 // ══════════════════════════════════════════════════════════════════════════

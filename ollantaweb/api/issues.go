@@ -63,13 +63,18 @@ func (h *IssuesHandler) resolveScopedIssueSelection(r *http.Request, projectID *
 
 func emptyFacets() *postgres.IssueFacets {
 	return &postgres.IssueFacets{
-		BySeverity: map[string]int{},
-		ByType:     map[string]int{},
-		ByRule:     map[string]int{},
-		ByStatus:   map[string]int{},
-		ByEngineID: map[string]int{},
-		ByFile:     map[string]int{},
-		ByTags:     map[string]int{},
+		BySeverity:         map[string]int{},
+		ByType:             map[string]int{},
+		ByQuality:          map[string]int{},
+		ByRule:             map[string]int{},
+		ByStatus:           map[string]int{},
+		ByLifecycle:        map[string]int{},
+		ByLanguage:         map[string]int{},
+		ByEngineID:         map[string]int{},
+		ByFile:             map[string]int{},
+		ByDirectory:        map[string]int{},
+		ByTags:             map[string]int{},
+		BySecurityCategory: map[string]int{},
 	}
 }
 
@@ -112,7 +117,13 @@ func parseIssueFilter(q url.Values) (postgres.IssueFilter, string) {
 	assignOptionalString(q.Get("rule_key"), &f.RuleKey)
 	assignOptionalString(q.Get("severity"), &f.Severity)
 	assignOptionalString(q.Get("type"), &f.Type)
+	assignOptionalString(q.Get("quality"), &f.QualityDomain)
 	assignOptionalString(q.Get("status"), &f.Status)
+	assignOptionalString(q.Get("tracking_state"), &f.TrackingState)
+	assignOptionalString(q.Get("language"), &f.Language)
+	assignOptionalString(q.Get("tag"), &f.Tag)
+	assignOptionalString(q.Get("security_category"), &f.SecurityCategory)
+	assignOptionalString(q.Get("directory"), &f.Directory)
 	assignOptionalString(q.Get("file"), &f.FilePath)
 	assignOptionalString(q.Get("engine_id"), &f.EngineID)
 	return f, projectKey
@@ -129,7 +140,7 @@ func writeEmptyIssuesResponse(w http.ResponseWriter, filter postgres.IssueFilter
 
 // List handles GET /api/v1/issues with optional filter query params.
 //
-// Query params: project_id, scan_id, rule_key, severity, type, status, file, limit, offset
+// Query params: project_id, scan_id, rule_key, severity, type, quality, status, tracking_state, language, tag, security_category, directory, file, limit, offset
 func (h *IssuesHandler) List(w http.ResponseWriter, r *http.Request) {
 	f, projectKey := parseIssueFilter(r.URL.Query())
 	selection, err := h.resolveScopedIssueSelection(r, f.ProjectID, projectKey)
@@ -208,7 +219,10 @@ func (h *IssuesHandler) Facets(w http.ResponseWriter, r *http.Request) {
 		scanID = selection.scanID
 	}
 
-	facets, err := h.issues.Facets(r.Context(), projectID, scanID)
+	filter, _ := parseIssueFilter(q)
+	filter.ProjectID = optionalInt64(projectID)
+	filter.ScanID = optionalInt64(scanID)
+	facets, err := h.issues.FacetsForFilter(r.Context(), filter)
 	if errors.Is(err, postgres.ErrNotFound) {
 		jsonError(w, http.StatusNotFound, "not found")
 		return

@@ -91,9 +91,10 @@ func NewRouter(d *RouterDeps) http.Handler {
 	sh := &ScansHandler{scans: d.Scans, projects: d.Projects, jobs: jobService}
 	sjh := &ScanJobsHandler{jobs: jobService}
 	ih := &IssuesHandler{issues: d.Issues, projects: d.Projects, scans: d.Scans, changelog: d.Changelog}
+	ibh := &IssueTrackingBackfillHandler{service: &issueTrackingBackfillService{projects: d.Projects, scans: d.Scans, issues: d.Issues}}
 	mh := &MeasuresHandler{measures: d.Measures, projects: d.Projects}
 	srh := &SearchHandler{searcher: d.Searcher}
-	oh := &OverviewHandler{projects: d.Projects, scans: d.Scans, issues: d.Issues, measures: d.Measures, gates: d.Gates}
+	oh := &OverviewHandler{projects: d.Projects, scans: d.Scans, issues: d.Issues, measures: d.Measures, gates: d.Gates, periods: d.Periods}
 	ah := &ActivityHandler{scans: d.Scans, projects: d.Projects}
 	psh := &ProjectScopeHandler{projects: d.Projects, scans: d.Scans, snapshots: d.Snapshots, issues: d.Issues}
 	outboxH := &OutboxJobsHandler{indexJobs: d.IndexJobs, webhookJobs: d.WebhookJobs}
@@ -182,6 +183,7 @@ func NewRouter(d *RouterDeps) http.Handler {
 				r.Use(RequirePermission(d.Perms, "admin"))
 				r.Post("/projects/{key}/profiles", profilesH.AssignToProject)
 				r.Post("/projects/{key}/quality-gate", gatesH.AssignToProject)
+				r.Post("/projects/{key}/issues/backfill-tracking-state", ibh.BackfillProject)
 			})
 
 			// Project-scoped new code period (read is open, write requires admin)

@@ -1,0 +1,2 @@
+ALTER TABLE issues
+ADD COLUMN IF NOT EXISTS tracking_state TEXT NOT NULL DEFAULT 'unknown';

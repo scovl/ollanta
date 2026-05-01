@@ -37,6 +37,15 @@ const (
 	TypeSecurityHotspot IssueType = "security_hotspot"
 )
 
+type IssueQualityDomain string
+
+const (
+	QualitySecurity        IssueQualityDomain = "security"
+	QualityReliability     IssueQualityDomain = "reliability"
+	QualityMaintainability IssueQualityDomain = "maintainability"
+	QualityTestability     IssueQualityDomain = "testability"
+)
+
 // Status represents the lifecycle state of an Issue across successive scans.
 type Status string
 
@@ -65,19 +74,21 @@ type SecondaryLocation struct {
 // It is language-agnostic: the same struct is used for Go, JavaScript, Python, and any
 // other language supported by Ollanta.
 type Issue struct {
-	RuleKey       string    `json:"rule_key"`
-	ComponentPath string    `json:"component_path"`
-	Line          int       `json:"line"`
-	Column        int       `json:"column"`
-	EndLine       int       `json:"end_line"`
-	EndColumn     int       `json:"end_column"`
-	Message       string    `json:"message"`
-	Type          IssueType `json:"type"`
-	Severity      Severity  `json:"severity"`
-	Status        Status    `json:"status"`
-	Resolution    string    `json:"resolution,omitempty"`
-	EffortMinutes int       `json:"effort_minutes,omitempty"`
-	EngineID      string    `json:"engine_id,omitempty"`
+	RuleKey       string             `json:"rule_key"`
+	ComponentPath string             `json:"component_path"`
+	Line          int                `json:"line"`
+	Column        int                `json:"column"`
+	EndLine       int                `json:"end_line"`
+	EndColumn     int                `json:"end_column"`
+	Message       string             `json:"message"`
+	Type          IssueType          `json:"type"`
+	Severity      Severity           `json:"severity"`
+	QualityDomain IssueQualityDomain `json:"quality_domain,omitempty"`
+	Language      string             `json:"language,omitempty"`
+	Status        Status             `json:"status"`
+	Resolution    string             `json:"resolution,omitempty"`
+	EffortMinutes int                `json:"effort_minutes,omitempty"`
+	EngineID      string             `json:"engine_id,omitempty"`
 	// LineHash is the SHA-256 hex digest of the trimmed source line. Used by the
 	// issue tracker to match the same logical issue across scans
 	// even when its line number shifts due to edits elsewhere in the file.

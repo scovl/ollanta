@@ -17,6 +17,7 @@ type OverviewHandler struct {
 	issues   *postgres.IssueRepository
 	measures *postgres.MeasureRepository
 	gates    *postgres.GateRepository
+	periods  *postgres.NewCodePeriodRepository
 }
 
 // overviewResponse is the single-call dashboard payload.
@@ -28,6 +29,7 @@ type overviewResponse struct {
 	Measures    map[string]float64    `json:"measures"`
 	Facets      *postgres.IssueFacets `json:"facets,omitempty"`
 	NewCode     *overviewNewCode      `json:"new_code,omitempty"`
+	Summary     *overviewSummary      `json:"summary,omitempty"`
 }
 
 type overviewGate struct {
@@ -162,6 +164,11 @@ func (h *OverviewHandler) Overview(w http.ResponseWriter, r *http.Request) {
 
 	resp.QualityGate = h.loadOverviewGate(ctx, resolved.Project.ID, scan)
 	h.fillOverviewMeasures(ctx, &resp, scan)
+	resp.Summary, err = h.loadOverviewSummary(ctx, resolved, scan, &resp)
+	if err != nil {
+		jsonError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 
 	jsonOK(w, http.StatusOK, resp)
 }

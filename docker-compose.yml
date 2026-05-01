@@ -60,7 +60,7 @@ services:
       - -project-dir=/project
       - -project-key=${PROJECT_KEY:-project}
       - -format=all
-      - -serve
+      - -local-ui
       - -bind=0.0.0.0
       - -port=7777
     restart: "no"

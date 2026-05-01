@@ -36,7 +36,7 @@
 
 ## Adding a New Rule
 
-Adding a rule requires exactly two files — no edits to existing files.
+Adding a rule requires the rule logic, its metadata JSON, and registration in the language `embed.go` file.
 
 **1. Create the rule logic** in the appropriate language package:
 
@@ -69,6 +69,8 @@ var MyRule = ollantarules.Rule{
   "tags": ["design"]
 }
 ```
+
+Issue quality facets are derived from `type` and `tags`: `bug` maps to Reliability, `vulnerability` and `security_hotspot` map to Security, `code_smell` maps to Maintainability, and test-oriented tags such as `testability`, `coverage-gap`, `mutation`, or `survived-mutant` map to Testability.
 
 **3. Register it** by adding the variable to the `init()` call in `embed.go`:
 

@@ -55,58 +55,67 @@
 
     <!-- ── Overview Tab ───────────────────────────────────────────────── -->
     <div id="panel-overview" class="panel">
-      <!-- Measures -->
-      <div class="measures-row">
-        <div id="card-bugs" class="metric-card">
-          <span class="metric-value" id="m-bugs">0</span>
-          <span class="metric-label">Bugs</span>
-        </div>
-        <div id="card-vulns" class="metric-card">
-          <span class="metric-value" id="m-vulns">0</span>
-          <span class="metric-label">Vulnerabilities</span>
-        </div>
-        <div id="card-smells" class="metric-card">
-          <span class="metric-value" id="m-smells">0</span>
-          <span class="metric-label">Code Smells</span>
-        </div>
-        <div id="card-ncloc" class="metric-card">
-          <span class="metric-value" id="m-ncloc">0</span>
-          <span class="metric-label">Lines of Code</span>
-        </div>
-        <div id="card-files" class="metric-card">
-          <span class="metric-value" id="m-files">0</span>
-          <span class="metric-label">Files</span>
-        </div>
-        <div id="card-comments" class="metric-card">
-          <span class="metric-value" id="m-comments">0</span>
-          <span class="metric-label">Comment Lines</span>
-        </div>
-      </div>
+      <div class="overview-layout">
+        <section class="overview-main">
+          <section class="overview-panel">
+            <h3>Health Signals</h3>
+            <div class="metric-table">
+              <div id="card-bugs" class="metric-row">
+                <span class="metric-label">Bugs</span>
+                <span class="metric-value" id="m-bugs">0</span>
+              </div>
+              <div id="card-vulns" class="metric-row">
+                <span class="metric-label">Vulnerabilities</span>
+                <span class="metric-value" id="m-vulns">0</span>
+              </div>
+              <div id="card-smells" class="metric-row">
+                <span class="metric-label">Code Smells</span>
+                <span class="metric-value" id="m-smells">0</span>
+              </div>
+              <div id="card-ncloc" class="metric-row">
+                <span class="metric-label">Lines of Code</span>
+                <span class="metric-value" id="m-ncloc">0</span>
+              </div>
+              <div id="card-files" class="metric-row">
+                <span class="metric-label">Files</span>
+                <span class="metric-value" id="m-files">0</span>
+              </div>
+              <div id="card-comments" class="metric-row">
+                <span class="metric-label">Comment Lines</span>
+                <span class="metric-value" id="m-comments">0</span>
+              </div>
+            </div>
+          </section>
 
-      <!-- Severity distribution -->
-      <div class="overview-grid">
-        <div class="overview-card">
-          <h3>Severity Distribution</h3>
-          <div id="sev-bars" class="sev-bars"></div>
-          <div id="sev-proportional" class="sev-proportional"></div>
-        </div>
+          <div class="overview-split">
+            <section class="overview-panel">
+              <h3>Severity Distribution</h3>
+              <div id="sev-bars" class="sev-bars"></div>
+              <div id="sev-proportional" class="sev-proportional"></div>
+            </section>
 
-        <div class="overview-card">
-          <h3>Issue Types</h3>
-          <div id="type-bars" class="sev-bars"></div>
-        </div>
-      </div>
+            <section class="overview-panel">
+              <h3>Issue Types</h3>
+              <div id="type-bars" class="sev-bars"></div>
+            </section>
+          </div>
 
-      <!-- Hotspot files + Languages -->
-      <div class="overview-grid">
-        <div class="overview-card">
-          <h3>Hotspot Files</h3>
-          <div id="hotspot-files" class="hotspot-list"></div>
-        </div>
-        <div class="overview-card">
-          <h3>Languages</h3>
-          <div id="by-lang" class="lang-bars"></div>
-        </div>
+          <section class="overview-panel">
+            <h3>Hotspot Files</h3>
+            <div id="hotspot-files" class="hotspot-list"></div>
+          </section>
+        </section>
+
+        <aside class="overview-aside">
+          <section class="overview-panel">
+            <h3>Priority Queue</h3>
+            <div id="priority-issues" class="priority-list"></div>
+          </section>
+          <section class="overview-panel">
+            <h3>Languages</h3>
+            <div id="by-lang" class="lang-bars"></div>
+          </section>
+        </aside>
       </div>
     </div>
 

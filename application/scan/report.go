@@ -32,6 +32,18 @@ type Measures struct {
 	Bugs            int            `json:"bugs"`
 	CodeSmells      int            `json:"code_smells"`
 	Vulnerabilities int            `json:"vulnerabilities"`
+	Coverage        *float64       `json:"coverage,omitempty"`
+	Tests           int            `json:"tests,omitempty"`
+	TestFailures    int            `json:"test_failures,omitempty"`
+	TestErrors      int            `json:"test_errors,omitempty"`
+	TestSkipped     int            `json:"test_skipped,omitempty"`
+	TestDurationMs  int64          `json:"test_duration_ms,omitempty"`
+	MutationScore   *float64       `json:"mutation_score,omitempty"`
+	MutantsTotal    int            `json:"mutants_total,omitempty"`
+	MutantsKilled   int            `json:"mutants_killed,omitempty"`
+	MutantsSurvived int            `json:"mutants_survived,omitempty"`
+	MutantsTimeout  int            `json:"mutants_timeout,omitempty"`
+	MutantsError    int            `json:"mutants_error,omitempty"`
 	ByLang          map[string]int `json:"by_language"` // file count per language
 }
 
@@ -50,25 +62,16 @@ type Metadata struct {
 
 // Report is the complete output of a scan run.
 type Report struct {
-	Metadata     Metadata             `json:"metadata"`
-	Measures     Measures             `json:"measures"`
-	Issues       []*model.Issue       `json:"issues"`
-	CodeSnapshot *model.CodeSnapshot  `json:"code_snapshot,omitempty"`
+	Metadata     Metadata            `json:"metadata"`
+	Measures     Measures            `json:"measures"`
+	Issues       []*model.Issue      `json:"issues"`
+	CodeSnapshot *model.CodeSnapshot `json:"code_snapshot,omitempty"`
 }
 
 // Build assembles a Report from the discovered files, analysis results, and elapsed time.
 func Build(projectKey, projectDir string, files []DiscoveredFile, issues []*model.Issue, elapsed time.Duration, metadata Metadata) *Report {
 	m := computeMeasures(files)
-	for _, iss := range issues {
-		switch iss.Type {
-		case model.TypeBug:
-			m.Bugs++
-		case model.TypeCodeSmell:
-			m.CodeSmells++
-		case model.TypeVulnerability:
-			m.Vulnerabilities++
-		}
-	}
+	enrichIssues(projectDir, files, issues, &m)
 	if metadata.ProjectKey == "" {
 		metadata.ProjectKey = projectKey
 	}
@@ -89,6 +92,51 @@ func Build(projectKey, projectDir string, files []DiscoveredFile, issues []*mode
 		Measures:     m,
 		Issues:       issues,
 		CodeSnapshot: buildCodeSnapshot(projectDir, files),
+	}
+}
+
+func enrichIssues(projectDir string, files []DiscoveredFile, issues []*model.Issue, measures *Measures) {
+	languageByPath := buildLanguageLookup(projectDir, files)
+	for _, issue := range issues {
+		if issue == nil {
+			continue
+		}
+		enrichIssue(issue, languageByPath)
+		incrementIssueTypeCount(issue, measures)
+	}
+}
+
+func buildLanguageLookup(projectDir string, files []DiscoveredFile) map[string]string {
+	languageByPath := make(map[string]string, len(files))
+	for _, file := range files {
+		languageByPath[filepath.ToSlash(file.Path)] = file.Language
+		if rel, err := filepath.Rel(projectDir, file.Path); err == nil {
+			languageByPath[filepath.ToSlash(rel)] = file.Language
+		}
+	}
+	return languageByPath
+}
+
+func enrichIssue(issue *model.Issue, languageByPath map[string]string) {
+	if issue.Language == "" {
+		issue.Language = languageByPath[filepath.ToSlash(issue.ComponentPath)]
+		if issue.Language == "" {
+			issue.Language = model.LanguageFromPath(issue.ComponentPath)
+		}
+	}
+	if issue.QualityDomain == "" {
+		issue.QualityDomain = model.DeriveIssueQualityDomain(issue.Type, issue.Tags)
+	}
+}
+
+func incrementIssueTypeCount(issue *model.Issue, measures *Measures) {
+	switch issue.Type {
+	case model.TypeBug:
+		measures.Bugs++
+	case model.TypeCodeSmell:
+		measures.CodeSmells++
+	case model.TypeVulnerability:
+		measures.Vulnerabilities++
 	}
 }
 

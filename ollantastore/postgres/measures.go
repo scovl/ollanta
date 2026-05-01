@@ -2,8 +2,11 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 // MeasureRow is the database representation of a single metric value.
@@ -83,6 +86,26 @@ func (r *MeasureRepository) GetForScan(ctx context.Context, scanID int64, metric
 		  AND component_path = ''
 		LIMIT 1`, scanID, metricKey,
 	).Scan(&m.ID, &m.ScanID, &m.ProjectID, &m.MetricKey, &m.ComponentPath, &m.Value, &m.CreatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	return m, err
+}
+
+// GetForScanComponent returns a component-level metric value for a specific scan and path.
+func (r *MeasureRepository) GetForScanComponent(ctx context.Context, scanID int64, metricKey, componentPath string) (*MeasureRow, error) {
+	m := &MeasureRow{}
+	err := r.db.Pool.QueryRow(ctx, `
+		SELECT id, scan_id, project_id, metric_key, component_path, value, created_at
+		FROM measures
+		WHERE scan_id = $1
+		  AND metric_key = $2
+		  AND component_path = $3
+		LIMIT 1`, scanID, metricKey, componentPath,
+	).Scan(&m.ID, &m.ScanID, &m.ProjectID, &m.MetricKey, &m.ComponentPath, &m.Value, &m.CreatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
 	return m, err
 }
 
