@@ -18,6 +18,8 @@ type ScanJob struct {
 	ProjectKey  string        `json:"project_key"`
 	Status      ScanJobStatus `json:"status"`
 	Payload     []byte        `json:"-"`
+	TraceParent string        `json:"-"`
+	TraceState  string        `json:"-"`
 	ScanID      *int64        `json:"scan_id,omitempty"`
 	WorkerID    string        `json:"worker_id,omitempty"`
 	LastError   string        `json:"last_error,omitempty"`
