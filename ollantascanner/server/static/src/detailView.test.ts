@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { renderAIFixContent, renderDetailTabs, type AIFixViewState } from "./detailView";
-import type { AIAgent, AIFixPreview, Issue } from "./types";
+import type { AIFixPreview, AIProviderOption, Issue } from "./types";
 
 function buildIssue(): Issue {
   return {
@@ -24,10 +24,12 @@ function buildIssue(): Issue {
 
 function buildState(preview: AIFixPreview | null = null): AIFixViewState {
   return {
-    loadingAgents: false,
+    loadingOptions: false,
     loadingPreview: false,
     applying: false,
-    selectedAgentId: "mock-agent",
+    selectedProviderId: "openai",
+    selectedModel: "gpt-4.1-mini",
+    apiKey: "",
     statusMessage: "",
     errorMessage: "",
     preview,
@@ -43,17 +45,17 @@ describe("detailView", () => {
     expect(html).toContain("detail-tab active");
   });
 
-  it("renders empty-state when no agents are configured", () => {
+  it("renders empty-state when no providers are available", () => {
     const html = renderAIFixContent(buildIssue(), buildState(), []);
 
-    expect(html).toContain("No AI agent is configured for the local scanner.");
+    expect(html).toContain("No AI provider is available for the local scanner.");
     expect(html).toContain("Generate a fix preview");
   });
 
-  it("renders agent selector, preview and apply action", () => {
+  it("renders provider/model controls, preview and apply action", () => {
     const preview: AIFixPreview = {
       preview_id: "preview-1",
-      agent: { id: "mock-agent", label: "Mock AI", provider: "mock", model: "deterministic" },
+      agent: { id: "openai:gpt-4.1-mini", label: "OpenAI", provider: "openai", model: "gpt-4.1-mini" },
       status: "ready",
       summary: "Generated fix preview",
       explanation: "Preview explanation",
@@ -64,14 +66,24 @@ describe("detailView", () => {
       original_snippet: "old",
       replacement: "new",
     };
-    const agents: AIAgent[] = [{ id: "mock-agent", label: "Mock AI", provider: "mock", model: "deterministic" }];
+    const providers: AIProviderOption[] = [{
+      id: "openai",
+      label: "OpenAI",
+      models: ["gpt-4.1-mini", "gpt-4.1"],
+      default_model: "gpt-4.1-mini",
+      configured: false,
+      requires_api_key: true,
+    }];
 
-    const html = renderAIFixContent(buildIssue(), buildState(preview), agents);
+    const html = renderAIFixContent(buildIssue(), buildState(preview), providers);
 
-    expect(html).toContain('id="ai-agent-select"');
+    expect(html).toContain('id="ai-provider-select"');
+    expect(html).toContain('id="ai-model-input"');
+    expect(html).toContain('id="ai-api-key-input"');
     expect(html).toContain("Generate fix");
     expect(html).toContain("Preview explanation");
     expect(html).toContain("Apply to file");
+    expect(html).toContain("gpt-4.1-mini");
     expect(html).toContain("@@ lines 12-12 @@");
   });
 });

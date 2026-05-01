@@ -22,7 +22,12 @@ import (
 	ollantarules "github.com/scovl/ollanta/ollantarules"
 )
 
-const defaultOpenAIBaseURL = "https://api.openai.com/v1"
+const (
+	defaultOpenAIBaseURL = "https://api.openai.com/v1"
+	defaultOpenAIModel   = "gpt-4.1-mini"
+)
+
+var defaultOpenAIModels = []string{"gpt-4.1-mini", "gpt-4.1", "gpt-4o-mini", "gpt-4o", "o4-mini"}
 
 const methodNotAllowedMessage = "method not allowed"
 
@@ -33,6 +38,7 @@ type aiAgentConfig struct {
 	Model     string `json:"model"`
 	BaseURL   string `json:"base_url,omitempty"`
 	APIKeyEnv string `json:"api_key_env,omitempty"`
+	APIKey    string `json:"-"`
 }
 
 type aiAgentView struct {
@@ -42,9 +48,21 @@ type aiAgentView struct {
 	Model    string `json:"model"`
 }
 
+type aiProviderOption struct {
+	ID             string   `json:"id"`
+	Label          string   `json:"label"`
+	Models         []string `json:"models"`
+	DefaultModel   string   `json:"default_model"`
+	Configured     bool     `json:"configured"`
+	RequiresAPIKey bool     `json:"requires_api_key"`
+}
+
 type aiFixRequest struct {
-	AgentID string      `json:"agent_id"`
-	Issue   domain.Issue `json:"issue"`
+	AgentID  string       `json:"agent_id,omitempty"`
+	Provider string       `json:"provider,omitempty"`
+	Model    string       `json:"model,omitempty"`
+	APIKey   string       `json:"api_key,omitempty"`
+	Issue    domain.Issue `json:"issue"`
 }
 
 type aiFixApplyRequest struct {
@@ -108,6 +126,7 @@ type aiFixService struct {
 	projectRoot string
 	rules       map[string]*ollantarules.RuleMeta
 	agents      map[string]aiAgentConfig
+	providerOptions []aiProviderOption
 	providers   map[string]aiProvider
 	previews    map[string]storedPreview
 	mu          sync.Mutex
@@ -125,11 +144,13 @@ func newAIFixService(projectRoot string, rules map[string]*ollantarules.RuleMeta
 	for _, agent := range agents {
 		agentMap[agent.ID] = agent
 	}
+	providerOptions := loadAIProviderOptionsFromEnv(agents)
 
 	return &aiFixService{
 		projectRoot: projectRoot,
 		rules:       rules,
 		agents:      agentMap,
+		providerOptions: providerOptions,
 		providers: map[string]aiProvider{
 			"mock":   mockAIProvider{},
 			"openai": openAIProvider{client: &http.Client{Timeout: 60 * time.Second}},
@@ -161,7 +182,7 @@ func loadAIAgentConfigsFromEnv() ([]aiAgentConfig, error) {
 			ID:        "openai-default",
 			Label:     envOrDefault("OLLANTA_AI_OPENAI_LABEL", "OpenAI"),
 			Provider:  "openai",
-			Model:     envOrDefault("OLLANTA_AI_OPENAI_MODEL", "gpt-4.1-mini"),
+			Model:     envOrDefault("OLLANTA_AI_OPENAI_MODEL", defaultOpenAIModel),
 			BaseURL:   envOrDefault("OLLANTA_AI_OPENAI_BASE_URL", defaultOpenAIBaseURL),
 			APIKeyEnv: "OPENAI_API_KEY",
 		}
@@ -176,6 +197,111 @@ func loadAIAgentConfigsFromEnv() ([]aiAgentConfig, error) {
 		})
 	}
 	return agents, validateAgentConfigs(agents)
+}
+
+func loadAIProviderOptionsFromEnv(agents []aiAgentConfig) []aiProviderOption {
+	openAIModels := parseAIModelListEnv("OLLANTA_AI_OPENAI_MODELS", defaultOpenAIModels)
+	defaultModel := envOrDefault("OLLANTA_AI_OPENAI_MODEL", defaultOpenAIModel)
+	if !containsString(openAIModels, defaultModel) {
+		openAIModels = append([]string{defaultModel}, openAIModels...)
+	}
+
+	options := []aiProviderOption{{
+		ID:             "openai",
+		Label:          envOrDefault("OLLANTA_AI_OPENAI_LABEL", "OpenAI"),
+		Models:         openAIModels,
+		DefaultModel:   defaultModel,
+		Configured:     strings.TrimSpace(os.Getenv("OPENAI_API_KEY")) != "",
+		RequiresAPIKey: true,
+	}}
+
+	if os.Getenv("OLLANTA_AI_ENABLE_MOCK") == "1" {
+		options = append(options, aiProviderOption{
+			ID:             "mock",
+			Label:          "Mock AI",
+			Models:         []string{"deterministic"},
+			DefaultModel:   "deterministic",
+			Configured:     true,
+			RequiresAPIKey: false,
+		})
+	}
+
+	for _, agent := range agents {
+		mergeProviderOption(&options, agent)
+	}
+
+	return options
+}
+
+func parseAIModelListEnv(key string, fallback []string) []string {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return append([]string(nil), fallback...)
+	}
+
+	parts := strings.FieldsFunc(raw, func(r rune) bool {
+		switch r {
+		case ',', ';', '\n', '\r':
+			return true
+		default:
+			return false
+		}
+	})
+	models := make([]string, 0, len(parts))
+	for _, part := range parts {
+		model := strings.TrimSpace(part)
+		if model == "" || containsString(models, model) {
+			continue
+		}
+		models = append(models, model)
+	}
+	if len(models) == 0 {
+		return append([]string(nil), fallback...)
+	}
+	return models
+}
+
+func mergeProviderOption(options *[]aiProviderOption, agent aiAgentConfig) {
+	for i := range *options {
+		if (*options)[i].ID != agent.Provider {
+			continue
+		}
+		if agent.Label != "" && (*options)[i].Label == "" {
+			(*options)[i].Label = agent.Label
+		}
+		if agent.Model != "" && !containsString((*options)[i].Models, agent.Model) {
+			(*options)[i].Models = append((*options)[i].Models, agent.Model)
+		}
+		if (*options)[i].DefaultModel == "" {
+			(*options)[i].DefaultModel = agent.Model
+		}
+		if agent.APIKeyEnv != "" && strings.TrimSpace(os.Getenv(agent.APIKeyEnv)) != "" {
+			(*options)[i].Configured = true
+		}
+		return
+	}
+
+	configured := true
+	if agent.APIKeyEnv != "" {
+		configured = strings.TrimSpace(os.Getenv(agent.APIKeyEnv)) != ""
+	}
+	*options = append(*options, aiProviderOption{
+		ID:             agent.Provider,
+		Label:          agent.Label,
+		Models:         []string{agent.Model},
+		DefaultModel:   agent.Model,
+		Configured:     configured,
+		RequiresAPIKey: agent.APIKeyEnv != "",
+	})
+}
+
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }
 
 func validateAgentConfigs(agents []aiAgentConfig) error {
@@ -193,6 +319,11 @@ func validateAgentConfigs(agents []aiAgentConfig) error {
 		if agent.Model == "" {
 			return fmt.Errorf("AI agent %q is missing model", agent.ID)
 		}
+		switch agent.Provider {
+		case "mock", "openai":
+		default:
+			return fmt.Errorf("AI agent %q uses unsupported provider %q", agent.ID, agent.Provider)
+		}
 		if _, ok := seen[agent.ID]; ok {
 			return fmt.Errorf("duplicate AI agent id %q", agent.ID)
 		}
@@ -208,6 +339,7 @@ func normalizeAgentConfig(agent *aiAgentConfig) {
 	agent.Model = strings.TrimSpace(agent.Model)
 	agent.BaseURL = strings.TrimSpace(agent.BaseURL)
 	agent.APIKeyEnv = strings.TrimSpace(agent.APIKeyEnv)
+	agent.APIKey = strings.TrimSpace(agent.APIKey)
 	if agent.Provider == "openai" && agent.BaseURL == "" {
 		agent.BaseURL = defaultOpenAIBaseURL
 	}
@@ -234,6 +366,15 @@ func (s *aiFixService) handleAgents(w http.ResponseWriter, r *http.Request) {
 		agents = append(agents, aiAgentView{ID: agent.ID, Label: agent.Label, Provider: agent.Provider, Model: agent.Model})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"agents": agents})
+}
+
+func (s *aiFixService) handleProviders(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSONError(w, http.StatusMethodNotAllowed, methodNotAllowedMessage)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"providers": s.providerOptions})
 }
 
 func (s *aiFixService) handlePreview(w http.ResponseWriter, r *http.Request) {
@@ -287,9 +428,9 @@ func (s *aiFixService) handleApply(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *aiFixService) generatePreview(ctx context.Context, request aiFixRequest) (*aiFixPreviewResponse, error) {
-	agent, ok := s.agents[request.AgentID]
-	if !ok {
-		return nil, fmt.Errorf("unknown AI agent %q", request.AgentID)
+	agent, err := s.resolveRequestedAgent(request)
+	if err != nil {
+		return nil, err
 	}
 
 	provider, ok := s.providers[agent.Provider]
@@ -365,6 +506,53 @@ func (s *aiFixService) generatePreview(ctx context.Context, request aiFixRequest
 	s.mu.Unlock()
 
 	return response, nil
+}
+
+func (s *aiFixService) resolveRequestedAgent(request aiFixRequest) (aiAgentConfig, error) {
+	if request.AgentID != "" {
+		agent, ok := s.agents[request.AgentID]
+		if !ok {
+			return aiAgentConfig{}, fmt.Errorf("unknown AI agent %q", request.AgentID)
+		}
+		return agent, nil
+	}
+
+	providerID := strings.ToLower(strings.TrimSpace(request.Provider))
+	if providerID == "" {
+		return aiAgentConfig{}, errors.New("AI provider is required")
+	}
+	model := strings.TrimSpace(request.Model)
+	if model == "" {
+		return aiAgentConfig{}, errors.New("AI model is required")
+	}
+
+	option, ok := s.findProviderOption(providerID)
+	if !ok {
+		return aiAgentConfig{}, fmt.Errorf("unsupported AI provider %q", providerID)
+	}
+
+	agent := aiAgentConfig{
+		ID:       providerID + ":" + model,
+		Label:    option.Label,
+		Provider: providerID,
+		Model:    model,
+		APIKey:   strings.TrimSpace(request.APIKey),
+	}
+	if providerID == "openai" {
+		agent.BaseURL = envOrDefault("OLLANTA_AI_OPENAI_BASE_URL", defaultOpenAIBaseURL)
+		agent.APIKeyEnv = "OPENAI_API_KEY"
+	}
+	normalizeAgentConfig(&agent)
+	return agent, nil
+}
+
+func (s *aiFixService) findProviderOption(providerID string) (aiProviderOption, bool) {
+	for _, option := range s.providerOptions {
+		if option.ID == providerID {
+			return option, true
+		}
+	}
+	return aiProviderOption{}, false
 }
 
 func (s *aiFixService) applyPreview(ctx context.Context, previewID string) (*aiFixApplyResponse, error) {
@@ -560,7 +748,10 @@ type openAIProvider struct {
 }
 
 func (p openAIProvider) GenerateFix(ctx context.Context, agent aiAgentConfig, request aiProviderRequest) (*aiProviderResponse, error) {
-	apiKey := strings.TrimSpace(os.Getenv(agent.APIKeyEnv))
+	apiKey := strings.TrimSpace(agent.APIKey)
+	if apiKey == "" {
+		apiKey = strings.TrimSpace(os.Getenv(agent.APIKeyEnv))
+	}
 	if apiKey == "" {
 		return nil, fmt.Errorf("AI agent %q is missing API key in %s", agent.ID, agent.APIKeyEnv)
 	}

@@ -84,6 +84,19 @@ export interface AIAgentListResponse {
   agents: AIAgent[];
 }
 
+export interface AIProviderOption {
+  id: string;
+  label: string;
+  models: string[];
+  default_model: string;
+  configured: boolean;
+  requires_api_key: boolean;
+}
+
+export interface AIProviderListResponse {
+  providers: AIProviderOption[];
+}
+
 export interface AIFixPreview {
   preview_id: string;
   agent: AIAgent;

@@ -6,10 +6,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"time"
 
+	telemetry "github.com/scovl/ollanta/adapter/secondary/telemetry"
 	"github.com/scovl/ollanta/ollantascanner/scan"
 	"github.com/scovl/ollanta/ollantascanner/server"
 )
@@ -30,6 +32,18 @@ type serverScanResult struct {
 }
 
 func main() {
+	slog.SetDefault(telemetry.SetupLogger(os.Getenv("OLLANTA_LOG_LEVEL"), "service", "ollantascanner", "role", "server"))
+	shutdownTracing, err := telemetry.SetupTracing(context.Background(), "ollantascanner")
+	if err != nil {
+		slog.Error("setup tracing", "error", err)
+		os.Exit(1)
+	}
+	defer func() {
+		if err := shutdownTracing(context.Background()); err != nil {
+			slog.Warn("shutdown tracing", "error", err)
+		}
+	}()
+
 	opts := mustParseOptions()
 	r := mustRunScan(opts)
 

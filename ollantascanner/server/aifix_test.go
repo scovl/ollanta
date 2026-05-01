@@ -80,6 +80,43 @@ func TestAIFixServiceGeneratePreviewAndApply(t *testing.T) {
 	}
 }
 
+func TestAIFixServiceGeneratePreviewFromSelectedModel(t *testing.T) {
+	projectDir := t.TempDir()
+	filePath := filepath.Join(projectDir, "main.go")
+	content := "package main\n\nfunc demo(value any) {\n\tif value == nil {\n\t\tprintln(\"hi\")\n\t}\n}\n"
+	if err := os.WriteFile(filePath, []byte(content), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+
+	service := newTestAIFixService(projectDir, staticAIProvider{response: &aiProviderResponse{
+		Summary:     "Use the selected model",
+		Explanation: "Generated from a provider/model selection",
+		Replacement: "\tif value is nil {",
+	}})
+	service.agents = map[string]aiAgentConfig{}
+
+	preview, err := service.generatePreview(context.Background(), aiFixRequest{
+		Provider: "mock",
+		Model:    "deterministic",
+		Issue: domain.Issue{
+			RuleKey:       "go:nil-check",
+			ComponentPath: filePath,
+			Line:          4,
+			EndLine:       4,
+			Message:       "Use the selected model",
+		},
+	})
+	if err != nil {
+		t.Fatalf("generatePreview: %v", err)
+	}
+	if preview.Agent.Provider != "mock" {
+		t.Fatalf("expected provider mock, got %s", preview.Agent.Provider)
+	}
+	if preview.Agent.Model != "deterministic" {
+		t.Fatalf("expected model deterministic, got %s", preview.Agent.Model)
+	}
+}
+
 func TestAIFixServiceRejectsStaleFile(t *testing.T) {
 	projectDir := t.TempDir()
 	filePath := filepath.Join(projectDir, "main.go")
@@ -146,6 +183,29 @@ func TestExtractIssueSnippetUsesIssueRange(t *testing.T) {
 	}
 }
 
+func TestLoadAIProviderOptionsIncludesOpenAIByDefault(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "")
+	t.Setenv("OLLANTA_AI_OPENAI_MODELS", "")
+	t.Setenv("OLLANTA_AI_ENABLE_MOCK", "")
+
+	options := loadAIProviderOptionsFromEnv(nil)
+	if len(options) == 0 {
+		t.Fatal("expected at least one AI provider option")
+	}
+	if options[0].ID != "openai" {
+		t.Fatalf("expected first provider to be openai, got %s", options[0].ID)
+	}
+	if options[0].Configured {
+		t.Fatal("expected openai option to be unconfigured without OPENAI_API_KEY")
+	}
+	if options[0].DefaultModel != defaultOpenAIModel {
+		t.Fatalf("expected default model %s, got %s", defaultOpenAIModel, options[0].DefaultModel)
+	}
+	if !containsString(options[0].Models, defaultOpenAIModel) {
+		t.Fatalf("expected models to contain %s, got %v", defaultOpenAIModel, options[0].Models)
+	}
+}
+
 func newTestAIFixService(projectRoot string, provider aiProvider) *aiFixService {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	service := newAIFixService(projectRoot, map[string]*ollantarules.RuleMeta{}, logger)
@@ -157,6 +217,14 @@ func newTestAIFixService(projectRoot string, provider aiProvider) *aiFixService 
 			Model:    "deterministic",
 		},
 	}
+	service.providerOptions = []aiProviderOption{{
+		ID:             "mock",
+		Label:          "Mock AI",
+		Models:         []string{"deterministic"},
+		DefaultModel:   "deterministic",
+		Configured:     true,
+		RequiresAPIKey: false,
+	}}
 	service.providers = map[string]aiProvider{"mock": provider}
 	return service
 }

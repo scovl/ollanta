@@ -1,13 +1,15 @@
 import { esc } from "./html";
-import type { AIAgent, AIFixPreview, Issue } from "./types";
+import type { AIProviderOption, AIFixPreview, Issue } from "./types";
 
 export type DetailTabKey = "details" | "rule" | "ai-fix";
 
 export interface AIFixViewState {
-  loadingAgents: boolean;
+  loadingOptions: boolean;
   loadingPreview: boolean;
   applying: boolean;
-  selectedAgentId: string;
+  selectedProviderId: string;
+  selectedModel: string;
+  apiKey: string;
   statusMessage: string;
   errorMessage: string;
   preview: AIFixPreview | null;
@@ -25,15 +27,15 @@ export function renderDetailTabs(activeTab: DetailTabKey): string {
     .join("");
 }
 
-export function renderAIFixContent(issue: Issue, state: AIFixViewState, agents: AIAgent[]): string {
+export function renderAIFixContent(issue: Issue, state: AIFixViewState, providers: AIProviderOption[]): string {
   const locationSuffix = issue.end_line && issue.end_line !== issue.line ? `-${issue.end_line}` : "";
-  const agentSection = renderAIFixAgentSection(state, agents);
+  const modelSection = renderAIFixModelSection(state, providers);
   const previewSection = renderAIFixPreviewSection(state);
 
   return `
     <div class="detail-section">
       <div class="detail-section-title">Fix with AI</div>
-      <div class="detail-msg ai-fix-callout">Ollanta prepara o contexto da issue, envia apenas o trecho relevante para o agente escolhido e mostra um preview antes de qualquer escrita no seu código.</div>
+      <div class="detail-msg ai-fix-callout">Ollanta prepares the issue context, sends only the relevant snippet to the selected agent, and shows a preview before writing any changes to your code.</div>
     </div>
 
     <div class="detail-section">
@@ -48,8 +50,8 @@ export function renderAIFixContent(issue: Issue, state: AIFixViewState, agents: 
     </div>
 
     <div class="detail-section">
-      <div class="detail-section-title">Agent</div>
-      ${agentSection}
+      <div class="detail-section-title">Model</div>
+      ${modelSection}
       ${state.statusMessage ? `<div class="ai-fix-status ai-fix-status-ok">${esc(state.statusMessage)}</div>` : ""}
       ${state.errorMessage ? `<div class="ai-fix-status ai-fix-status-error">${esc(state.errorMessage)}</div>` : ""}
     </div>
@@ -61,22 +63,53 @@ export function renderAIFixContent(issue: Issue, state: AIFixViewState, agents: 
   `;
 }
 
-function renderAIFixAgentSection(state: AIFixViewState, agents: AIAgent[]): string {
-  if (state.loadingAgents) {
-    return `<div class="detail-loading">Loading AI agents…</div>`;
+function renderAIFixModelSection(state: AIFixViewState, providers: AIProviderOption[]): string {
+  if (state.loadingOptions) {
+    return `<div class="detail-loading">Loading AI models…</div>`;
   }
-  if (agents.length === 0) {
-    return `<div class="detail-empty">No AI agent is configured for the local scanner.</div>`;
+  if (providers.length === 0) {
+    return `<div class="detail-empty">No AI provider is available for the local scanner.</div>`;
   }
 
-  const selectOptions = agents
-    .map(agent => `<option value="${esc(agent.id)}"${state.selectedAgentId === agent.id ? " selected" : ""}>${esc(agent.label)} · ${esc(agent.model)}</option>`)
+  const selectedProvider = providers.find(provider => provider.id === state.selectedProviderId) ?? providers[0];
+  const providerOptions = providers
+    .map(provider => `<option value="${esc(provider.id)}"${state.selectedProviderId === provider.id ? " selected" : ""}>${esc(provider.label)}</option>`)
     .join("");
+  const suggestedModels = selectedProvider?.models ?? [];
+  const modelOptions = suggestedModels
+    .map(model => `<option value="${esc(model)}"></option>`)
+    .join("");
+  let apiKeyHint = `<div class="ai-fix-helper">This provider can generate local previews without an API key.</div>`;
+  let apiKeyPlaceholder = "Required for this provider";
+  if (selectedProvider?.requires_api_key) {
+    if (selectedProvider.configured) {
+      apiKeyHint = `<div class="ai-fix-helper">Using the scanner's configured API key. Paste another key below to override it for this session.</div>`;
+      apiKeyPlaceholder = "Optional override";
+    } else {
+      apiKeyHint = `<div class="ai-fix-helper">Paste an API key for the selected provider to generate the fix.</div>`;
+    }
+  }
+  const apiKeyInput = selectedProvider?.requires_api_key
+    ? `<div class="ai-fix-control-group">
+          <label class="ai-fix-control-label" for="ai-api-key-input">API key</label>
+          <input id="ai-api-key-input" class="ai-fix-select ai-fix-input" type="password" value="${esc(state.apiKey)}" placeholder="${apiKeyPlaceholder}" autocomplete="off">
+        </div>`
+    : "";
   const generateLabel = state.loadingPreview ? "Generating…" : "Generate fix";
   const generateDisabled = state.loadingPreview ? " disabled" : "";
 
   return `<div class="ai-fix-controls">
-      <select id="ai-agent-select" class="ai-fix-select">${selectOptions}</select>
+      <div class="ai-fix-control-group">
+        <label class="ai-fix-control-label" for="ai-provider-select">Provider</label>
+        <select id="ai-provider-select" class="ai-fix-select">${providerOptions}</select>
+      </div>
+      <div class="ai-fix-control-group">
+        <label class="ai-fix-control-label" for="ai-model-input">Model</label>
+        <input id="ai-model-input" class="ai-fix-select ai-fix-input" list="ai-model-options" value="${esc(state.selectedModel)}" placeholder="${esc(selectedProvider?.default_model || "gpt-4.1-mini")}" autocomplete="off">
+        <datalist id="ai-model-options">${modelOptions}</datalist>
+      </div>
+      ${apiKeyInput}
+      ${apiKeyHint}
       <button id="ai-generate-fix" class="ai-fix-button"${generateDisabled}>${generateLabel}</button>
     </div>`;
 }
@@ -95,7 +128,8 @@ function renderAIFixPreviewSection(state: AIFixViewState): string {
 
   return `
     <div class="ai-fix-preview-meta">
-      <div><strong>Agent:</strong> ${esc(state.preview.agent.label)}</div>
+      <div><strong>Provider:</strong> ${esc(state.preview.agent.label)}</div>
+      <div><strong>Model:</strong> ${esc(state.preview.agent.model)}</div>
       <div><strong>Summary:</strong> ${esc(previewSummary)}</div>
     </div>
     ${explanation}
