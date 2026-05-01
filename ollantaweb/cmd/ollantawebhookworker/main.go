@@ -3,11 +3,12 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
 
+	telemetry "github.com/scovl/ollanta/adapter/secondary/telemetry"
 	"github.com/scovl/ollanta/ollantastore/postgres"
 	"github.com/scovl/ollanta/ollantaweb/config"
 	"github.com/scovl/ollanta/ollantaweb/webhook"
@@ -15,18 +16,31 @@ import (
 
 func main() {
 	cfg := config.MustLoad()
+	slog.SetDefault(telemetry.SetupLogger(cfg.LogLevel, "service", "ollantawebhookworker", "role", "webhookworker"))
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	shutdownTracing, err := telemetry.SetupTracing(ctx, "ollantawebhookworker")
+	if err != nil {
+		slog.Error("setup tracing", "error", err)
+		os.Exit(1)
+	}
+	defer func() {
+		if err := shutdownTracing(context.Background()); err != nil {
+			slog.Warn("shutdown tracing", "error", err)
+		}
+	}()
 
 	db, err := postgres.New(ctx, cfg.DatabaseURL)
 	if err != nil {
-		log.Fatalf("ollantawebhookworker: connect postgres: %v", err)
+		slog.Error("connect postgres", "error", err)
+		os.Exit(1)
 	}
 	defer db.Close()
 
 	if err := db.Migrate(ctx); err != nil {
-		log.Fatalf("ollantawebhookworker: migrate: %v", err)
+		slog.Error("migrate database", "error", err)
+		os.Exit(1)
 	}
 
 	webhookRepo := postgres.NewWebhookRepository(db)
@@ -37,9 +51,12 @@ func main() {
 		hostname = "ollantawebhookworker"
 	}
 	workerID := fmt.Sprintf("%s-%d", hostname, os.Getpid())
+	metricsReg := telemetry.NewRegistry()
+	appMetrics := telemetry.NewMetrics(metricsReg)
+	telemetry.StartAdminServer(ctx, cfg.AdminAddr, metricsReg, nil)
 
-	dispatcher := webhook.NewDispatcher(webhookRepo, webhookJobRepo, workerID)
-	log.Printf("ollantawebhookworker: started as %s", workerID)
+	dispatcher := webhook.NewDispatcher(webhookRepo, webhookJobRepo, workerID, appMetrics)
+	slog.Info("started", "worker_id", workerID, "admin_addr", cfg.AdminAddr)
 	dispatcher.Start(ctx)
-	log.Println("ollantawebhookworker: stopped")
+	slog.Info("stopped")
 }

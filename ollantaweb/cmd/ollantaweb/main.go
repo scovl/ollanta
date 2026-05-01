@@ -6,38 +6,51 @@ package main
 import (
 	"context"
 	"errors"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
+	telemetry "github.com/scovl/ollanta/adapter/secondary/telemetry"
 	"github.com/scovl/ollanta/ollantastore/postgres"
 	"github.com/scovl/ollanta/ollantastore/search"
 	"github.com/scovl/ollanta/ollantaweb/api"
 	"github.com/scovl/ollanta/ollantaweb/config"
-	"github.com/scovl/ollanta/ollantaweb/telemetry"
 	"github.com/scovl/ollanta/ollantaweb/webhook"
 )
 
 func main() {
 	cfg := config.MustLoad()
+	slog.SetDefault(telemetry.SetupLogger(cfg.LogLevel, "service", "ollantaweb", "role", "api"))
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	shutdownTracing, err := telemetry.SetupTracing(ctx, "ollantaweb")
+	if err != nil {
+		slog.Error("setup tracing", "error", err)
+		os.Exit(1)
+	}
+	defer func() {
+		if err := shutdownTracing(context.Background()); err != nil {
+			slog.Warn("shutdown tracing", "error", err)
+		}
+	}()
 
 	// ── PostgreSQL ─────────────────────────────────────────────────────────
 	db, err := postgres.New(ctx, cfg.DatabaseURL)
 	if err != nil {
-		log.Fatalf("ollantaweb: connect postgres: %v", err)
+		slog.Error("connect postgres", "error", err)
+		os.Exit(1)
 	}
 	defer db.Close()
 
 	if err := db.Migrate(ctx); err != nil {
-		log.Fatalf("ollantaweb: migrate: %v", err)
+		slog.Error("migrate database", "error", err)
+		os.Exit(1)
 	}
-	log.Println("ollantaweb: database migrations applied")
+	slog.Info("database migrations applied")
 
 	// ── Repositories ───────────────────────────────────────────────────────
 	projectRepo := postgres.NewProjectRepository(db)
@@ -67,10 +80,11 @@ func main() {
 	}
 	searcher, indexer, err := search.NewBackend(cfg.SearchBackend, zincCfg, db.Pool)
 	if err != nil {
-		log.Fatalf("ollantaweb: create search backend: %v", err)
+		slog.Error("create search backend", "error", err)
+		os.Exit(1)
 	}
 	if err := indexer.ConfigureIndexes(ctx); err != nil {
-		log.Printf("ollantaweb: search configure: %v (continuing)", err)
+		slog.Warn("search configure failed; continuing", "error", err)
 	}
 
 	// ── Health deps ────────────────────────────────────────────────────────
@@ -79,8 +93,7 @@ func main() {
 	// ── Telemetry ──────────────────────────────────────────────────────────
 	metricsReg := telemetry.NewRegistry()
 	appMetrics := telemetry.NewMetrics(metricsReg)
-	_ = appMetrics // wired into pipeline below
-	webhookDispatcher := webhook.NewDispatcher(webhookRepo, webhookJobRepo, "ollantaweb")
+	webhookDispatcher := webhook.NewDispatcher(webhookRepo, webhookJobRepo, "ollantaweb", appMetrics)
 
 	// ── HTTP server ────────────────────────────────────────────────────────
 	router := api.NewRouter(&api.RouterDeps{
@@ -106,31 +119,33 @@ func main() {
 		WebhookJobs: webhookJobRepo,
 		Dispatcher:  webhookDispatcher,
 		MetricsReg:  metricsReg,
+		AppMetrics:  appMetrics,
 		Changelog:   changelogRepo,
 	})
 
 	srv := &http.Server{
 		Addr:         cfg.Addr,
-		Handler:      router,
+		Handler:      telemetry.WrapHTTPHandler("ollantaweb", router),
 		ReadTimeout:  30 * time.Second,
 		WriteTimeout: 60 * time.Second,
 		IdleTimeout:  120 * time.Second,
 	}
 
 	go func() {
-		log.Printf("ollantaweb: listening on %s", cfg.Addr)
+		slog.Info("listening", "addr", cfg.Addr)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Fatalf("ollantaweb: listen: %v", err)
+			slog.Error("listen failed", "error", err)
+			os.Exit(1)
 		}
 	}()
 
 	<-ctx.Done()
-	log.Println("ollantaweb: shutting down...")
+	slog.Info("shutting down")
 
 	shutCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(shutCtx); err != nil {
-		log.Printf("ollantaweb: graceful shutdown: %v", err)
+		slog.Warn("graceful shutdown failed", "error", err)
 	}
-	log.Println("ollantaweb: stopped")
+	slog.Info("stopped")
 }

@@ -1,12 +1,14 @@
 package api
 
 import (
-	"log"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	telemetry "github.com/scovl/ollanta/adapter/secondary/telemetry"
 	"github.com/scovl/ollanta/ollantastore/postgres"
 	"github.com/scovl/ollanta/ollantaweb/auth"
 )
@@ -156,14 +158,40 @@ type idParseError struct{}
 
 func (e *idParseError) Error() string { return "invalid id" }
 
-// RequestLogger logs each request with method, path, status, and duration.
-func RequestLogger(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
-		start := time.Now()
-		next.ServeHTTP(ww, r)
-		log.Printf("%s %s %d %s", r.Method, r.URL.Path, ww.Status(), time.Since(start))
-	})
+// RequestLogger logs each request with method, route, status, and duration.
+func RequestLogger(metrics *telemetry.Metrics) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
+			start := time.Now()
+			next.ServeHTTP(ww, r)
+
+			duration := time.Since(start)
+			metrics.ObserveHTTPRequest(duration)
+
+			route := r.URL.Path
+			if routeContext := chi.RouteContext(r.Context()); routeContext != nil {
+				if pattern := routeContext.RoutePattern(); pattern != "" {
+					route = pattern
+				}
+			}
+
+			attrs := telemetry.WithTraceAttrs(
+				r.Context(),
+				"method", r.Method,
+				"path", r.URL.Path,
+				"route", route,
+				"status", ww.Status(),
+				"duration_ms", duration.Milliseconds(),
+			)
+
+			if ww.Status() >= http.StatusInternalServerError || duration >= 5*time.Second {
+				slog.WarnContext(r.Context(), "request completed", attrs...)
+				return
+			}
+			slog.InfoContext(r.Context(), "request completed", attrs...)
+		})
+	}
 }
 
 // CORS adds permissive CORS headers to every response.

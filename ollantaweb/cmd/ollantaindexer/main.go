@@ -3,11 +3,12 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
 
+	telemetry "github.com/scovl/ollanta/adapter/secondary/telemetry"
 	"github.com/scovl/ollanta/ollantastore/postgres"
 	"github.com/scovl/ollanta/ollantastore/search"
 	"github.com/scovl/ollanta/ollantaweb/config"
@@ -16,18 +17,31 @@ import (
 
 func main() {
 	cfg := config.MustLoad()
+	slog.SetDefault(telemetry.SetupLogger(cfg.LogLevel, "service", "ollantaindexer", "role", "indexer"))
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	shutdownTracing, err := telemetry.SetupTracing(ctx, "ollantaindexer")
+	if err != nil {
+		slog.Error("setup tracing", "error", err)
+		os.Exit(1)
+	}
+	defer func() {
+		if err := shutdownTracing(context.Background()); err != nil {
+			slog.Warn("shutdown tracing", "error", err)
+		}
+	}()
 
 	db, err := postgres.New(ctx, cfg.DatabaseURL)
 	if err != nil {
-		log.Fatalf("ollantaindexer: connect postgres: %v", err)
+		slog.Error("connect postgres", "error", err)
+		os.Exit(1)
 	}
 	defer db.Close()
 
 	if err := db.Migrate(ctx); err != nil {
-		log.Fatalf("ollantaindexer: migrate: %v", err)
+		slog.Error("migrate database", "error", err)
+		os.Exit(1)
 	}
 
 	indexJobRepo := postgres.NewIndexJobRepository(db)
@@ -40,10 +54,11 @@ func main() {
 	}
 	_, indexer, err := search.NewBackend(cfg.SearchBackend, zincCfg, db.Pool)
 	if err != nil {
-		log.Fatalf("ollantaindexer: create search backend: %v", err)
+		slog.Error("create search backend", "error", err)
+		os.Exit(1)
 	}
 	if err := indexer.ConfigureIndexes(ctx); err != nil {
-		log.Printf("ollantaindexer: search configure: %v (continuing)", err)
+		slog.Warn("search configure failed; continuing", "error", err)
 	}
 
 	hostname, err := os.Hostname()
@@ -51,9 +66,12 @@ func main() {
 		hostname = "ollantaindexer"
 	}
 	workerID := fmt.Sprintf("%s-%d", hostname, os.Getpid())
+	metricsReg := telemetry.NewRegistry()
+	appMetrics := telemetry.NewMetrics(metricsReg)
+	telemetry.StartAdminServer(ctx, cfg.AdminAddr, metricsReg, nil)
 
-	worker := ingest.NewWorker(indexer, issueRepo, indexJobRepo, workerID)
-	log.Printf("ollantaindexer: started as %s", workerID)
+	worker := ingest.NewWorker(indexer, issueRepo, indexJobRepo, workerID, appMetrics)
+	slog.Info("started", "worker_id", workerID, "admin_addr", cfg.AdminAddr)
 	worker.Start(ctx)
-	log.Println("ollantaindexer: stopped")
+	slog.Info("stopped")
 }

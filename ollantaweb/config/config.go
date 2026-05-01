@@ -15,6 +15,9 @@ type Config struct {
 	// Addr is the TCP address the HTTP server listens on (e.g. ":8080").
 	Addr string
 
+	// AdminAddr is the TCP address exposed by long-running worker roles for health and metrics.
+	AdminAddr string
+
 	// DatabaseURL is the PostgreSQL connection string.
 	// Required. Format: postgres://user:pass@host:5432/dbname?sslmode=disable
 	DatabaseURL string
@@ -86,6 +89,7 @@ func Load() (*Config, error) {
 
 	cfg := &Config{
 		Addr:               envOr("OLLANTA_ADDR", ":8080"),
+		AdminAddr:          envOr("OLLANTA_ADMIN_ADDR", ":9090"),
 		DatabaseURL:        os.Getenv("OLLANTA_DATABASE_URL"),
 		ZincSearchURL:      envOr("OLLANTA_ZINCSEARCH_URL", "http://localhost:4080"),
 		ZincSearchUser:     envOr("OLLANTA_ZINCSEARCH_USER", "admin"),

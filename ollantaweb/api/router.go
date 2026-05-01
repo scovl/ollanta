@@ -1,15 +1,17 @@
 package api
 
 import (
+	"log/slog"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	telemetry "github.com/scovl/ollanta/adapter/secondary/telemetry"
+	"github.com/scovl/ollanta/ollantacore/branding"
 	"github.com/scovl/ollanta/ollantastore/postgres"
 	"github.com/scovl/ollanta/ollantastore/search"
 	"github.com/scovl/ollanta/ollantaweb/config"
 	"github.com/scovl/ollanta/ollantaweb/ingest"
-	"github.com/scovl/ollanta/ollantaweb/telemetry"
 	"github.com/scovl/ollanta/ollantaweb/webhook"
 )
 
@@ -42,6 +44,7 @@ type RouterDeps struct {
 	WebhookJobs *postgres.WebhookJobRepository
 	Dispatcher  *webhook.Dispatcher
 	MetricsReg  *telemetry.Registry
+	AppMetrics  *telemetry.Metrics
 	Changelog   *postgres.ChangelogRepository
 }
 
@@ -53,7 +56,7 @@ func NewRouter(d *RouterDeps) http.Handler {
 	r.Use(middleware.RequestID)
 	r.Use(middleware.Recoverer)
 	r.Use(telemetry.TraceIDMiddleware)
-	r.Use(RequestLogger)
+	r.Use(RequestLogger(d.AppMetrics))
 	r.Use(CORS)
 	r.Use(MaxBody(10 << 20)) // 10 MB
 
@@ -65,6 +68,7 @@ func NewRouter(d *RouterDeps) http.Handler {
 	// ── Public badges (embeddable in READMEs, no auth) ─────────────────
 	bh := &BadgesHandler{projects: d.Projects, scans: d.Scans, measures: d.Measures}
 	r.Get("/api/v1/projects/{key}/badge", bh.QualityGate)
+	r.Get("/branding/ollanta-mark.png", serveBrandMark)
 
 	// ── Auth middleware ────────────────────────────────────────────────────
 	authMW := NewAuthMiddleware(d.Users, d.Tokens, d.Sessions, []byte(d.Config.JWTSecret), d.Config.ScannerToken)
@@ -305,4 +309,12 @@ func NewRouter(d *RouterDeps) http.Handler {
 	r.Handle("/*", staticHandler())
 
 	return r
+}
+
+func serveBrandMark(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Cache-Control", "public, max-age=86400")
+	if _, err := w.Write(branding.MarkPNG()); err != nil {
+		slog.Error("write brand mark response", "error", err)
+	}
 }

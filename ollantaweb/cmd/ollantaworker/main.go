@@ -3,12 +3,13 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
+	telemetry "github.com/scovl/ollanta/adapter/secondary/telemetry"
 	"github.com/scovl/ollanta/ollantastore/postgres"
 	"github.com/scovl/ollanta/ollantaweb/config"
 	"github.com/scovl/ollanta/ollantaweb/ingest"
@@ -17,18 +18,31 @@ import (
 
 func main() {
 	cfg := config.MustLoad()
+	slog.SetDefault(telemetry.SetupLogger(cfg.LogLevel, "service", "ollantaworker", "role", "worker"))
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	shutdownTracing, err := telemetry.SetupTracing(ctx, "ollantaworker")
+	if err != nil {
+		slog.Error("setup tracing", "error", err)
+		os.Exit(1)
+	}
+	defer func() {
+		if err := shutdownTracing(context.Background()); err != nil {
+			slog.Warn("shutdown tracing", "error", err)
+		}
+	}()
 
 	db, err := postgres.New(ctx, cfg.DatabaseURL)
 	if err != nil {
-		log.Fatalf("ollantaworker: connect postgres: %v", err)
+		slog.Error("connect postgres", "error", err)
+		os.Exit(1)
 	}
 	defer db.Close()
 
 	if err := db.Migrate(ctx); err != nil {
-		log.Fatalf("ollantaworker: migrate: %v", err)
+		slog.Error("migrate database", "error", err)
+		os.Exit(1)
 	}
 
 	projectRepo := postgres.NewProjectRepository(db)
@@ -46,9 +60,12 @@ func main() {
 		hostname = "ollantaworker"
 	}
 	workerID := fmt.Sprintf("%s-%d", hostname, os.Getpid())
+	metricsReg := telemetry.NewRegistry()
+	appMetrics := telemetry.NewMetrics(metricsReg)
+	telemetry.StartAdminServer(ctx, cfg.AdminAddr, metricsReg, nil)
 
 	indexEnqueuer := ingest.NewIndexJobEnqueuer(indexJobRepo)
-	webhookDispatcher := webhook.NewDispatcher(webhookRepo, webhookJobRepo, workerID)
+	webhookDispatcher := webhook.NewDispatcher(webhookRepo, webhookJobRepo, workerID, appMetrics)
 
 	processor := ingest.NewScanJobProcessor(
 		workerID,
@@ -63,11 +80,11 @@ func main() {
 		indexEnqueuer,
 		webhookDispatcher,
 	)
-	jobWorker := ingest.NewScanJobWorker(processor, time.Second)
+	jobWorker := ingest.NewScanJobWorker(processor, time.Second, appMetrics)
 
-	log.Printf("ollantaworker: started as %s", workerID)
+	slog.Info("started", "worker_id", workerID, "admin_addr", cfg.AdminAddr)
 	jobWorker.Start(ctx)
 
 	webhookDispatcher.Stop()
-	log.Println("ollantaworker: stopped")
+	slog.Info("stopped")
 }
