@@ -2,9 +2,10 @@ package ingest
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"time"
 
+	telemetry "github.com/scovl/ollanta/adapter/secondary/telemetry"
 	"github.com/scovl/ollanta/domain/model"
 	"github.com/scovl/ollanta/domain/port"
 	"github.com/scovl/ollanta/ollantastore/postgres"
@@ -299,9 +300,14 @@ type searchEnqueuerAdapter struct {
 	inner IndexEnqueuer
 }
 
-func (a searchEnqueuerAdapter) Enqueue(scanID, projectID int64, projectKey string) {
-	if err := a.inner.Enqueue(context.Background(), scanID, projectID, projectKey); err != nil {
-		log.Printf("ingest: enqueue search index for scan %d: %v", scanID, err)
+func (a searchEnqueuerAdapter) Enqueue(ctx context.Context, scanID, projectID int64, projectKey string) {
+	if err := a.inner.Enqueue(ctx, scanID, projectID, projectKey); err != nil {
+		slog.WarnContext(ctx, "enqueue search index job", telemetry.WithTraceAttrs(ctx,
+			"scan_id", scanID,
+			"project_id", projectID,
+			"project_key", projectKey,
+			"error", err,
+		)...)
 	}
 }
 
@@ -422,6 +428,8 @@ func toDomainScanJob(job *postgres.ScanJob) *model.ScanJob {
 		ProjectKey:  job.ProjectKey,
 		Status:      model.ScanJobStatus(job.Status),
 		Payload:     job.Payload,
+		TraceParent: job.TraceParent,
+		TraceState:  job.TraceState,
 		ScanID:      job.ScanID,
 		WorkerID:    job.WorkerID,
 		LastError:   job.LastError,
@@ -441,6 +449,8 @@ func toStoreScanJob(job *model.ScanJob) *postgres.ScanJob {
 		ProjectKey:  job.ProjectKey,
 		Status:      string(job.Status),
 		Payload:     job.Payload,
+		TraceParent: job.TraceParent,
+		TraceState:  job.TraceState,
 		ScanID:      job.ScanID,
 		WorkerID:    job.WorkerID,
 		LastError:   job.LastError,
@@ -459,6 +469,8 @@ func copyScanJobFromStore(dst *model.ScanJob, src *postgres.ScanJob) {
 	dst.ProjectKey = src.ProjectKey
 	dst.Status = model.ScanJobStatus(src.Status)
 	dst.Payload = src.Payload
+	dst.TraceParent = src.TraceParent
+	dst.TraceState = src.TraceState
 	dst.ScanID = src.ScanID
 	dst.WorkerID = src.WorkerID
 	dst.LastError = src.LastError

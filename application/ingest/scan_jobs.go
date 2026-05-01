@@ -8,6 +8,8 @@ import (
 
 	"github.com/scovl/ollanta/domain/model"
 	"github.com/scovl/ollanta/domain/port"
+	"github.com/scovl/ollanta/ollantacore/tracectx"
+	"go.opentelemetry.io/otel"
 )
 
 // ScanJobService persists accepted scan submissions before background processing begins.
@@ -39,6 +41,7 @@ func (s *ScanJobService) Submit(ctx context.Context, req *IngestRequest) (*model
 		Status:     model.ScanJobStatusAccepted,
 		Payload:    payload,
 	}
+	job.TraceParent, job.TraceState = tracectx.Inject(ctx)
 	if err := s.jobs.Create(ctx, job); err != nil {
 		return nil, fmt.Errorf("create scan job: %w", err)
 	}
@@ -73,8 +76,13 @@ func (p *ScanJobProcessor) ProcessNext(ctx context.Context) (*model.ScanJob, err
 		return nil, err
 	}
 
+	ctx = tracectx.Extract(ctx, job.TraceParent, job.TraceState)
+	ctx, span := otel.Tracer("github.com/scovl/ollanta/application/ingest").Start(ctx, "scan_job.process")
+	defer span.End()
+
 	var req IngestRequest
 	if err := json.Unmarshal(job.Payload, &req); err != nil {
+		span.RecordError(err)
 		markErr := p.jobs.MarkFailed(ctx, job.ID, "decode payload: "+err.Error())
 		if markErr != nil {
 			return job, fmt.Errorf("decode payload: %v; mark failed: %w", err, markErr)
@@ -86,6 +94,7 @@ func (p *ScanJobProcessor) ProcessNext(ctx context.Context) (*model.ScanJob, err
 
 	result, err := p.ingest.Ingest(ctx, &req)
 	if err != nil {
+		span.RecordError(err)
 		markErr := p.jobs.MarkFailed(ctx, job.ID, err.Error())
 		if markErr != nil {
 			return job, fmt.Errorf("ingest job: %v; mark failed: %w", err, markErr)
@@ -96,6 +105,7 @@ func (p *ScanJobProcessor) ProcessNext(ctx context.Context) (*model.ScanJob, err
 	}
 
 	if err := p.jobs.MarkCompleted(ctx, job.ID, result.ScanID); err != nil {
+		span.RecordError(err)
 		return job, fmt.Errorf("mark completed: %w", err)
 	}
 

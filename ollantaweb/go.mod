@@ -6,6 +6,7 @@ require (
 	github.com/go-chi/chi/v5 v5.2.1
 	github.com/golang-jwt/jwt/v4 v4.5.1
 	github.com/jackc/pgx/v5 v5.7.2
+	github.com/scovl/ollanta/adapter v0.0.0
 	github.com/scovl/ollanta/application v0.0.0
 	github.com/scovl/ollanta/domain v0.0.0
 	github.com/scovl/ollanta/ollantacore v0.0.0
@@ -23,6 +24,7 @@ require (
 )
 
 replace (
+	github.com/scovl/ollanta/adapter => ../adapter
 	github.com/scovl/ollanta/application => ../application
 	github.com/scovl/ollanta/domain => ../domain
 	github.com/scovl/ollanta/ollantacore => ../ollantacore

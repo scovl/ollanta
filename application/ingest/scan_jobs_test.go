@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/scovl/ollanta/domain/model"
+	"github.com/scovl/ollanta/ollantacore/tracectx"
+	"go.opentelemetry.io/otel/trace"
 )
 
 func TestScanJobServiceSubmitPersistsAcceptedJob(t *testing.T) {
@@ -14,8 +16,9 @@ func TestScanJobServiceSubmitPersistsAcceptedJob(t *testing.T) {
 
 	repo := &fakeScanJobRepo{}
 	svc := NewScanJobService(repo)
+	ctx, expectedTraceID := tracedContext()
 
-	job, err := svc.Submit(context.Background(), &IngestRequest{
+	job, err := svc.Submit(ctx, &IngestRequest{
 		Metadata: IngestMetadata{ProjectKey: "demo"},
 	})
 	if err != nil {
@@ -32,6 +35,15 @@ func TestScanJobServiceSubmitPersistsAcceptedJob(t *testing.T) {
 	}
 	if len(repo.created.Payload) == 0 {
 		t.Fatal("expected payload to be stored")
+	}
+	if repo.created.TraceParent == "" {
+		t.Fatal("expected traceparent to be stored with accepted job")
+	}
+	if repo.created.TraceState != "" {
+		t.Fatalf("created.TraceState = %q, want empty tracestate for test context", repo.created.TraceState)
+	}
+	if trace.SpanContextFromContext(tracectx.Extract(context.Background(), repo.created.TraceParent, repo.created.TraceState)).TraceID().String() != expectedTraceID {
+		t.Fatalf("created trace id did not round-trip")
 	}
 	if repo.created.ID == 0 {
 		t.Fatal("expected repository to assign an id")
@@ -65,7 +77,9 @@ func TestScanJobProcessorProcessNextMarksCompleted(t *testing.T) {
 	if err != nil {
 		t.Fatalf("json.Marshal() error = %v", err)
 	}
-	jobRepo.next = &model.ScanJob{ID: 7, ProjectKey: "demo", Status: model.ScanJobStatusAccepted, Payload: payload}
+	jobCtx, expectedTraceID := tracedContext()
+	traceParent, traceState := tracectx.Inject(jobCtx)
+	jobRepo.next = &model.ScanJob{ID: 7, ProjectKey: "demo", Status: model.ScanJobStatusAccepted, Payload: payload, TraceParent: traceParent, TraceState: traceState}
 
 	processor := NewScanJobProcessor(
 		"worker-1",
@@ -91,6 +105,9 @@ func TestScanJobProcessorProcessNextMarksCompleted(t *testing.T) {
 	}
 	if projectRepo.upserted == nil || projectRepo.upserted.Key != "demo" {
 		t.Fatal("expected ingest to upsert the project")
+	}
+	if projectRepo.traceID != expectedTraceID {
+		t.Fatalf("project repo traceID = %q, want %q", projectRepo.traceID, expectedTraceID)
 	}
 	if scanRepo.created == nil || scanRepo.created.ProjectID == 0 {
 		t.Fatal("expected ingest to create a scan")
@@ -199,6 +216,7 @@ func (r *fakeScanJobRepo) MarkFailed(_ context.Context, id int64, lastError stri
 
 type fakeProjectRepo struct {
 	upserted *model.Project
+	traceID  string
 }
 
 func (r *fakeProjectRepo) Create(_ context.Context, p *model.Project) error {
@@ -206,9 +224,12 @@ func (r *fakeProjectRepo) Create(_ context.Context, p *model.Project) error {
 	return nil
 }
 
-func (r *fakeProjectRepo) Upsert(_ context.Context, p *model.Project) error {
+func (r *fakeProjectRepo) Upsert(ctx context.Context, p *model.Project) error {
 	p.ID = 1
 	r.upserted = &model.Project{ID: p.ID, Key: p.Key, Name: p.Name}
+	if spanContext := trace.SpanContextFromContext(ctx); spanContext.IsValid() {
+		r.traceID = spanContext.TraceID().String()
+	}
 	return nil
 }
 
@@ -332,4 +353,15 @@ func cloneScanJob(job *model.ScanJob) *model.ScanJob {
 		clone.Payload = append([]byte(nil), job.Payload...)
 	}
 	return &clone
+}
+
+func tracedContext() (context.Context, string) {
+	spanContext := trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID:    trace.TraceID{0x10, 0x32, 0x54, 0x76, 0x98, 0xba, 0xdc, 0xfe, 0x10, 0x32, 0x54, 0x76, 0x98, 0xba, 0xdc, 0xfe},
+		SpanID:     trace.SpanID{0x10, 0x32, 0x54, 0x76, 0x98, 0xba, 0xdc, 0xfe},
+		TraceFlags: trace.FlagsSampled,
+		Remote:     true,
+	})
+	ctx := trace.ContextWithRemoteSpanContext(context.Background(), spanContext)
+	return ctx, spanContext.TraceID().String()
 }

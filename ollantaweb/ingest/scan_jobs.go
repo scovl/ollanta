@@ -35,6 +35,7 @@ func (s *ScanJobService) Get(ctx context.Context, id int64) (*ScanJob, error) {
 // ScanJobProcessor runs accepted jobs through the ingest use case.
 type ScanJobProcessor struct {
 	inner *appingest.ScanJobProcessor
+	jobs  *postgres.ScanJobRepository
 }
 
 // IngestRepositories groups the repositories required by the durable ingest worker.
@@ -76,12 +77,21 @@ func NewScanJobProcessor(
 
 	return &ScanJobProcessor{
 		inner: appingest.NewScanJobProcessor(workerID, &scanJobRepoAdapter{inner: jobs}, ingestUseCase),
+		jobs:  jobs,
 	}
 }
 
 // ProcessNext claims and processes the next accepted job.
 func (p *ScanJobProcessor) ProcessNext(ctx context.Context) (*ScanJob, error) {
 	return p.inner.ProcessNext(ctx)
+}
+
+// CountByStatus returns the number of durable scan jobs in the given state.
+func (p *ScanJobProcessor) CountByStatus(ctx context.Context, status string) (int, error) {
+	if p == nil || p.jobs == nil {
+		return 0, nil
+	}
+	return p.jobs.CountByStatus(ctx, status)
 }
 
 type webhookDispatcherAdapter struct {

@@ -11,11 +11,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"time"
 
+	telemetry "github.com/scovl/ollanta/adapter/secondary/telemetry"
+	"github.com/scovl/ollanta/ollantacore/tracectx"
 	"github.com/scovl/ollanta/ollantastore/postgres"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // Event names recognised by the dispatcher.
@@ -38,6 +41,7 @@ type webhookStore interface {
 type webhookJobStore interface {
 	Create(ctx context.Context, job *postgres.WebhookJob) error
 	ClaimNext(ctx context.Context, workerID string) (*postgres.WebhookJob, error)
+	CountByStatus(ctx context.Context, status string) (int, error)
 	Reschedule(ctx context.Context, id int64, lastError string, nextAttemptAt time.Time, responseCode *int, responseBody *string) error
 	MarkCompleted(ctx context.Context, id int64, responseCode *int, responseBody *string) error
 	MarkFailed(ctx context.Context, id int64, lastError string, responseCode *int, responseBody *string) error
@@ -50,15 +54,17 @@ type Dispatcher struct {
 	client    *http.Client
 	workerID  string
 	pollDelay time.Duration
+	metrics   *telemetry.Metrics
 }
 
 // NewDispatcher creates a durable webhook dispatcher.
-func NewDispatcher(repo *postgres.WebhookRepository, jobs *postgres.WebhookJobRepository, workerID string) *Dispatcher {
+func NewDispatcher(repo *postgres.WebhookRepository, jobs *postgres.WebhookJobRepository, workerID string, metrics *telemetry.Metrics) *Dispatcher {
 	return &Dispatcher{
 		repo:      repo,
 		jobs:      jobs,
 		workerID:  workerID,
 		pollDelay: time.Second,
+		metrics:   metrics,
 		client: &http.Client{
 			Timeout: 10 * time.Second,
 		},
@@ -71,7 +77,7 @@ func (d *Dispatcher) Start(ctx context.Context) {
 		processed, err := d.processNext(ctx)
 		if err != nil {
 			if !errors.Is(err, context.Canceled) {
-				log.Printf("webhook: process next job: %v", err)
+				slog.ErrorContext(ctx, "process next webhook job", "worker_id", d.workerID, "error", err)
 			}
 			if !waitForNextTick(ctx, d.pollDelay) {
 				return
@@ -89,28 +95,32 @@ func (d *Dispatcher) Start(ctx context.Context) {
 
 // Stop is a no-op for the durable dispatcher. The Start context controls shutdown.
 func (d *Dispatcher) Stop() {
+	// Shutdown is controlled by the context passed to Start.
 }
 
 // Dispatch creates durable webhook jobs for all subscribers of the given event.
 func (d *Dispatcher) Dispatch(ctx context.Context, projectID int64, event string, payload any) {
 	data, err := json.Marshal(payload)
 	if err != nil {
-		log.Printf("webhook: marshal payload for event %s: %v", event, err)
+		slog.ErrorContext(ctx, "marshal webhook payload", telemetry.WithTraceAttrs(ctx, "event", event, "error", err)...)
 		return
 	}
 
 	hooks, err := d.repo.ForEvent(ctx, projectID, event)
 	if err != nil {
-		log.Printf("webhook: query hooks for event %s: %v", event, err)
+		slog.ErrorContext(ctx, "query webhooks for event", telemetry.WithTraceAttrs(ctx, "event", event, "project_id", projectID, "error", err)...)
 		return
 	}
 
 	for _, wh := range hooks {
+		traceParent, traceState := tracectx.Inject(ctx)
 		job := &postgres.WebhookJob{
 			WebhookID:     wh.ID,
 			Event:         event,
 			Payload:       data,
 			Status:        "accepted",
+			TraceParent:   traceParent,
+			TraceState:    traceState,
 			NextAttemptAt: time.Now().UTC(),
 		}
 		if projectID != 0 {
@@ -118,7 +128,7 @@ func (d *Dispatcher) Dispatch(ctx context.Context, projectID int64, event string
 			job.ProjectID = &pid
 		}
 		if err := d.jobs.Create(ctx, job); err != nil {
-			log.Printf("webhook: create job for webhook %d event %s: %v", wh.ID, event, err)
+			slog.ErrorContext(ctx, "create webhook job", telemetry.WithTraceAttrs(ctx, "webhook_id", wh.ID, "event", event, "error", err)...)
 		}
 	}
 }
@@ -127,21 +137,52 @@ func (d *Dispatcher) processNext(ctx context.Context) (bool, error) {
 	job, err := d.jobs.ClaimNext(ctx, d.workerID)
 	if err != nil {
 		if errors.Is(err, postgres.ErrNotFound) {
+			d.refreshQueueMetrics(ctx)
 			return false, nil
 		}
 		return false, err
 	}
+	d.refreshQueueMetrics(ctx)
 
-	wh, err := d.repo.GetByID(ctx, job.WebhookID)
+	spanCtx := tracectx.Extract(ctx, job.TraceParent, job.TraceState)
+	spanCtx, span := telemetry.StartSpan(spanCtx, "webhook.process")
+	defer span.End()
+
+	wh, err := d.repo.GetByID(spanCtx, job.WebhookID)
 	if err != nil {
-		if markErr := d.jobs.MarkFailed(ctx, job.ID, err.Error(), nil, nil); markErr != nil {
-			return true, markErr
-		}
-		return true, nil
+		return d.failLookup(spanCtx, span, job, err)
 	}
 
-	code, body, sendErr := d.send(wh, job.Event, job.Payload)
+	del, sendErr := d.deliver(spanCtx, wh, job)
+	if d.metrics != nil {
+		d.metrics.WebhookDeliveries.Inc()
+	}
+	if err := d.repo.CreateDelivery(spanCtx, del); err != nil {
+		slog.WarnContext(spanCtx, "record webhook delivery attempt", telemetry.WithTraceAttrs(spanCtx, "webhook_id", job.WebhookID, "attempt", job.Attempts, "error", err)...)
+	}
 
+	if del.Success {
+		return d.complete(spanCtx, job, del)
+	}
+
+	if job.Attempts >= len(retryDelays) {
+		return d.deadLetter(spanCtx, span, job, del, sendErr)
+	}
+
+	return d.retry(spanCtx, span, job, del, sendErr)
+}
+
+func (d *Dispatcher) failLookup(ctx context.Context, span trace.Span, job *postgres.WebhookJob, err error) (bool, error) {
+	span.RecordError(err)
+	if markErr := d.jobs.MarkFailed(ctx, job.ID, err.Error(), nil, nil); markErr != nil {
+		return true, markErr
+	}
+	d.refreshQueueMetrics(ctx)
+	return true, nil
+}
+
+func (d *Dispatcher) deliver(ctx context.Context, wh *postgres.Webhook, job *postgres.WebhookJob) (*postgres.WebhookDelivery, error) {
+	code, body, sendErr := d.send(ctx, wh, job.Event, job.Payload)
 	del := &postgres.WebhookDelivery{
 		WebhookID: job.WebhookID,
 		Event:     job.Event,
@@ -155,44 +196,91 @@ func (d *Dispatcher) processNext(ctx context.Context) (bool, error) {
 	if body != "" {
 		del.ResponseBody = &body
 	}
-	if err := d.repo.CreateDelivery(ctx, del); err != nil {
-		log.Printf("webhook: record delivery attempt %d for webhook %d: %v", job.Attempts, job.WebhookID, err)
-	}
+	return del, sendErr
+}
 
-	if del.Success {
-		if err := d.jobs.MarkCompleted(ctx, job.ID, del.ResponseCode, del.ResponseBody); err != nil {
-			return true, err
-		}
-		return true, nil
-	}
-
-	if job.Attempts >= len(retryDelays) {
-		log.Printf("webhook: dead-letter webhook %d event %s after %d attempts: %v",
-			job.WebhookID, job.Event, job.Attempts, sendErr)
-		if err := d.jobs.MarkFailed(ctx, job.ID, errorMessage(sendErr, code), del.ResponseCode, del.ResponseBody); err != nil {
-			return true, err
-		}
-		return true, nil
-	}
-
-	delay := retryDelays[job.Attempts-1]
-	log.Printf("webhook: delivery failed (attempt %d/%d) webhook %d event %s: %v — retry in %s",
-		job.Attempts, len(retryDelays), job.WebhookID, job.Event, sendErr, delay)
-	if err := d.jobs.Reschedule(ctx, job.ID, errorMessage(sendErr, code), time.Now().UTC().Add(delay), del.ResponseCode, del.ResponseBody); err != nil {
+func (d *Dispatcher) complete(ctx context.Context, job *postgres.WebhookJob, del *postgres.WebhookDelivery) (bool, error) {
+	if err := d.jobs.MarkCompleted(ctx, job.ID, del.ResponseCode, del.ResponseBody); err != nil {
 		return true, err
 	}
+	d.refreshQueueMetrics(ctx)
 	return true, nil
 }
 
+func (d *Dispatcher) deadLetter(ctx context.Context, span trace.Span, job *postgres.WebhookJob, del *postgres.WebhookDelivery, sendErr error) (bool, error) {
+	span.RecordError(sendErr)
+	slog.ErrorContext(ctx, "webhook dead-lettered",
+		telemetry.WithTraceAttrs(ctx,
+			"webhook_id", job.WebhookID,
+			"event", job.Event,
+			"attempt", job.Attempts,
+			"error", sendErr,
+		)...,
+	)
+	if err := d.jobs.MarkFailed(ctx, job.ID, errorMessage(sendErr, derefInt(del.ResponseCode)), del.ResponseCode, del.ResponseBody); err != nil {
+		return true, err
+	}
+	d.refreshQueueMetrics(ctx)
+	return true, nil
+}
+
+func (d *Dispatcher) retry(ctx context.Context, span trace.Span, job *postgres.WebhookJob, del *postgres.WebhookDelivery, sendErr error) (bool, error) {
+	delay := retryDelays[job.Attempts-1]
+	span.RecordError(sendErr)
+	slog.WarnContext(ctx, "webhook delivery failed; retry scheduled",
+		telemetry.WithTraceAttrs(ctx,
+			"webhook_id", job.WebhookID,
+			"event", job.Event,
+			"attempt", job.Attempts,
+			"max_attempts", len(retryDelays),
+			"delay", delay.String(),
+			"error", sendErr,
+		)...,
+	)
+	if err := d.jobs.Reschedule(ctx, job.ID, errorMessage(sendErr, derefInt(del.ResponseCode)), time.Now().UTC().Add(delay), del.ResponseCode, del.ResponseBody); err != nil {
+		return true, err
+	}
+	d.refreshQueueMetrics(ctx)
+	return true, nil
+}
+
+func derefInt(value *int) int {
+	if value == nil {
+		return 0
+	}
+	return *value
+}
+
+func (d *Dispatcher) refreshQueueMetrics(ctx context.Context) {
+	if d == nil || d.metrics == nil || d.jobs == nil {
+		return
+	}
+
+	depth, err := d.jobs.CountByStatus(ctx, "accepted")
+	if err != nil {
+		slog.WarnContext(ctx, "read webhook job queue depth", "worker_id", d.workerID, "error", err)
+		return
+	}
+	d.metrics.WebhookQueueDepth.Set(int64(depth))
+}
+
 // send performs a single HTTP POST with HMAC signing.
-func (d *Dispatcher) send(wh *postgres.Webhook, event string, payload []byte) (int, string, error) {
-	req, err := http.NewRequest(http.MethodPost, wh.URL, bytes.NewReader(payload))
+func (d *Dispatcher) send(ctx context.Context, wh *postgres.Webhook, event string, payload []byte) (int, string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, wh.URL, bytes.NewReader(payload))
 	if err != nil {
 		return 0, "", fmt.Errorf("build request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Ollanta-Event", event)
 	req.Header.Set("User-Agent", "ollanta-webhook/1.0")
+	if traceParent, traceState := tracectx.Inject(ctx); traceParent != "" || traceState != "" {
+		if traceParent != "" {
+			req.Header.Set("traceparent", traceParent)
+		}
+		if traceState != "" {
+			req.Header.Set("tracestate", traceState)
+		}
+	}
 
 	if wh.Secret != "" {
 		sig := sign(payload, wh.Secret)

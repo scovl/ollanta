@@ -3,11 +3,15 @@ package ingest
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
+	telemetry "github.com/scovl/ollanta/adapter/secondary/telemetry"
+	"github.com/scovl/ollanta/ollantacore/tracectx"
 	"github.com/scovl/ollanta/ollantastore/postgres"
 	"github.com/scovl/ollanta/ollantastore/search"
+	"go.opentelemetry.io/otel/trace"
 )
 
 func TestWorkerProcessNextMarksCompleted(t *testing.T) {
@@ -23,6 +27,8 @@ func TestWorkerProcessNextMarksCompleted(t *testing.T) {
 		}},
 	}
 	indexer := &fakeIndexer{}
+	jobCtx, expectedTraceID := tracedIndexContext()
+	jobs.next.TraceParent, jobs.next.TraceState = tracectx.Inject(jobCtx)
 
 	worker := &Worker{indexer: indexer, issues: issues, jobs: jobs, workerID: "worker-1", maxRetries: 3, batchSize: 1000}
 	processed, err := worker.processNext(context.Background())
@@ -37,6 +43,9 @@ func TestWorkerProcessNextMarksCompleted(t *testing.T) {
 	}
 	if len(indexer.batches) != 1 || len(indexer.batches[0]) != 2 {
 		t.Fatalf("unexpected index batches: %+v", indexer.batches)
+	}
+	if indexer.traceID != expectedTraceID {
+		t.Fatalf("index traceID = %q, want %q", indexer.traceID, expectedTraceID)
 	}
 }
 
@@ -65,9 +74,28 @@ func TestWorkerProcessNextReschedulesOnFailure(t *testing.T) {
 	}
 }
 
+func TestWorkerRefreshQueueMetricsSetsGauge(t *testing.T) {
+	t.Parallel()
+
+	reg := telemetry.NewRegistry()
+	metrics := telemetry.NewMetrics(reg)
+	worker := &Worker{
+		jobs:    &fakeIndexJobStore{counts: map[string]int{"accepted": 3}},
+		metrics: metrics,
+	}
+
+	worker.refreshQueueMetrics(context.Background())
+
+	body := readMetricsBody(t, reg)
+	if !strings.Contains(body, "ollanta_index_queue_depth 3") {
+		t.Fatalf("expected index queue depth in metrics output, got: %s", body)
+	}
+}
+
 type fakeIndexJobStore struct {
 	created        *postgres.IndexJob
 	next           *postgres.IndexJob
+	counts         map[string]int
 	rescheduledID  int64
 	rescheduledErr string
 	completedID    int64
@@ -84,6 +112,10 @@ func (s *fakeIndexJobStore) ClaimNext(_ context.Context, _ string) (*postgres.In
 		return nil, postgres.ErrNotFound
 	}
 	return s.next, nil
+}
+
+func (s *fakeIndexJobStore) CountByStatus(_ context.Context, status string) (int, error) {
+	return s.counts[status], nil
 }
 
 func (s *fakeIndexJobStore) Reschedule(_ context.Context, id int64, lastError string, _ time.Time) error {
@@ -119,19 +151,27 @@ func (q *fakeIssueQueryer) Query(_ context.Context, _ postgres.IssueFilter) ([]*
 type fakeIndexer struct {
 	batches  [][]postgres.IssueRow
 	indexErr error
+	traceID  string
 }
 
 func (f *fakeIndexer) Health(context.Context) error { return nil }
 
 func (f *fakeIndexer) ConfigureIndexes(context.Context) error { return nil }
 
-func (f *fakeIndexer) IndexIssues(_ context.Context, _ string, issues []postgres.IssueRow) error {
+func (f *fakeIndexer) indexIssues(ctx context.Context, issues []postgres.IssueRow) error {
 	if f.indexErr != nil {
 		return f.indexErr
+	}
+	if spanContext := trace.SpanContextFromContext(ctx); spanContext.IsValid() {
+		f.traceID = spanContext.TraceID().String()
 	}
 	copyBatch := append([]postgres.IssueRow(nil), issues...)
 	f.batches = append(f.batches, copyBatch)
 	return nil
+}
+
+func (f *fakeIndexer) IndexIssues(ctx context.Context, _ string, issues []postgres.IssueRow) error {
+	return f.indexIssues(ctx, issues)
 }
 
 func (f *fakeIndexer) IndexProject(context.Context, *postgres.Project) error { return nil }
@@ -143,3 +183,14 @@ func (f *fakeIndexer) ReindexAll(context.Context, *postgres.IssueRepository, *po
 }
 
 var _ search.IIndexer = (*fakeIndexer)(nil)
+
+func tracedIndexContext() (context.Context, string) {
+	spanContext := trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID:    trace.TraceID{0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x01, 0x02, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x01, 0x02},
+		SpanID:     trace.SpanID{0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x01, 0x02},
+		TraceFlags: trace.FlagsSampled,
+		Remote:     true,
+	})
+	ctx := trace.ContextWithRemoteSpanContext(context.Background(), spanContext)
+	return ctx, spanContext.TraceID().String()
+}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/scovl/ollanta/ollantacore/tracectx"
 	"github.com/scovl/ollanta/ollantastore/postgres"
 )
 
@@ -19,11 +20,14 @@ func NewIndexJobEnqueuer(jobs *postgres.IndexJobRepository) *IndexJobEnqueuer {
 
 // Enqueue persists a durable search index job.
 func (e *IndexJobEnqueuer) Enqueue(ctx context.Context, scanID, projectID int64, projectKey string) error {
+	traceParent, traceState := tracectx.Inject(ctx)
 	return e.jobs.Create(ctx, &postgres.IndexJob{
 		ScanID:        scanID,
 		ProjectID:     projectID,
 		ProjectKey:    projectKey,
 		Status:        "accepted",
+		TraceParent:   traceParent,
+		TraceState:    traceState,
 		NextAttemptAt: time.Now().UTC(),
 	})
 }

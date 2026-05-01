@@ -63,7 +63,7 @@ type IngestResult struct {
 // Implementations live in the outer layer chosen by the active runtime.
 type ISearchEnqueuer interface {
 	// Enqueue submits an index job without blocking. Dropping is acceptable.
-	Enqueue(scanID, projectID int64, projectKey string)
+	Enqueue(ctx context.Context, scanID, projectID int64, projectKey string)
 }
 
 // IWebhookDispatcher is an optional outbound port for firing webhooks.
@@ -275,8 +275,8 @@ func (uc *IngestUseCase) Ingest(ctx context.Context, req *IngestRequest) (*Inges
 
 	// ── 9. Async: enqueue search indexing ────────────────────────────────────
 	if uc.indexer != nil {
-		_ = pipelineSteps.indexSearch.run(ctx, func(_ context.Context) error {
-			uc.indexer.Enqueue(scan.ID, project.ID, project.Key)
+		_ = pipelineSteps.indexSearch.run(ctx, func(ctx context.Context) error {
+			uc.indexer.Enqueue(ctx, scan.ID, project.ID, project.Key)
 			return nil
 		})
 	}
