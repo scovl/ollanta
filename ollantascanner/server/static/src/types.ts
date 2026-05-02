@@ -2,6 +2,7 @@ export interface Report {
   metadata: Metadata;
   measures: Measures;
   issues: Issue[];
+  test_signals?: TestSignalReport;
 }
 
 export interface Metadata {
@@ -19,7 +20,51 @@ export interface Measures {
   bugs: number;
   code_smells: number;
   vulnerabilities: number;
+  coverage?: number;
+  tests?: number;
+  test_failures?: number;
+  test_errors?: number;
+  test_skipped?: number;
+  test_duration_ms?: number;
+  mutation_score?: number;
   by_language: Record<string, number>;
+}
+
+export interface TestSignalReport {
+  summary: TestSignalSummary;
+  modules: TestModuleSignal[];
+}
+
+export interface TestSignalSummary {
+  modules?: number;
+  modules_with_coverage?: number;
+  lines_to_cover?: number;
+  covered_lines?: number;
+  coverage?: number;
+}
+
+export interface TestModuleSignal {
+  name: string;
+  root: string;
+  language?: string;
+  architecture_role?: string;
+  coverage?: TestCoverageSummary;
+  files?: TestFileCoverage[];
+}
+
+export interface TestCoverageSummary {
+  lines_to_cover?: number;
+  covered_lines?: number;
+  uncovered_lines?: number;
+  coverage?: number;
+}
+
+export interface TestFileCoverage {
+  path: string;
+  lines_to_cover?: number;
+  covered_lines?: number;
+  covered_line_numbers?: number[];
+  uncovered_lines?: number[];
 }
 
 export interface Issue {

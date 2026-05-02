@@ -13,6 +13,7 @@ import (
 
 type rootConfig struct {
 	Scanner scannerConfig `toml:"scanner"`
+	Tests   testsConfig   `toml:"tests"`
 }
 
 type scannerConfig struct {
@@ -37,6 +38,48 @@ type scannerConfig struct {
 	ServerWaitPoll    string   `toml:"server_wait_poll"`
 }
 
+type testsConfig struct {
+	Enabled        *bool               `toml:"enabled"`
+	Mode           string              `toml:"mode"`
+	Discover       *bool               `toml:"discover"`
+	Run            *bool               `toml:"run"`
+	MaxReportAge   string              `toml:"max_report_age"`
+	Exclusions     []string            `toml:"exclusions"`
+	MaxDepth       int                 `toml:"max_depth"`
+	MaxCandidates  int                 `toml:"max_candidates"`
+	MaxReportBytes int64               `toml:"max_report_bytes"`
+	CommandPolicy  string              `toml:"command_policy"`
+	PathMappings   []testsPathMapping  `toml:"path_mapping"`
+	Modules        []testsModuleConfig `toml:"modules"`
+}
+
+type testsPathMapping struct {
+	From string `toml:"from"`
+	To   string `toml:"to"`
+}
+
+type testsModuleConfig struct {
+	Name                 string   `toml:"name"`
+	Root                 string   `toml:"root"`
+	Language             string   `toml:"language"`
+	ArchitectureRole     string   `toml:"architecture_role"`
+	TestPolicy           string   `toml:"test_policy"`
+	IgnoreReason         string   `toml:"ignore_reason"`
+	Command              string   `toml:"command"`
+	ArtifactRoot         string   `toml:"artifact_root"`
+	ReportRoot           string   `toml:"report_root"`
+	CoverageReports      []string `toml:"coverage_reports"`
+	TestReports          []string `toml:"test_reports"`
+	MutationReports      []string `toml:"mutation_reports"`
+	NativeReports        []string `toml:"native_reports"`
+	CoverageThreshold    *float64 `toml:"coverage_threshold"`
+	NewCoverageThreshold *float64 `toml:"new_coverage_threshold"`
+	MutationThreshold    *float64 `toml:"mutation_threshold"`
+	Owner                string   `toml:"owner"`
+	Team                 string   `toml:"team"`
+	IntegrationRequired  *bool    `toml:"integration_required"`
+}
+
 func parseOptions(args []string) (*appscan.ScanOptions, error) {
 	filteredArgs, configPath, err := extractConfigPath(args)
 	if err != nil {
@@ -53,7 +96,11 @@ func parseOptions(args []string) (*appscan.ScanOptions, error) {
 	if _, found, err := configfile.Load(configPath, &cfg); err != nil {
 		return nil, err
 	} else if found {
+		opts.ConfigPath = configPath
 		if err := applyScannerConfig(opts, cfg.Scanner, provided); err != nil {
+			return nil, err
+		}
+		if err := applyTestsConfig(opts, cfg.Tests, provided); err != nil {
 			return nil, err
 		}
 	}
@@ -134,6 +181,75 @@ func applyScannerConfig(opts *appscan.ScanOptions, cfg scannerConfig, provided m
 		return err
 	}
 	return nil
+}
+
+func applyTestsConfig(opts *appscan.ScanOptions, cfg testsConfig, provided map[string]bool) error {
+	applyBoolFlag(&opts.Tests.Enabled, cfg.Enabled, provided, "with-tests")
+	applyStringFlag(&opts.Tests.Mode, cfg.Mode, provided, "tests-mode")
+	applyBoolFlag(&opts.Tests.Discover, cfg.Discover, provided, "tests-discover")
+	applyBoolFlag(&opts.Tests.Run, cfg.Run, provided, "tests-run")
+	if opts.Tests.Mode == appscan.TestModeRun {
+		opts.Tests.Run = true
+	}
+	if cfg.MaxReportAge != "" {
+		duration, err := time.ParseDuration(cfg.MaxReportAge)
+		if err != nil {
+			return fmt.Errorf("parse tests.max_report_age: %w", err)
+		}
+		opts.Tests.MaxReportAge = duration
+	}
+	if cfg.Exclusions != nil {
+		opts.Tests.Exclusions = append([]string(nil), cfg.Exclusions...)
+	}
+	if cfg.MaxDepth > 0 {
+		opts.Tests.MaxDepth = cfg.MaxDepth
+	}
+	if cfg.MaxCandidates > 0 {
+		opts.Tests.MaxCandidates = cfg.MaxCandidates
+	}
+	if cfg.MaxReportBytes > 0 {
+		opts.Tests.MaxReportBytes = cfg.MaxReportBytes
+	}
+	if cfg.CommandPolicy != "" {
+		opts.Tests.CommandPolicy = cfg.CommandPolicy
+	}
+	opts.Tests.PathMappings = make([]appscan.TestPathMapping, 0, len(cfg.PathMappings))
+	for _, mapping := range cfg.PathMappings {
+		opts.Tests.PathMappings = append(opts.Tests.PathMappings, appscan.TestPathMapping{From: mapping.From, To: mapping.To})
+	}
+	opts.Tests.Modules = make([]appscan.TestModuleConfig, 0, len(cfg.Modules))
+	for _, module := range cfg.Modules {
+		opts.Tests.Modules = append(opts.Tests.Modules, toAppTestModule(module))
+	}
+	return nil
+}
+
+func toAppTestModule(module testsModuleConfig) appscan.TestModuleConfig {
+	integrationRequired := false
+	if module.IntegrationRequired != nil {
+		integrationRequired = *module.IntegrationRequired
+	}
+	return appscan.TestModuleConfig{
+		Name:                 module.Name,
+		Root:                 module.Root,
+		Language:             module.Language,
+		ArchitectureRole:     module.ArchitectureRole,
+		TestPolicy:           module.TestPolicy,
+		IgnoreReason:         module.IgnoreReason,
+		Command:              module.Command,
+		ArtifactRoot:         module.ArtifactRoot,
+		ReportRoot:           module.ReportRoot,
+		CoverageReports:      append([]string(nil), module.CoverageReports...),
+		TestReports:          append([]string(nil), module.TestReports...),
+		MutationReports:      append([]string(nil), module.MutationReports...),
+		NativeReports:        append([]string(nil), module.NativeReports...),
+		CoverageThreshold:    module.CoverageThreshold,
+		NewCoverageThreshold: module.NewCoverageThreshold,
+		MutationThreshold:    module.MutationThreshold,
+		Owner:                module.Owner,
+		Team:                 module.Team,
+		IntegrationRequired:  integrationRequired,
+	}
 }
 
 func applyScannerProjectDir(opts *appscan.ScanOptions, cfg scannerConfig, provided map[string]bool) {

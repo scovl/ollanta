@@ -11,6 +11,44 @@ server_wait = false
 server_wait_timeout = "10m"
 server_wait_poll = "2s"
 
+# Optional test-signal discovery. Disabled by default so scans remain fast and
+# never execute repository test commands unless explicitly requested.
+[tests]
+enabled = false
+mode = "collect" # collect existing reports; use "run" only with explicit opt-in
+discover = true
+run = false
+max_report_age = "24h"
+exclusions = ["node_modules/**", "vendor/**", "dist/**", "build/**", ".git/**"]
+max_depth = 8
+max_candidates = 200
+max_report_bytes = 20971520
+command_policy = "explicit"
+
+[[tests.path_mapping]]
+from = "/workspace/project"
+to = "."
+
+[[tests.modules]]
+name = "domain"
+root = "domain"
+language = "go"
+architecture_role = "domain"
+test_policy = "required"
+command = "go test ./... -coverprofile=coverage.out"
+coverage_reports = ["coverage.out"]
+test_reports = ["junit.xml"]
+coverage_threshold = 85.0
+new_coverage_threshold = 90.0
+owner = "platform"
+team = "quality"
+
+[[tests.modules]]
+name = "generated fixtures"
+root = "testdata/generated"
+test_policy = "ignored"
+ignore_reason = "Generated fixture code is not part of product test health."
+
 [server]
 addr = ":8080"
 admin_addr = ":9090"

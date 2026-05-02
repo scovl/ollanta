@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-# ── Stage 1: builder ──────────────────────────────────────────────────────────
+# â”€â”€ Stage 1: builder â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # golang:1.23-bookworm ships gcc, so CGO works out of the box for tree-sitter.
 FROM golang:1.23-bookworm AS builder
 
@@ -41,7 +41,7 @@ RUN --mount=type=cache,target=/root/go/pkg/mod \
       ./ollantascanner/cmd/ollanta
 
 
-# ── Stage 2: runtime ─────────────────────────────────────────────────────────
+# â”€â”€ Stage 2: runtime â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 FROM debian:bookworm-slim
 
 LABEL org.opencontainers.image.source="https://github.com/scovl/ollanta"
@@ -63,10 +63,10 @@ VOLUME ["/project"]
 WORKDIR /project
 USER nonroot
 
-# Expose the UI port (only active when -serve is passed).
+# Expose the UI port (only active when -local-ui is passed).
 EXPOSE 7777
 
 ENTRYPOINT ["ollanta"]
 # Default: scan /project and open the UI on 0.0.0.0:7777 (container-friendly).
 CMD ["-project-dir", "/project", "-project-key", "project", "-format", "all", \
-     "-serve", "-bind", "0.0.0.0", "-port", "7777"]
+    "-local-ui", "-bind", "0.0.0.0", "-port", "7777"]

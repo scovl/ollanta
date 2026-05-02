@@ -6,9 +6,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	telemetry "github.com/scovl/ollanta/adapter/secondary/telemetry"
@@ -21,6 +23,25 @@ type serverScanJob struct {
 	Status    string `json:"status"`
 	ScanID    *int64 `json:"scan_id,omitempty"`
 	LastError string `json:"last_error,omitempty"`
+}
+
+var serverHTTPClient = &http.Client{Timeout: 30 * time.Second}
+
+func printRunPlan(opts *scan.ScanOptions) {
+	sources := strings.Join(opts.Sources, ",")
+	if sources == "" {
+		sources = "./..."
+	}
+	fmt.Printf("Scanning %s (sources: %s)\n", opts.ProjectDir, sources)
+	if opts.Tests.Enabled {
+		fmt.Printf("Collecting test signals (%d configured module(s))\n", len(opts.Tests.Modules))
+	}
+	if opts.Server != "" {
+		fmt.Printf("Will push results to %s\n", opts.Server)
+	}
+	if opts.Serve {
+		fmt.Printf("Will open local UI on %s:%d\n", opts.Bind, opts.Port)
+	}
 }
 
 type serverScanResult struct {
@@ -45,6 +66,7 @@ func main() {
 	}()
 
 	opts := mustParseOptions()
+	printRunPlan(opts)
 	r := mustRunScan(opts)
 
 	scan.PrintSummary(r)
@@ -65,11 +87,14 @@ func mustParseOptions() *scan.ScanOptions {
 }
 
 func mustRunScan(opts *scan.ScanOptions) *scan.Report {
+	started := time.Now()
+	fmt.Println("Analyzing source files...")
 	r, err := scan.Run(context.Background(), opts)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "scan error:", err)
 		os.Exit(1)
 	}
+	fmt.Printf("Analysis completed in %.1fs\n", time.Since(started).Seconds())
 	return r
 }
 
@@ -118,6 +143,7 @@ func handleServerPush(opts *scan.ScanOptions, r *scan.Report) {
 		return
 	}
 
+	fmt.Printf("Pushing report to %s...\n", opts.Server)
 	result, err := pushReport(opts.Server, opts.ServerToken, r)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "warning: server push failed: %v\n", err)
@@ -145,6 +171,7 @@ func handleServerPush(opts *scan.ScanOptions, r *scan.Report) {
 		os.Exit(1)
 	}
 
+	fmt.Printf("Waiting for server job %d (timeout %s, poll %s)...\n", jobID, opts.WaitTimeout, opts.WaitPoll)
 	finalScan, err := waitForServerJob(opts.Server, opts.ServerToken, jobID, opts.WaitTimeout, opts.WaitPoll)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "warning: waiting for server job failed: %v\n", err)
@@ -173,14 +200,14 @@ func pushReport(serverURL, token string, r interface{}) (map[string]interface{},
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 
-	resp, err := http.DefaultClient.Do(req) //nolint:noctx
+	resp, err := serverHTTPClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("post: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("server returned %d", resp.StatusCode)
+		return nil, fmt.Errorf("server returned %d: %s", resp.StatusCode, readResponsePreview(resp.Body))
 	}
 
 	var result map[string]interface{}
@@ -205,18 +232,11 @@ func waitForServerJob(serverURL, token string, jobID int64, timeout, poll time.D
 		if err != nil {
 			return nil, err
 		}
+		printServerJobStatus(jobID, job)
 
-		switch job.Status {
-		case "completed":
-			if job.ScanID == nil || *job.ScanID == 0 {
-				return nil, fmt.Errorf("scan job %d completed without a linked scan id", jobID)
-			}
-			return getServerScanResult(serverURL, token, *job.ScanID)
-		case "failed":
-			if job.LastError != "" {
-				return nil, fmt.Errorf("scan job %d failed: %s", jobID, job.LastError)
-			}
-			return nil, fmt.Errorf("scan job %d failed", jobID)
+		result, done, err := completedServerJobResult(serverURL, token, jobID, job)
+		if done || err != nil {
+			return result, err
 		}
 
 		if !deadline.IsZero() && time.Now().After(deadline) {
@@ -226,20 +246,53 @@ func waitForServerJob(serverURL, token string, jobID int64, timeout, poll time.D
 	}
 }
 
+func printServerJobStatus(jobID int64, job *serverScanJob) {
+	fmt.Printf("Server job %d: status=%s", jobID, job.Status)
+	if job.ScanID != nil {
+		fmt.Printf(" scan=%d", *job.ScanID)
+	}
+	if job.LastError != "" {
+		fmt.Printf(" error=%q", job.LastError)
+	}
+	fmt.Println()
+}
+
+func completedServerJobResult(serverURL, token string, jobID int64, job *serverScanJob) (*serverScanResult, bool, error) {
+	switch job.Status {
+	case "completed":
+		if job.ScanID == nil || *job.ScanID == 0 {
+			return nil, true, fmt.Errorf("scan job %d completed without a linked scan id", jobID)
+		}
+		result, err := getServerScanResult(serverURL, token, *job.ScanID)
+		return result, true, err
+	case "failed":
+		return nil, true, failedServerJobError(jobID, job.LastError)
+	default:
+		return nil, false, nil
+	}
+}
+
+func failedServerJobError(jobID int64, lastError string) error {
+	if lastError != "" {
+		return fmt.Errorf("scan job %d failed: %s", jobID, lastError)
+	}
+	return fmt.Errorf("scan job %d failed", jobID)
+}
+
 func getServerScanJob(serverURL, token string, jobID int64) (*serverScanJob, error) {
 	req, err := authorizedRequest(http.MethodGet, fmt.Sprintf("%s/api/v1/scan-jobs/%d", serverURL, jobID), token, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	resp, err := http.DefaultClient.Do(req) //nolint:noctx
+	resp, err := serverHTTPClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("get scan job: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("get scan job returned %d", resp.StatusCode)
+		return nil, fmt.Errorf("get scan job returned %d: %s", resp.StatusCode, readResponsePreview(resp.Body))
 	}
 
 	var job serverScanJob
@@ -255,14 +308,14 @@ func getServerScanResult(serverURL, token string, scanID int64) (*serverScanResu
 		return nil, err
 	}
 
-	resp, err := http.DefaultClient.Do(req) //nolint:noctx
+	resp, err := serverHTTPClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("get scan result: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("get scan result returned %d", resp.StatusCode)
+		return nil, fmt.Errorf("get scan result returned %d: %s", resp.StatusCode, readResponsePreview(resp.Body))
 	}
 
 	var result serverScanResult
@@ -270,6 +323,14 @@ func getServerScanResult(serverURL, token string, scanID int64) (*serverScanResu
 		return nil, fmt.Errorf("decode scan result: %w", err)
 	}
 	return &result, nil
+}
+
+func readResponsePreview(body io.Reader) string {
+	data, err := io.ReadAll(io.LimitReader(body, 4096))
+	if err != nil {
+		return err.Error()
+	}
+	return strings.TrimSpace(string(data))
 }
 
 func authorizedRequest(method, url, token string, body *bytes.Reader) (*http.Request, error) {
