@@ -115,6 +115,9 @@ func NewRouter(d *RouterDeps) http.Handler {
 		r.Group(func(r chi.Router) {
 			r.Use(authMW.Authenticate)
 
+			// UI settings
+			r.Get("/ui/settings", sysH.UISettings)
+
 			// Auth management
 			r.Post("/auth/logout", authH.Logout)
 

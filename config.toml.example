@@ -17,6 +17,20 @@ admin_addr = ":9090"
 log_level = "info"
 scanner_token = "ollanta-dev-scanner-token"
 
+# Optional links shown in the web UI admin navigation. Leave unset when your
+# deployment uses another observability stack or when no external UI should be linked.
+[[ui.observability_links]]
+label = "Prometheus"
+url = "http://localhost:9091/targets"
+
+[[ui.observability_links]]
+label = "Jaeger"
+url = "http://localhost:16686"
+
+[[ui.observability_links]]
+label = "Loki"
+url = "http://localhost:3100/ready"
+
 [database]
 host = "localhost"
 port = 5432

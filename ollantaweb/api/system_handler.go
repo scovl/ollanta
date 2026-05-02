@@ -17,8 +17,16 @@ type SystemHandler struct {
 
 // Info handles GET /api/v1/system/info — returns system metadata.
 func (h *SystemHandler) Info(w http.ResponseWriter, r *http.Request) {
-	userCount, _ := h.users.Count(r.Context())
-	_, projectCount, _ := h.projects.List(r.Context(), 1, 0)
+	userCount, err := h.users.Count(r.Context())
+	if err != nil {
+		jsonError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	_, projectCount, err := h.projects.List(r.Context(), 1, 0)
+	if err != nil {
+		jsonError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 
 	jsonOK(w, http.StatusOK, map[string]any{
 		"version":        "0.1.0",
@@ -31,5 +39,16 @@ func (h *SystemHandler) Info(w http.ResponseWriter, r *http.Request) {
 			"users":    userCount,
 			"projects": projectCount,
 		},
+	})
+}
+
+// UISettings handles GET /api/v1/ui/settings and returns web UI configuration.
+func (h *SystemHandler) UISettings(w http.ResponseWriter, r *http.Request) {
+	links := h.config.ObservabilityLinks
+	if links == nil {
+		links = []config.ObservabilityLink{}
+	}
+	jsonOK(w, http.StatusOK, map[string]any{
+		"observability_links": links,
 	})
 }

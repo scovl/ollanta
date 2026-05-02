@@ -12,7 +12,7 @@ import {
 } from './core/scope.js';
 import { resetProjectState, state } from './core/state.js';
 import { badgeClassForGateStatus, escAttr, escHtml, fmtDate, fmtK, fmtNum } from './core/utils.js';
-import { bindAdminTabContent, loadGateData, loadProfilesData, loadWebhooksData, renderGateTab, renderProfilesTab, renderWebhooksTab } from './features/admin.js';
+import { bindAdminTabContent, loadGateData, loadProfilesData, loadWebhooksData, renderAdminLinksTab, renderGateTab, renderProfilesTab, renderWebhooksTab } from './features/admin.js';
 import { loadActivityData, renderActivityTab } from './features/activity.js';
 import { loadCodeFileData, loadCodeTreeData, renderCodeTab } from './features/code.js';
 import { loadIssues, openIssueDetail, renderIssuesSection } from './features/issues.js';
@@ -26,7 +26,7 @@ export function configureProjectFlowFeature(options) {
 }
 
 function renderProjectTabs(activeTab, issueCount) {
-  const tabs = ['overview', 'issues', 'activity', 'branches', 'pull-requests', 'code', 'information', 'gate', 'webhooks', 'profiles'];
+  const tabs = ['overview', 'issues', 'activity', 'branches', 'pull-requests', 'code', 'information', 'admin', 'gate', 'webhooks', 'profiles'];
   const labels = {
     overview: 'Overview',
     issues: 'Issues',
@@ -35,6 +35,7 @@ function renderProjectTabs(activeTab, issueCount) {
     'pull-requests': 'Pull Requests',
     code: 'Code',
     information: 'Project Information',
+    admin: 'Admin',
     gate: 'Quality Gate',
     webhooks: 'Webhooks',
     profiles: 'Profiles',
@@ -53,6 +54,7 @@ function renderProjectTabContent(tab) {
   if (tab === 'pull-requests') return renderPullRequestsTab();
   if (tab === 'code') return renderCodeTab();
   if (tab === 'information') return renderProjectInformationTab();
+  if (tab === 'admin') return renderAdminLinksTab();
   if (tab === 'gate') return renderGateTab();
   if (tab === 'webhooks') return renderWebhooksTab();
   if (tab === 'profiles') return renderProfilesTab();
@@ -230,10 +232,10 @@ export function renderScopeToolbar() {
   const branches = (state.branchesData || []).filter(item => item?.name);
   const pullRequests = state.pullRequestsData || [];
   const branchOptions = branches.length
-    ? branches.map(item => `<option value="${escAttr(item.name)}">${escHtml(item.name)}${item.is_default ? ' · default' : ''}</option>`).join('')
+    ? branches.map(item => `<option value="${escAttr(item.name)}">${escHtml(item.name)}${item.is_default ? ' Ã‚Â· default' : ''}</option>`).join('')
     : '<option value="">No detected branch</option>';
   const prOptions = [`<option value="">No pull request</option>`].concat(
-    pullRequests.map(item => `<option value="${escAttr(item.key)}">#${escHtml(item.key)} · ${escHtml(item.branch || 'unknown')} \u2192 ${escHtml(item.base_branch || 'unknown')}</option>`)
+    pullRequests.map(item => `<option value="${escAttr(item.key)}">#${escHtml(item.key)} Ã‚Â· ${escHtml(item.branch || 'unknown')} \u2192 ${escHtml(item.base_branch || 'unknown')}</option>`)
   ).join('');
 
   return `<div class="scope-toolbar">

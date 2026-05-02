@@ -170,9 +170,78 @@ export function renderProfilesTab() {
   </div>`;
 }
 
+const ADMIN_API_LINKS = [
+  { label: 'Current User', path: '/users/me' },
+  { label: 'System Info', path: '/system/info' },
+  { label: 'Global Permissions', path: '/permissions/global' },
+  { label: 'Project Permissions', path: project => '/projects/' + encodeURIComponent(project.key) + '/permissions' },
+  { label: 'Index Jobs', path: '/admin/index-jobs' },
+  { label: 'Webhook Jobs', path: '/admin/webhook-jobs' },
+];
+
+const OBSERVABILITY_LINKS = [
+  { label: 'API Health', href: '/healthz' },
+  { label: 'API Readiness', href: '/readyz' },
+  { label: 'API Metrics', href: '/metrics' },
+];
+
+export function renderAdminLinksTab() {
+  const project = state.currentProject || {};
+  const apiCards = ADMIN_API_LINKS.map(item => {
+    const path = typeof item.path === 'function' ? item.path(project) : item.path;
+    return `<button class="admin-link-card" data-admin-api="${escAttr(path)}">
+      <span class="admin-link-title">${escHtml(item.label)}</span>
+      <span class="admin-link-url">/api/v1${escHtml(path)}</span>
+    </button>`;
+  }).join('');
+
+  const observabilityLinks = OBSERVABILITY_LINKS.concat(state.uiSettings?.observabilityLinks || []);
+  const observabilityCards = observabilityLinks.map(item => `<a class="admin-link-card" href="${escAttr(item.href)}" target="_blank" rel="noopener noreferrer">
+    <span class="admin-link-title">${escHtml(item.label)}</span>
+    <span class="admin-link-url">${escHtml(item.href)}</span>
+  </a>`).join('');
+
+  return `<div class="tab-section">
+    <div class="admin-links-layout">
+      <section class="admin-links-panel">
+        <p class="section-title">API</p>
+        <div class="admin-link-grid">${apiCards}</div>
+      </section>
+      <section class="admin-links-panel">
+        <p class="section-title">Observability</p>
+        <div class="admin-link-grid">${observabilityCards}</div>
+      </section>
+    </div>
+    <section class="admin-api-preview">
+      <div class="admin-api-preview-head">
+        <span>Response</span>
+        <span id="adminApiPath" class="admin-link-url"></span>
+      </div>
+      <pre id="adminApiPreview">Select an API endpoint.</pre>
+    </section>
+  </div>`;
+}
+
 export function bindAdminTabContent() {
   const project = state.currentProject;
   if (!project) return;
+
+  document.querySelectorAll('[data-admin-api]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const path = btn.dataset.adminApi;
+      const preview = document.getElementById('adminApiPreview');
+      const pathLabel = document.getElementById('adminApiPath');
+      if (!path || !preview) return;
+      if (pathLabel) pathLabel.textContent = '/api/v1' + path;
+      preview.textContent = 'Loading...';
+      try {
+        const data = await apiFetch(path);
+        preview.textContent = JSON.stringify(data, null, 2);
+      } catch (err) {
+        preview.textContent = err.message || 'Request failed.';
+      }
+    });
+  });
 
   document.querySelectorAll('.expand-gate-btn').forEach(btn => {
     btn.addEventListener('click', async () => {

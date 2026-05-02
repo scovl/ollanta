@@ -10,6 +10,64 @@ import { bindProjectViewControls, loadProject, renderProjectDetail } from './pro
 
 const BRAND_MARK_PATH = '/branding/ollanta-mark.png';
 
+const CORE_OBSERVABILITY_LINKS = [
+  { label: 'Metrics', href: '/metrics' },
+];
+
+const API_DOC_SECTIONS = [
+  {
+    title: 'Authentication',
+    endpoints: [
+      { method: 'POST', path: '/api/v1/auth/login', permission: 'Public', description: 'Exchange local credentials for an access token and refresh token.' },
+      { method: 'POST', path: '/api/v1/auth/refresh', permission: 'Public', description: 'Refresh an access token from a valid refresh token.' },
+      { method: 'POST', path: '/api/v1/auth/logout', permission: 'Authenticated', description: 'Invalidate the current session.' },
+      { method: 'GET', path: '/api/v1/users/me', permission: 'Authenticated', description: 'Read the current user profile.' },
+      { method: 'GET', path: '/api/v1/users/me/tokens', permission: 'Authenticated', description: 'List personal API tokens.' },
+      { method: 'POST', path: '/api/v1/users/me/tokens', permission: 'Authenticated', description: 'Create a personal API token.' },
+    ],
+  },
+  {
+    title: 'Projects And Scans',
+    endpoints: [
+      { method: 'GET', path: '/api/v1/projects', permission: 'Authenticated', description: 'List projects visible to the current user.' },
+      { method: 'POST', path: '/api/v1/projects', permission: 'create_project', description: 'Create or register a project.' },
+      { method: 'GET', path: '/api/v1/projects/{key}', permission: 'Authenticated', description: 'Read project metadata.' },
+      { method: 'POST', path: '/api/v1/scans', permission: 'Scanner token or execute_analysis', description: 'Ingest a scanner report into the server.' },
+      { method: 'GET', path: '/api/v1/projects/{key}/overview', permission: 'Authenticated', description: 'Read overview metrics, gate status, review summary, and issue signals.' },
+      { method: 'GET', path: '/api/v1/projects/{key}/activity', permission: 'Authenticated', description: 'Read project activity over scans.' },
+    ],
+  },
+  {
+    title: 'Issues, Code, And Measures',
+    endpoints: [
+      { method: 'GET', path: '/api/v1/projects/{key}/issues', permission: 'Authenticated', description: 'Search and filter issues by quality, severity, status, lifecycle, language, rule, tag, directory, and file.' },
+      { method: 'GET', path: '/api/v1/projects/{key}/code/tree', permission: 'Authenticated', description: 'Browse the indexed source tree for a project scope.' },
+      { method: 'GET', path: '/api/v1/projects/{key}/code/file', permission: 'Authenticated', description: 'Read stored source file content with inline issue metadata.' },
+      { method: 'GET', path: '/api/v1/projects/{key}/measures/trend', permission: 'Authenticated', description: 'Read time-series measure trends.' },
+      { method: 'GET', path: '/api/v1/search', permission: 'Authenticated', description: 'Search indexed source and issue content.' },
+    ],
+  },
+  {
+    title: 'Administration',
+    endpoints: [
+      { method: 'GET', path: '/api/v1/system/info', permission: 'admin', description: 'Read runtime metadata and system counts.' },
+      { method: 'GET', path: '/api/v1/permissions/global', permission: 'admin', description: 'List global permission grants.' },
+      { method: 'GET', path: '/api/v1/projects/{key}/permissions', permission: 'admin', description: 'List project permission grants.' },
+      { method: 'GET', path: '/api/v1/admin/index-jobs', permission: 'admin', description: 'Inspect durable index projection jobs.' },
+      { method: 'GET', path: '/api/v1/admin/webhook-jobs', permission: 'admin', description: 'Inspect durable webhook delivery jobs.' },
+      { method: 'GET', path: '/api/v1/ui/settings', permission: 'Authenticated', description: 'Read UI settings such as optional external observability links.' },
+    ],
+  },
+  {
+    title: 'Public Health And Observability',
+    endpoints: [
+      { method: 'GET', path: '/healthz', permission: 'Public', description: 'Liveness probe.' },
+      { method: 'GET', path: '/readyz', permission: 'Public', description: 'Readiness probe with database and search checks.' },
+      { method: 'GET', path: '/metrics', permission: 'Public', description: 'Prometheus-compatible metrics endpoint.' },
+    ],
+  },
+];
+
 setUnauthorizedHandler(logout);
 
 export function render() {
@@ -28,10 +86,24 @@ function renderNav() {
   const name = user.name || user.login || 'User';
   return `<nav>
     ${renderBrandLockup()}
+    ${renderAdminNavLinks()}
     <span class="spacer"></span>
     <span class="user-info">${escHtml(name)}</span>
     <button class="logout-btn" id="logoutBtn">Sign out</button>
   </nav>`;
+}
+
+function renderAdminNavLinks() {
+  const configuredLinks = state.uiSettings?.observabilityLinks || [];
+  const links = CORE_OBSERVABILITY_LINKS.concat(configuredLinks);
+  return `<div class="admin-nav-links" aria-label="Admin shortcuts">
+    <button class="admin-nav-link" type="button" id="apiDocsBtn">API</button>
+    ${links.map(renderAdminNavLink).join('')}
+  </div>`;
+}
+
+function renderAdminNavLink(link) {
+  return `<a class="admin-nav-link" href="${escAttr(link.href)}" target="_blank" rel="noopener noreferrer">${escHtml(link.label)}</a>`;
 }
 
 function renderBrandLockup() {
@@ -45,7 +117,92 @@ function renderBrandLockup() {
 function renderContent() {
   if (state.view === 'projects') return renderDashboard();
   if (state.view === 'project') return renderProjectDetail();
+  if (state.view === 'api-docs') return renderApiDocsPage();
   return '';
+}
+
+export function renderApiDocsPage() {
+  return `<div class="api-docs-page">
+    <div class="page-header api-docs-header">
+      <div>
+        <h2>Ollanta API</h2>
+        <p>HTTP API reference for automation, integrations, administration, and observability.</p>
+      </div>
+      <button class="back-btn" id="apiDocsBackBtn">Back to projects</button>
+    </div>
+    <div class="api-docs-note">
+      Authenticated API calls must send <span class="mono">Authorization: Bearer &lt;token&gt;</span>. Scanner ingestion can also use the configured scanner token.
+    </div>
+    <div class="api-docs-grid">
+      ${API_DOC_SECTIONS.map(renderApiDocSection).join('')}
+    </div>
+  </div>`;
+}
+
+function renderApiDocSection(section) {
+  return `<section class="api-docs-section">
+    <h3>${escHtml(section.title)}</h3>
+    <div class="api-endpoint-list">
+      ${section.endpoints.map(renderApiEndpoint).join('')}
+    </div>
+  </section>`;
+}
+
+function renderApiEndpoint(endpoint) {
+  const example = buildApiEndpointExample(endpoint);
+  return `<details class="api-endpoint-row">
+    <summary class="api-endpoint-summary">
+      <span class="api-method api-method-${escAttr(endpoint.method.toLowerCase())}">${escHtml(endpoint.method)}</span>
+      <span class="api-path">${escHtml(endpoint.path)}</span>
+      <span class="api-permission">${escHtml(endpoint.permission)}</span>
+      <span class="api-example-toggle">Example</span>
+      <p>${escHtml(endpoint.description)}</p>
+    </summary>
+    <div class="api-example-panel">
+      <p>${escHtml(example.description)}</p>
+      <pre><code>${escHtml(example.command)}</code></pre>
+    </div>
+  </details>`;
+}
+
+function buildApiEndpointExample(endpoint) {
+  const baseURL = endpoint.path.startsWith('/api/') ? '$OLLANTA_URL' : '$OLLANTA_PUBLIC_URL';
+  const examplePath = endpoint.examplePath || endpoint.path;
+  const lines = [`curl -X ${endpoint.method} "${baseURL}${examplePath}"`];
+
+  if (endpoint.permission !== 'Public') {
+    lines.push('  -H "Authorization: Bearer $OLLANTA_TOKEN"');
+  }
+  if (endpoint.method !== 'GET') {
+    lines.push('  -H "Content-Type: application/json"');
+  }
+  const body = endpoint.exampleBody || defaultExampleBody(endpoint);
+  if (body) {
+    lines.push(`  -d '${JSON.stringify(body, null, 2)}'`);
+  }
+
+  return {
+    description: endpoint.exampleDescription || 'Generic request example. Replace placeholders such as {key}, file paths, and tokens with values from your environment.',
+    command: lines.join(' \\\n'),
+  };
+}
+
+function defaultExampleBody(endpoint) {
+  if (endpoint.path === '/api/v1/auth/login') return { login: 'admin', password: 'admin' };
+  if (endpoint.path === '/api/v1/auth/refresh') return { refresh_token: '$OLLANTA_REFRESH_TOKEN' };
+  if (endpoint.path === '/api/v1/auth/logout') return {};
+  if (endpoint.path === '/api/v1/users/me/tokens') return { name: 'ci-token', expires_at: '2026-12-31T23:59:59Z' };
+  if (endpoint.path === '/api/v1/projects') return { key: 'demo', name: 'Demo Project' };
+  if (endpoint.path === '/api/v1/scans') {
+    return {
+      project_key: 'demo',
+      branch: 'main',
+      analysis_date: '2026-05-01T12:00:00Z',
+      issues: [],
+      measures: {},
+    };
+  }
+  return null;
 }
 
 function renderLogin() {
@@ -142,6 +299,8 @@ export async function loadProjects() {
   history.replaceState({}, '', globalThis.location.pathname);
   render();
 
+  await loadUISettings();
+
   try {
     const data = await apiFetch('/projects?limit=100');
     state.projects = data.items || [];
@@ -151,6 +310,22 @@ export async function loadProjects() {
 
   state.loading = false;
   render();
+}
+
+async function loadUISettings() {
+  try {
+    const data = await apiFetch('/ui/settings');
+    state.uiSettings = { observabilityLinks: normalizeObservabilityLinks(data.observability_links) };
+  } catch {
+    state.uiSettings = { observabilityLinks: [] };
+  }
+}
+
+function normalizeObservabilityLinks(items) {
+  if (!Array.isArray(items)) return [];
+  return items
+    .map(item => ({ label: String(item?.label || '').trim(), href: String(item?.url || '').trim() }))
+    .filter(item => item.label && item.href);
 }
 
 function renderDashboard() {
@@ -210,6 +385,11 @@ export function showToast(msg, type = 'success') {
 
 function bindMain() {
   document.getElementById('logoutBtn')?.addEventListener('click', logout);
+  document.getElementById('apiDocsBtn')?.addEventListener('click', () => {
+    state.view = 'api-docs';
+    render();
+  });
+  document.getElementById('apiDocsBackBtn')?.addEventListener('click', () => loadProjects());
   document.getElementById('backBtn')?.addEventListener('click', () => loadProjects());
   document.querySelectorAll('.project-card').forEach(card => {
     card.addEventListener('click', () => loadProject(card.dataset.key, { project: card.dataset.key, tab: 'overview', branch: '', pullRequest: '' }));
@@ -246,6 +426,7 @@ export async function init() {
   const token = getToken();
   if (token) {
     state.user = loadUser();
+    await loadUISettings();
     const route = parseProjectRoute();
     if (route.project) {
       await loadProject(route.project, route);
