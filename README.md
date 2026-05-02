@@ -49,7 +49,7 @@ This runs a local scan and opens the embedded web UI at `http://localhost:7777`.
 ### Docker scanner UI
 
 ```sh
-docker compose up serve
+docker compose --profile scanner up local-ui
 ```
 
 This builds the scanner image, scans the mounted project directory, and serves the embedded UI on port `7777`.
@@ -99,8 +99,8 @@ An end-to-end example lives in [config.toml.example](d:\projects\ollanta\config.
 - **Go 1.21+** with CGO enabled
 - **GCC** (required by the Tree-sitter runtime)
   - Linux/macOS: `gcc` from your system package manager
-  - Windows: [MSYS2](https://www.msys2.org/) → `pacman -S mingw-w64-x86_64-gcc`
-- **Docker** (optional) — for container-based scanning or running the server stack
+  - Windows: [MSYS2](https://www.msys2.org/) â†’ `pacman -S mingw-w64-x86_64-gcc`
+- **Docker** (optional) â€” for container-based scanning or running the server stack
 
 ---
 
@@ -209,7 +209,7 @@ Local mock setup:
 export OLLANTA_AI_ENABLE_MOCK=1
 ```
 
-For multiple configured agents, use `OLLANTA_AI_AGENTS` with a JSON array. If you run the scanner through Docker Compose, export the AI-related environment variables before recreating `serve`.
+For multiple configured agents, use `OLLANTA_AI_AGENTS` with a JSON array. If you run the scanner through Docker Compose, export the AI-related environment variables before recreating `local-ui`.
 
 ## Docker Workflows
 
@@ -217,10 +217,10 @@ For multiple configured agents, use `OLLANTA_AI_AGENTS` with a JSON array. If yo
 
 ```sh
 # Scan current directory and open UI at http://localhost:7777
-docker compose up serve
+docker compose --profile scanner up local-ui
 
 # Scan a specific project
-PROJECT_DIR=/path/to/myapp PROJECT_KEY=myapp docker compose up serve
+PROJECT_DIR=/path/to/myapp PROJECT_KEY=myapp docker compose --profile scanner up local-ui
 
 # One-shot scan (no UI, just write report files)
 docker compose run --rm scan-only

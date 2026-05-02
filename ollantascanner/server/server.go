@@ -7,6 +7,7 @@ package server
 import (
 	"embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -16,6 +17,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	telemetry "github.com/scovl/ollanta/adapter/secondary/telemetry"
@@ -112,6 +114,7 @@ func Serve(reportPath, bind string, port int) error {
 		w.Header().Set(cacheControlHeader, "no-cache")
 		_, _ = w.Write(data)
 	})
+	mux.HandleFunc("/api/files/source", handleSourceFile(projectRoot))
 
 	// Serve static assets from the embedded dist/ directory
 	staticHandler := http.FileServer(http.FS(distFS))
@@ -120,10 +123,9 @@ func Serve(reportPath, bind string, port int) error {
 		staticHandler.ServeHTTP(w, r)
 	}))
 
-	addr := fmt.Sprintf("%s:%d", bind, port)
-	ln, err := net.Listen("tcp", addr)
+	ln, err := listenWithLocalFallback(bind, port)
 	if err != nil {
-		return fmt.Errorf("server: listen %s: %w", addr, err)
+		return err
 	}
 
 	url := fmt.Sprintf("http://%s", ln.Addr())
@@ -142,9 +144,130 @@ func Serve(reportPath, bind string, port int) error {
 	return srv.Serve(ln)
 }
 
+func listenWithLocalFallback(bind string, port int) (net.Listener, error) {
+	addr := fmt.Sprintf("%s:%d", bind, port)
+	ln, err := net.Listen("tcp", addr)
+	if err == nil {
+		return ln, nil
+	}
+	if !isLocalBind(bind) || !isAddrInUse(err) {
+		return nil, fmt.Errorf("server: listen %s: %w", addr, err)
+	}
+
+	for candidate := port + 1; candidate <= port+20; candidate++ {
+		candidateAddr := fmt.Sprintf("%s:%d", bind, candidate)
+		ln, listenErr := net.Listen("tcp", candidateAddr)
+		if listenErr == nil {
+			fmt.Fprintf(os.Stderr, "warning: %s is already in use; using %s instead\n", addr, candidateAddr)
+			return ln, nil
+		}
+		if !isAddrInUse(listenErr) {
+			return nil, fmt.Errorf("server: listen %s: %w", candidateAddr, listenErr)
+		}
+	}
+
+	return nil, fmt.Errorf("server: listen %s: address is in use and no free fallback port was found", addr)
+}
+
+func isLocalBind(bind string) bool {
+	switch strings.TrimSpace(strings.ToLower(bind)) {
+	case "", "localhost", "127.0.0.1", "::1":
+		return true
+	default:
+		return false
+	}
+}
+
+func isAddrInUse(err error) bool {
+	return errors.Is(err, syscall.EADDRINUSE) || strings.Contains(strings.ToLower(err.Error()), "address already in use") || strings.Contains(strings.ToLower(err.Error()), "only one usage of each socket address")
+}
+
 // ReportPath returns the canonical path for report.json inside projectDir.
 func ReportPath(projectDir string) string {
 	return filepath.Join(projectDir, ".ollanta", "report.json")
+}
+
+func handleSourceFile(projectRoot string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		cleanPath, ok := cleanSourcePath(r.URL.Query().Get("path"))
+		if !ok {
+			writeJSONError(w, http.StatusBadRequest, "path must stay inside the project")
+			return
+		}
+		writeSourceFile(w, projectRoot, cleanPath)
+	}
+}
+
+func cleanSourcePath(path string) (string, bool) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return "", false
+	}
+	cleanPath := filepath.Clean(filepath.FromSlash(path))
+	if filepath.IsAbs(cleanPath) || cleanPath == ".." || strings.HasPrefix(cleanPath, ".."+string(filepath.Separator)) {
+		return "", false
+	}
+	return cleanPath, true
+}
+
+func writeSourceFile(w http.ResponseWriter, projectRoot, cleanPath string) {
+	fullPath := filepath.Join(projectRoot, cleanPath)
+	info, err := os.Stat(fullPath)
+	if err != nil || info.IsDir() {
+		writeJSONError(w, http.StatusNotFound, "file not found")
+		return
+	}
+	data, err := os.ReadFile(fullPath)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "read file failed")
+		return
+	}
+	content := string(data)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"file": map[string]any{
+			"path":       filepath.ToSlash(cleanPath),
+			"language":   languageFromPath(cleanPath),
+			"content":    content,
+			"size_bytes": info.Size(),
+			"line_count": countSourceLines(content),
+		},
+	})
+}
+
+func languageFromPath(path string) string {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".go":
+		return "go"
+	case ".ts", ".tsx":
+		return "typescript"
+	case ".js", ".jsx":
+		return "javascript"
+	case ".py":
+		return "python"
+	case ".rs":
+		return "rust"
+	case ".json":
+		return "json"
+	case ".md":
+		return "markdown"
+	default:
+		return "plain text"
+	}
+}
+
+func countSourceLines(content string) int {
+	if content == "" {
+		return 0
+	}
+	lines := strings.Count(content, "\n")
+	if !strings.HasSuffix(content, "\n") {
+		lines++
+	}
+	return lines
 }
 
 type statusRecorder struct {

@@ -97,6 +97,29 @@ func TestParseOptionsReadsExplicitConfigPath(t *testing.T) {
 	}
 }
 
+func TestParseOptionsExplicitConfigAllowsFlagOverrides(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "scanner.toml")
+	writeConfigFile(t, configPath, []byte("[scanner]\nformat = \"all\"\nsources = [\"./...\"]\nserver_wait = false\n"))
+
+	opts, err := parseOptions([]string{"--config=" + configPath, "-format=json", "-sources=application/scan,application/ingest", "-server=http://localhost:8080", "-server-wait=true"})
+	if err != nil {
+		t.Fatalf(parseError, err)
+	}
+	if opts.Format != "json" {
+		t.Fatalf("Format = %q, want json", opts.Format)
+	}
+	if len(opts.Sources) != 2 || opts.Sources[0] != "application/scan" || opts.Sources[1] != "application/ingest" {
+		t.Fatalf("Sources = %#v, want flag override", opts.Sources)
+	}
+	if opts.Server != "http://localhost:8080" {
+		t.Fatalf("Server = %q, want flag override", opts.Server)
+	}
+	if !opts.ServerWait {
+		t.Fatal("ServerWait = false, want flag override")
+	}
+}
+
 func TestParseOptionsReadsConfigPathFromEnv(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "scanner.toml")
@@ -110,6 +133,100 @@ func TestParseOptionsReadsConfigPathFromEnv(t *testing.T) {
 	}
 	if opts.Port != 9998 {
 		t.Fatalf("Port = %d, want 9998", opts.Port)
+	}
+}
+
+func TestParseOptionsAppliesTestsConfigFile(t *testing.T) {
+	dir := t.TempDir()
+	enterDir(t, dir)
+	configPath := filepath.Join(dir, "config.toml")
+	config := []byte(`[tests]
+enabled = true
+mode = "collect"
+discover = true
+run = false
+max_report_age = "2h"
+exclusions = ["fixtures/**"]
+max_depth = 4
+max_candidates = 25
+max_report_bytes = 4096
+command_policy = "explicit"
+
+[[tests.path_mapping]]
+from = "/workspace/app"
+to = "."
+
+[[tests.modules]]
+name = "core-domain"
+root = "domain"
+language = "go"
+architecture_role = "domain"
+test_policy = "required"
+command = "go test ./..."
+coverage_reports = ["coverage.out"]
+test_reports = ["junit.xml"]
+native_reports = ["ollanta-tests.json"]
+coverage_threshold = 85.5
+new_coverage_threshold = 90.0
+mutation_threshold = 70.0
+owner = "platform"
+team = "quality"
+integration_required = true
+`)
+	writeConfigFile(t, configPath, config)
+
+	opts, err := parseOptions(nil)
+	if err != nil {
+		t.Fatalf(parseError, err)
+	}
+	if !opts.Tests.Enabled {
+		t.Fatal("Tests.Enabled = false, want true")
+	}
+	if opts.Tests.Mode != appscan.TestModeCollect {
+		t.Fatalf("Tests.Mode = %q, want collect", opts.Tests.Mode)
+	}
+	if opts.Tests.Run {
+		t.Fatal("Tests.Run = true, want false")
+	}
+	if opts.Tests.MaxReportAge != 2*time.Hour {
+		t.Fatalf("Tests.MaxReportAge = %s, want 2h", opts.Tests.MaxReportAge)
+	}
+	if len(opts.Tests.PathMappings) != 1 || opts.Tests.PathMappings[0].From != "/workspace/app" {
+		t.Fatalf("Tests.PathMappings = %#v, want configured mapping", opts.Tests.PathMappings)
+	}
+	if len(opts.Tests.Modules) != 1 {
+		t.Fatalf("Tests.Modules length = %d, want 1", len(opts.Tests.Modules))
+	}
+	module := opts.Tests.Modules[0]
+	if module.Name != "core-domain" || module.Root != "domain" || module.ArchitectureRole != "domain" {
+		t.Fatalf("Tests.Modules[0] = %+v, want configured module", module)
+	}
+	if module.CoverageThreshold == nil || *module.CoverageThreshold != 85.5 {
+		t.Fatalf("CoverageThreshold = %v, want 85.5", module.CoverageThreshold)
+	}
+	if !module.IntegrationRequired {
+		t.Fatal("IntegrationRequired = false, want true")
+	}
+}
+
+func TestParseOptionsTestsFlagsOverrideConfigFile(t *testing.T) {
+	dir := t.TempDir()
+	enterDir(t, dir)
+	configPath := filepath.Join(dir, "config.toml")
+	writeConfigFile(t, configPath, []byte("[tests]\nenabled = true\nmode = \"collect\"\nrun = false\n"))
+
+	opts, err := parseOptions([]string{"-with-tests=false", "-tests-mode=run", "-tests-run=true"})
+	if err != nil {
+		t.Fatalf(parseError, err)
+	}
+	if opts.Tests.Enabled {
+		t.Fatal("Tests.Enabled = true, want false from flag override")
+	}
+	if opts.Tests.Mode != appscan.TestModeRun {
+		t.Fatalf("Tests.Mode = %q, want run", opts.Tests.Mode)
+	}
+	if !opts.Tests.Run {
+		t.Fatal("Tests.Run = false, want true from flag override")
 	}
 }
 

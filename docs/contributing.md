@@ -102,15 +102,15 @@ The scanner UI is compiled from TypeScript into `ollantascanner/server/static/di
 That means:
 
 1. Editing `src/*.ts` is not enough; you must regenerate `dist/app.js`.
-2. Docker users must recreate `serve` after that rebuild.
+2. Docker users must recreate `local-ui` after that rebuild.
 3. A browser refresh alone is not enough if the embedded assets were not rebuilt into the running binary.
 
 ### Docker rebuilds
 
-- Recreate `serve` after scanner runtime or scanner UI changes:
+- Recreate `local-ui` after scanner runtime or scanner UI changes:
 
 ```sh
-docker compose up -d --build --force-recreate serve
+docker compose --profile scanner up -d --build --force-recreate local-ui
 ```
 
 - Rebuild `ollantaweb` after centralized server changes when validating through Docker:

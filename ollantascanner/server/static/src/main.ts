@@ -1,5 +1,5 @@
 import { esc } from "./html";
-import type { Report, Issue, Severity, GateResult, GateCondition, FileGroup, AIProviderListResponse, AIProviderOption, AIFixPreview, AIFixApplyResponse } from "./types";
+import type { Report, Issue, Severity, GateResult, GateCondition, FileGroup, AIProviderListResponse, AIProviderOption, AIFixPreview, AIFixApplyResponse, TestFileCoverage } from "./types";
 import { renderAIFixContent, renderDetailTabs } from "./detailView";
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -10,6 +10,11 @@ let report: Report;
 let allIssues: Issue[] = [];
 let filteredIssues: Issue[] = [];
 let fileGroups: FileGroup[] = [];
+let coverageFiles: CoverageFileView[] = [];
+let selectedCoveragePath = "";
+let coverageSourceLoading = false;
+let coverageSourceError = "";
+let coverageSourceCache = new Map<string, CoverageSourceFile>();
 let selectedIssue: Issue | null = null;
 let selectedIndex = -1;
 let activeTab = "overview";
@@ -28,6 +33,25 @@ type AIFixPanelState = {
   statusMessage: string;
   errorMessage: string;
   preview: AIFixPreview | null;
+};
+
+type CoverageFileView = {
+  moduleName: string;
+  moduleRoot: string;
+  path: string;
+  linesToCover: number;
+  coveredLines: number;
+  coveredLineNumbers: number[];
+  uncoveredLines: number[];
+  coverage: number | null;
+};
+
+type CoverageSourceFile = {
+  path: string;
+  language: string;
+  content: string;
+  line_count: number;
+  size_bytes: number;
 };
 
 let aiFixState: AIFixPanelState = createEmptyAIFixState();
@@ -68,6 +92,12 @@ async function init(): Promise<void> {
     renderOverviewCharts();
     renderPriorityIssues();
     renderHotspotFiles();
+    buildCoverageFiles();
+    renderCoverageSummary();
+    renderCoverageDetails();
+    if (coverageFiles.length) {
+      void selectCoverageFile(selectedCoveragePath || coverageFiles[0].path);
+    }
     renderLanguages();
     populateFilters();
     applyFilters();
@@ -78,6 +108,7 @@ async function init(): Promise<void> {
 
     el("tab-issue-count").textContent = String(allIssues.length);
     el("tab-file-count").textContent = String(new Set(allIssues.map(i => i.component_path)).size);
+    el("tab-coverage-count").textContent = String(coverageFiles.length);
   } catch (e) {
     el("app").innerHTML =
       `<div class="error">Failed to load report: ${String(e)}</div>`;
@@ -143,6 +174,7 @@ function renderMeasures(): void {
   setMetric("m-bugs", m.bugs);
   setMetric("m-vulns", m.vulnerabilities);
   setMetric("m-smells", m.code_smells);
+  setMetricText("m-coverage", formatPercent(m.coverage));
   setMetric("m-ncloc", m.ncloc);
   setMetric("m-files", m.files);
   setMetric("m-comments", m.comments);
@@ -151,18 +183,40 @@ function renderMeasures(): void {
   colorCard("card-bugs", m.bugs, [0, 1, 5]);
   colorCard("card-vulns", m.vulnerabilities, [0, 1, 3]);
   colorCard("card-smells", m.code_smells, [0, 10, 50]);
+  colorCoverageCard("card-coverage", m.coverage);
   addClass("card-ncloc", "card-neutral");
   addClass("card-files", "card-neutral");
   addClass("card-comments", "card-neutral");
+
+  const coverageCard = el("card-coverage");
+  coverageCard.classList.add("clickable");
+  coverageCard.addEventListener("click", () => {
+    switchTab("coverage");
+  });
 }
 
 function setMetric(id: string, val: number): void {
   el(id).textContent = val.toLocaleString();
 }
 
+function setMetricText(id: string, val: string): void {
+  el(id).textContent = val;
+}
+
+function formatPercent(val: number | undefined): string {
+  return val == null ? "—" : `${val.toFixed(1)}%`;
+}
+
 function colorCard(id: string, val: number, thresholds: [number, number, number]): void {
   if (val <= thresholds[0]) addClass(id, "card-green");
   else if (val <= thresholds[1]) addClass(id, "card-yellow");
+  else addClass(id, "card-red");
+}
+
+function colorCoverageCard(id: string, val: number | undefined): void {
+  if (val == null) addClass(id, "card-neutral");
+  else if (val >= 80) addClass(id, "card-green");
+  else if (val >= 60) addClass(id, "card-yellow");
   else addClass(id, "card-red");
 }
 
@@ -286,6 +340,219 @@ function renderHotspotFiles(): void {
       expandFileGroup(path);
     });
   });
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// Coverage drill-down
+// ══════════════════════════════════════════════════════════════════════════
+
+function buildCoverageFiles(): void {
+  const modules = report.test_signals?.modules ?? [];
+  coverageFiles = modules.flatMap(module => (module.files ?? []).map(file => coverageFileView(module.name, module.root, file)))
+    .filter(file => file.linesToCover > 0)
+    .sort((left, right) => (left.coverage ?? 101) - (right.coverage ?? 101) || right.uncoveredLines.length - left.uncoveredLines.length || left.path.localeCompare(right.path));
+  if (!selectedCoveragePath && coverageFiles.length) {
+    selectedCoveragePath = coverageFiles[0].path;
+  }
+}
+
+function coverageFileView(moduleName: string, moduleRoot: string, file: TestFileCoverage): CoverageFileView {
+  const linesToCover = file.lines_to_cover ?? 0;
+  const coveredLines = file.covered_lines ?? 0;
+  const coverage = linesToCover > 0 ? coveredLines * 100 / linesToCover : null;
+  return {
+    moduleName,
+    moduleRoot,
+    path: file.path,
+    linesToCover,
+    coveredLines,
+    coveredLineNumbers: file.covered_line_numbers ?? [],
+    uncoveredLines: file.uncovered_lines ?? [],
+    coverage,
+  };
+}
+
+function renderCoverageSummary(): void {
+  const container = el("coverage-summary");
+  if (!coverageFiles.length) {
+    container.innerHTML = `<div class="empty-state compact">Run with <span class="mono">-with-tests</span> and provide a coverage report to see file-level details.</div>`;
+    return;
+  }
+  const summary = report.test_signals?.summary;
+  const worstFiles = coverageFiles.slice(0, 5);
+  container.innerHTML = `<div class="coverage-kpis">
+      <div><span class="coverage-kpi-value">${formatPercent(summary?.coverage ?? report.measures.coverage)}</span><span class="coverage-kpi-label">overall</span></div>
+      <div><span class="coverage-kpi-value">${(summary?.covered_lines ?? 0).toLocaleString()}/${(summary?.lines_to_cover ?? 0).toLocaleString()}</span><span class="coverage-kpi-label">covered lines</span></div>
+      <div><span class="coverage-kpi-value">${(summary?.modules_with_coverage ?? 0).toLocaleString()}</span><span class="coverage-kpi-label">modules</span></div>
+    </div>
+    <div class="coverage-file-list">
+      ${worstFiles.map(renderCoverageMiniRow).join("")}
+    </div>`;
+
+  container.querySelectorAll(".coverage-mini-row").forEach(row => {
+    row.addEventListener("click", () => {
+      const path = (row as HTMLElement).dataset["coveragePath"];
+      if (path) {
+        switchTab("coverage");
+        void selectCoverageFile(path);
+      }
+    });
+  });
+}
+
+function renderCoverageMiniRow(file: CoverageFileView): string {
+  return `<button class="coverage-mini-row" data-coverage-path="${esc(file.path)}">
+    <span class="coverage-mini-main">
+      <span class="coverage-file-name" title="${esc(file.path)}">${esc(shortenPath(file.path))}</span>
+      <span class="coverage-file-meta">${esc(file.moduleName)} · ${file.uncoveredLines.length.toLocaleString()} uncovered lines</span>
+    </span>
+    <span class="coverage-pill ${coverageClass(file.coverage)}">${formatPercent(file.coverage ?? undefined)}</span>
+  </button>`;
+}
+
+function renderCoverageDetails(): void {
+  const container = el("coverage-details");
+  if (!coverageFiles.length) {
+    container.innerHTML = `<div class="empty-state">No file-level coverage was collected for this scan.</div>`;
+    return;
+  }
+  container.innerHTML = `<div class="coverage-toolbar">
+      <div>
+        <h3>Coverage Files</h3>
+        <p>${coverageFiles.length.toLocaleString()} files with executable lines from collected test reports</p>
+      </div>
+      <span class="coverage-pill ${coverageClass(report.measures.coverage ?? null)}">${formatPercent(report.measures.coverage)}</span>
+    </div>
+    <div class="coverage-browser">
+      <aside class="coverage-sidebar">
+        <div class="coverage-file-list coverage-file-list-large">
+          ${coverageFiles.map(renderCoverageDetailRow).join("")}
+        </div>
+      </aside>
+      <section class="coverage-code-viewer">
+        ${renderCoverageSourceViewer()}
+      </section>
+    </div>`;
+
+  container.querySelectorAll(".coverage-row").forEach(row => {
+    row.addEventListener("click", () => {
+      const path = (row as HTMLElement).dataset["coveragePath"];
+      if (path) {
+        void selectCoverageFile(path);
+      }
+    });
+  });
+}
+
+function renderCoverageDetailRow(file: CoverageFileView): string {
+  const active = file.path === selectedCoveragePath ? " active" : "";
+  return `<button class="coverage-row${active}" data-coverage-path="${esc(file.path)}">
+    <div class="coverage-row-main">
+      <div class="coverage-row-title" title="${esc(file.path)}">${esc(file.path)}</div>
+      <div class="coverage-row-subtitle">${esc(file.moduleName)} · ${esc(file.moduleRoot)} · ${file.coveredLines.toLocaleString()}/${file.linesToCover.toLocaleString()} lines covered</div>
+    </div>
+    <div class="coverage-row-meter">
+      <span class="coverage-pill ${coverageClass(file.coverage)}">${formatPercent(file.coverage ?? undefined)}</span>
+      <div class="coverage-track"><div class="coverage-fill ${coverageClass(file.coverage)}" style="width:${file.coverage ?? 0}%"></div></div>
+    </div>
+  </button>`;
+}
+
+async function selectCoverageFile(path: string): Promise<void> {
+  if (!coverageFiles.some(file => file.path === path)) {
+    return;
+  }
+  selectedCoveragePath = path;
+  coverageSourceError = "";
+  if (coverageSourceCache.has(path)) {
+    coverageSourceLoading = false;
+    renderCoverageDetails();
+    return;
+  }
+  coverageSourceLoading = true;
+  renderCoverageDetails();
+  try {
+    const res = await fetch(`/api/files/source?path=${encodeURIComponent(path)}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const payload = await res.json() as { file: CoverageSourceFile };
+    coverageSourceCache.set(path, payload.file);
+  } catch (error) {
+    coverageSourceError = `Could not load source for ${path}: ${String(error)}`;
+  } finally {
+    coverageSourceLoading = false;
+    renderCoverageDetails();
+  }
+}
+
+function renderCoverageSourceViewer(): string {
+  const coverageFile = coverageFiles.find(file => file.path === selectedCoveragePath);
+  if (!coverageFile) {
+    return `<div class="code-empty"><p>Select a file to inspect coverage.</p></div>`;
+  }
+  if (coverageSourceLoading) {
+    return `<div class="code-empty"><div class="spinner"></div></div>`;
+  }
+  if (coverageSourceError) {
+    return `<div class="code-empty"><p>${esc(coverageSourceError)}</p></div>`;
+  }
+  const sourceFile = coverageSourceCache.get(coverageFile.path);
+  if (!sourceFile) {
+    return `<div class="code-empty"><p>Select a coverage file to inspect source lines.</p></div>`;
+  }
+
+  const covered = new Set(coverageFile.coveredLineNumbers);
+  const uncovered = new Set(coverageFile.uncoveredLines);
+  const lines = sourceFile.content.split("\n");
+  const rows = lines.map((line, index) => {
+    const lineNumber = index + 1;
+    const isUncovered = uncovered.has(lineNumber);
+    const isCovered = !isUncovered && covered.has(lineNumber);
+    const presentation = coverageLinePresentation(isCovered, isUncovered);
+    return `<div class="code-line${presentation.stateClass}">
+      <span class="code-gutter">${lineNumber}</span>
+      <code class="code-text">${line.length ? esc(line) : "&nbsp;"}</code>
+      <span class="code-markers">${renderCoverageLineChip(presentation)}</span>
+    </div>`;
+  }).join("");
+  const detailState = coverageFile.coveredLineNumbers.length ? "covered and uncovered lines" : "uncovered lines only";
+  return `<div class="code-viewer-shell coverage-source-shell">
+    <div class="code-viewer-head">
+      <div>
+        <div class="code-viewer-path mono">${esc(sourceFile.path)}</div>
+        <div class="code-viewer-meta">${esc(sourceFile.language || "plain text")} · ${sourceFile.line_count.toLocaleString()} lines · ${detailState}</div>
+      </div>
+      <div class="code-viewer-stats"><span class="coverage-pill ${coverageClass(coverageFile.coverage)}">${formatPercent(coverageFile.coverage ?? undefined)}</span></div>
+    </div>
+    <div class="coverage-legend">
+      <span><span class="legend-dot legend-covered"></span>Covered</span>
+      <span><span class="legend-dot legend-uncovered"></span>Not covered</span>
+    </div>
+    <div class="code-surface">${rows}</div>
+  </div>`;
+}
+
+function coverageLinePresentation(isCovered: boolean, isUncovered: boolean): { stateClass: string; marker: string; chipClass: string } {
+  if (isUncovered) {
+    return { stateClass: " is-uncovered", marker: "not covered", chipClass: " chip-uncovered" };
+  }
+  if (isCovered) {
+    return { stateClass: " is-covered", marker: "covered", chipClass: " chip-covered" };
+  }
+  return { stateClass: "", marker: "", chipClass: "" };
+}
+
+function renderCoverageLineChip(presentation: { marker: string; chipClass: string }): string {
+  if (!presentation.marker) {
+    return "";
+  }
+  return `<span class="coverage-line-chip${presentation.chipClass}">${presentation.marker}</span>`;
+}
+
+function coverageClass(val: number | null | undefined): string {
+  if (val == null) return "card-neutral";
+  if (val >= 80) return "card-green";
+  if (val >= 60) return "card-yellow";
+  return "card-red";
 }
 
 // ══════════════════════════════════════════════════════════════════════════

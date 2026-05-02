@@ -51,6 +51,9 @@
       <button class="tab" data-tab="files">
         Files <span id="tab-file-count" class="tab-badge">0</span>
       </button>
+      <button class="tab" data-tab="coverage">
+        Coverage <span id="tab-coverage-count" class="tab-badge">0</span>
+      </button>
     </nav>
 
     <!-- ── Overview Tab ───────────────────────────────────────────────── -->
@@ -71,6 +74,10 @@
               <div id="card-smells" class="metric-row">
                 <span class="metric-label">Code Smells</span>
                 <span class="metric-value" id="m-smells">0</span>
+              </div>
+              <div id="card-coverage" class="metric-row">
+                <span class="metric-label">Coverage</span>
+                <span class="metric-value" id="m-coverage">—</span>
               </div>
               <div id="card-ncloc" class="metric-row">
                 <span class="metric-label">Lines of Code</span>
@@ -103,6 +110,11 @@
           <section class="overview-panel">
             <h3>Hotspot Files</h3>
             <div id="hotspot-files" class="hotspot-list"></div>
+          </section>
+
+          <section class="overview-panel">
+            <h3>Coverage Detail</h3>
+            <div id="coverage-summary" class="coverage-summary"></div>
           </section>
         </section>
 
@@ -160,6 +172,13 @@
     <div id="panel-files" class="panel hidden">
       <div id="file-tree" class="file-tree">
         <div class="empty-state">Loading…</div>
+      </div>
+    </div>
+
+    <!-- ── Coverage Tab ───────────────────────────────────────────────── -->
+    <div id="panel-coverage" class="panel hidden">
+      <div id="coverage-details" class="coverage-details">
+        <div class="empty-state">No coverage details found</div>
       </div>
     </div>
 

@@ -82,10 +82,10 @@ npm run build
 
 ### 5. Docker rebuilds
 
-- Recreate `serve` after scanner UI or scanner runtime changes:
+- Recreate `local-ui` after scanner UI or scanner runtime changes:
 
 ```sh
-docker compose up -d --build --force-recreate serve
+docker compose --profile scanner up -d --build --force-recreate local-ui
 ```
 
 - Rebuild `ollantaweb` after centralized server changes when validating through Docker:

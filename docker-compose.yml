@@ -3,16 +3,16 @@
 # Scanner usage:
 #
 #   # Scan the current directory and open the web UI on http://localhost:7777
-#   docker compose up serve
+#   docker compose --profile scanner up local-ui
 #
 #   # Scan a specific project
-#   PROJECT_DIR=/path/to/myapp PROJECT_KEY=myapp docker compose up serve
+#   PROJECT_DIR=/path/to/myapp PROJECT_KEY=myapp docker compose --profile scanner up local-ui
 #
 #   # Enable the local mock AI agent in the scanner UI
-#   OLLANTA_AI_ENABLE_MOCK=1 docker compose up -d --build --force-recreate serve
+#   OLLANTA_AI_ENABLE_MOCK=1 docker compose --profile scanner up -d --build --force-recreate local-ui
 #
 #   # One-shot scan (no UI server, just write the report files)
-#   docker compose run --rm scan-only
+#   docker compose --profile scanner run --rm scan-only
 #
 #   # Scan and push results to the centralized server
 #   docker compose run --build --rm push
@@ -27,7 +27,7 @@
 #
 # Reports are written to <PROJECT_DIR>/.ollanta/
 # Scanner UI available at http://localhost:7777
-# Local AI agents are configured through environment variables on the serve service
+# Local AI agents are configured through environment variables on the local-ui service
 # API server available at http://localhost:8080
 # Background roles: compute, index projection, webhook delivery
 
@@ -35,8 +35,9 @@ name: ollanta
 
 services:
 
-  # ── serve: scan + interactive web UI ────────────────────────────────────────
-  serve:
+  # local-ui: scan + interactive web UI
+  local-ui:
+    image: ollanta-scanner:latest
     build:
       context: .
       dockerfile: Dockerfile
@@ -64,9 +65,11 @@ services:
       - -bind=0.0.0.0
       - -port=7777
     restart: "no"
+    profiles: ["scanner"]
 
-  # ── scan-only: one-shot, no server, exits after writing the report ──────────
+  # â”€â”€ scan-only: one-shot, no server, exits after writing the report â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   scan-only:
+    image: ollanta-scanner:latest
     build:
       context: .
       dockerfile: Dockerfile
@@ -79,9 +82,11 @@ services:
       - -project-key=${PROJECT_KEY:-project}
       - -format=all
     restart: "no"
+    profiles: ["scanner"]
 
-  # ── push: scan and push results to ollantaweb ──────────────────────────────
+  # â”€â”€ push: scan and push results to ollantaweb â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   push:
+    image: ollanta-scanner:latest
     build:
       context: .
       dockerfile: Dockerfile
@@ -101,7 +106,7 @@ services:
     restart: "no"
     profiles: ["push"]
 
-  # ── postgres: data store ────────────────────────────────────────────────────
+  # â”€â”€ postgres: data store â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   postgres:
     image: postgres:17-alpine
     environment:
@@ -119,7 +124,7 @@ services:
       retries: 10
     profiles: ["server"]
 
-  # ── zincsearch: full-text search engine ───────────────────────────────────
+  # â”€â”€ zincsearch: full-text search engine â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   zincsearch:
     image: public.ecr.aws/zinclabs/zincsearch:0.4.10
     environment:
@@ -139,8 +144,9 @@ services:
       retries: 5
     profiles: ["server"]
 
-  # ── ollantaweb: centralized API server ──────────────────────────────────────
+  # â”€â”€ ollantaweb: centralized API server â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   ollantaweb:
+    image: ollanta-server:latest
     build:
       context: .
       dockerfile: ollantaweb/Dockerfile
@@ -164,8 +170,9 @@ services:
     restart: unless-stopped
     profiles: ["server"]
 
-  # ── ollantaworker: background compute role ────────────────────────────────
+  # â”€â”€ ollantaworker: background compute role â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   ollantaworker:
+    image: ollanta-server:latest
     build:
       context: .
       dockerfile: ollantaweb/Dockerfile
@@ -183,8 +190,9 @@ services:
     restart: unless-stopped
     profiles: ["server"]
 
-  # ── ollantaindexer: durable search projection role ───────────────────────
+  # â”€â”€ ollantaindexer: durable search projection role â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   ollantaindexer:
+    image: ollanta-server:latest
     build:
       context: .
       dockerfile: ollantaweb/Dockerfile
@@ -205,8 +213,9 @@ services:
     restart: unless-stopped
     profiles: ["server"]
 
-  # ── ollantawebhookworker: durable webhook delivery role ──────────────────
+  # â”€â”€ ollantawebhookworker: durable webhook delivery role â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   ollantawebhookworker:
+    image: ollanta-server:latest
     build:
       context: .
       dockerfile: ollantaweb/Dockerfile
@@ -222,7 +231,7 @@ services:
     restart: unless-stopped
     profiles: ["server"]
 
-  # ── prometheus: metrics scraping and local query UI ────────────────────────
+  # â”€â”€ prometheus: metrics scraping and local query UI â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   prometheus:
     image: prom/prometheus:v2.54.1
     command:
@@ -239,7 +248,7 @@ services:
       - "9091:9090"
     profiles: ["observability"]
 
-  # ── jaeger: tracing backend and UI ────────────────────────────────────────
+  # â”€â”€ jaeger: tracing backend and UI â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   jaeger:
     image: jaegertracing/all-in-one:1.67.0
     environment:
@@ -249,7 +258,7 @@ services:
       - "4318:4318"
     profiles: ["observability"]
 
-  # ── loki: log storage and query API ───────────────────────────────────────
+  # â”€â”€ loki: log storage and query API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   loki:
     image: grafana/loki:3.1.1
     command:
@@ -264,7 +273,7 @@ services:
       - "3100:3100"
     profiles: ["observability"]
 
-  # ── promtail: collects container stdout for Loki ──────────────────────────
+  # â”€â”€ promtail: collects container stdout for Loki â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   promtail:
     image: grafana/promtail:3.1.1
     command:
