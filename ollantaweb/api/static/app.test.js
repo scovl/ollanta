@@ -190,7 +190,7 @@ test('renderAdminLinksTab exposes API and observability shortcuts', () => {
 
   assert.match(html, /data-admin-api="\/system\/info"/);
   assert.match(html, /data-admin-api="\/projects\/demo\/permissions"/);
-  assert.match(html, /https:\/\/grafana.example.com/);
+  assert.match(html, /https:\/\/grafana\.example\.com/);
   assert.doesNotMatch(html, /http:\/\/localhost:9091\/targets/);
   assert.doesNotMatch(html, /http:\/\/localhost:16686/);
   assert.match(html, /\/metrics/);
