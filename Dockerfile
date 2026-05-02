@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-# â”€â”€ Stage 1: builder â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# Stage 1: builder
 # golang:1.23-bookworm ships gcc, so CGO works out of the box for tree-sitter.
 FROM golang:1.23-bookworm AS builder
 
@@ -41,7 +41,7 @@ RUN --mount=type=cache,target=/root/go/pkg/mod \
       ./ollantascanner/cmd/ollanta
 
 
-# â”€â”€ Stage 2: runtime â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# Stage 2: runtime
 FROM debian:bookworm-slim
 
 LABEL org.opencontainers.image.source="https://github.com/scovl/ollanta"
