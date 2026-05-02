@@ -94,10 +94,11 @@ func NewRouter(d *RouterDeps) http.Handler {
 	ibh := &IssueTrackingBackfillHandler{service: &issueTrackingBackfillService{projects: d.Projects, scans: d.Scans, issues: d.Issues}}
 	mh := &MeasuresHandler{measures: d.Measures, projects: d.Projects}
 	srh := &SearchHandler{searcher: d.Searcher}
-	oh := &OverviewHandler{projects: d.Projects, scans: d.Scans, issues: d.Issues, measures: d.Measures, gates: d.Gates, periods: d.Periods}
+	oh := &OverviewHandler{projects: d.Projects, scans: d.Scans, issues: d.Issues, measures: d.Measures, scanJobs: d.ScanJobs, gates: d.Gates, periods: d.Periods}
 	ah := &ActivityHandler{scans: d.Scans, projects: d.Projects}
 	psh := &ProjectScopeHandler{projects: d.Projects, scans: d.Scans, snapshots: d.Snapshots, issues: d.Issues}
 	outboxH := &OutboxJobsHandler{indexJobs: d.IndexJobs, webhookJobs: d.WebhookJobs}
+	backgroundTasksH := &BackgroundTasksHandler{scanJobs: d.ScanJobs, indexJobs: d.IndexJobs, webhookJobs: d.WebhookJobs, metricsReg: d.MetricsReg}
 
 	// ── API v1 ────────────────────────────────────────────────────────────
 	r.Route("/api/v1", func(r chi.Router) {
@@ -285,6 +286,12 @@ func NewRouter(d *RouterDeps) http.Handler {
 			r.Group(func(r chi.Router) {
 				r.Use(RequirePermission(d.Perms, "admin"))
 				r.Get("/system/info", sysH.Info)
+				r.Get("/admin/background-tasks", backgroundTasksH.List)
+				r.Get("/admin/background-tasks/summary", backgroundTasksH.Summary)
+				r.Get("/admin/background-tasks/{taskID}", backgroundTasksH.Detail)
+				r.Post("/admin/background-tasks/{taskID}/retry", backgroundTasksH.Retry)
+				r.Post("/admin/background-tasks/{taskID}/requeue", backgroundTasksH.Requeue)
+				r.Post("/admin/background-tasks/{taskID}/cancel", backgroundTasksH.Cancel)
 				r.Get("/admin/index-jobs", outboxH.ListIndexJobs)
 				r.Post("/admin/index-jobs/{id}/retry", outboxH.RetryIndexJob)
 				r.Get("/admin/webhook-jobs", outboxH.ListWebhookJobs)

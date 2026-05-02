@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -60,6 +61,18 @@ func (r *ScanJobRepository) GetByID(ctx context.Context, id int64) (*ScanJob, er
 	))
 }
 
+// GetByScanID retrieves the completed scan job that produced a scan.
+func (r *ScanJobRepository) GetByScanID(ctx context.Context, scanID int64) (*ScanJob, error) {
+	return scanJobFromRow(r.db.Pool.QueryRow(ctx, `
+		SELECT id, project_key, status, payload, trace_parent, trace_state, scan_id, worker_id, last_error,
+		       created_at, updated_at, started_at, completed_at
+		FROM scan_jobs
+		WHERE scan_id = $1
+		ORDER BY completed_at DESC NULLS LAST, updated_at DESC, id DESC
+		LIMIT 1`, scanID,
+	))
+}
+
 // CountByStatus returns the number of durable scan jobs in the given state.
 func (r *ScanJobRepository) CountByStatus(ctx context.Context, status string) (int, error) {
 	query := "SELECT COUNT(*) FROM scan_jobs"
@@ -72,6 +85,40 @@ func (r *ScanJobRepository) CountByStatus(ctx context.Context, status string) (i
 	var total int
 	err := r.db.Pool.QueryRow(ctx, query, args...).Scan(&total)
 	return total, err
+}
+
+// List returns scan jobs matching the provided filter.
+func (r *ScanJobRepository) List(ctx context.Context, filter JobListFilter) ([]*ScanJob, int, error) {
+	filter.Limit = boundedJobLimit(filter.Limit)
+	where, args := buildScanJobWhere(filter)
+
+	var total int
+	if err := r.db.Pool.QueryRow(ctx, "SELECT COUNT(*) FROM scan_jobs"+where, args...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	query := `
+		SELECT id, project_key, status, payload, trace_parent, trace_state, scan_id, worker_id, last_error,
+		       created_at, updated_at, started_at, completed_at
+		FROM scan_jobs` + where + " ORDER BY created_at DESC, id DESC"
+	args = append(args, filter.Limit, filter.Offset)
+	query += fmt.Sprintf(" LIMIT $%d OFFSET $%d", len(args)-1, len(args))
+
+	rows, err := r.db.Pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	jobs := []*ScanJob{}
+	for rows.Next() {
+		job, err := scanJobFromRow(rows)
+		if err != nil {
+			return nil, 0, err
+		}
+		jobs = append(jobs, job)
+	}
+	return jobs, total, rows.Err()
 }
 
 // ClaimNext marks the oldest accepted job as running and returns it.
@@ -152,6 +199,77 @@ func (r *ScanJobRepository) MarkFailed(ctx context.Context, id int64, lastError 
 		return ErrNotFound
 	}
 	return nil
+}
+
+// Retry resets a failed or cancelled scan job so it can be claimed again.
+func (r *ScanJobRepository) Retry(ctx context.Context, id int64) error {
+	tag, err := r.db.Pool.Exec(ctx, `
+		UPDATE scan_jobs
+		SET status = 'accepted',
+		    worker_id = '',
+		    last_error = '',
+		    started_at = NULL,
+		    completed_at = NULL,
+		    updated_at = now()
+		WHERE id = $1`, id,
+	)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// CancelQueued marks an accepted scan job as cancelled so workers will not claim it.
+func (r *ScanJobRepository) CancelQueued(ctx context.Context, id int64) error {
+	tag, err := r.db.Pool.Exec(ctx, `
+		UPDATE scan_jobs
+		SET status = 'cancelled',
+		    last_error = '',
+		    completed_at = now(),
+		    updated_at = now()
+		WHERE id = $1 AND status = 'accepted'`, id,
+	)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func buildScanJobWhere(filter JobListFilter) (string, []any) {
+	clauses := []string{}
+	args := []any{}
+	add := func(clause string, value any) {
+		args = append(args, value)
+		clauses = append(clauses, fmt.Sprintf(clause, len(args)))
+	}
+	if filter.Status != "" {
+		add("status = $%d", filter.Status)
+	}
+	if filter.ProjectKey != "" {
+		add("project_key = $%d", filter.ProjectKey)
+	}
+	if filter.ScanID != nil {
+		add("scan_id = $%d", *filter.ScanID)
+	}
+	if filter.WorkerID != "" {
+		add("worker_id = $%d", filter.WorkerID)
+	}
+	if filter.CreatedAfter != nil {
+		add("created_at >= $%d", *filter.CreatedAfter)
+	}
+	if filter.CreatedBefore != nil {
+		add("created_at <= $%d", *filter.CreatedBefore)
+	}
+	if len(clauses) == 0 {
+		return "", args
+	}
+	return " WHERE " + strings.Join(clauses, " AND "), args
 }
 
 func scanJobFromRow(row pgx.Row) (*ScanJob, error) {

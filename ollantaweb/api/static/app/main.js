@@ -17,8 +17,8 @@ configureIssuesFeature({ showToast });
 
 export { createInitialState, replaceState, state } from './core/state.js';
 export { buildProjectRoute, buildScopeQuery, normalizeScope, parseProjectRoute } from './core/scope.js';
-export { loadCodeTreeData, renderCodeTab } from './features/code.js';
-export { renderAdminLinksTab } from './features/admin.js';
+export { loadCodeTreeData, renderCoverageTab } from './features/code.js';
+export { loadBackgroundTasksData, renderAdminLinksTab, renderBackgroundTasksPage } from './features/admin.js';
 export { loadIssues, renderIssuesSection } from './features/issues.js';
 export { renderOverviewTab } from './features/overview.js';
 export { renderProjectInformationTab } from './features/project-information.js';

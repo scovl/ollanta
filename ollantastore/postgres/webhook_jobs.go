@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -86,33 +87,25 @@ func (r *WebhookJobRepository) CountByStatus(ctx context.Context, status string)
 
 // List returns webhook jobs filtered by status.
 func (r *WebhookJobRepository) List(ctx context.Context, status string, limit, offset int) ([]*WebhookJob, int, error) {
-	if limit <= 0 {
-		limit = 20
-	}
-	if limit > 200 {
-		limit = 200
+	return r.ListFiltered(ctx, JobListFilter{Status: status, Limit: limit, Offset: offset})
+}
+
+// ListFiltered returns webhook jobs matching the provided filter.
+func (r *WebhookJobRepository) ListFiltered(ctx context.Context, filter JobListFilter) ([]*WebhookJob, int, error) {
+	filter.Limit = boundedJobLimit(filter.Limit)
+	where, args := buildWebhookJobWhere(filter)
+
+	var total int
+	if err := r.db.Pool.QueryRow(ctx, "SELECT COUNT(*) FROM webhook_jobs"+where, args...).Scan(&total); err != nil {
+		return nil, 0, err
 	}
 
-	countQuery := "SELECT COUNT(*) FROM webhook_jobs"
 	listQuery := `
 		SELECT id, webhook_id, project_id, event, payload, status, trace_parent, trace_state, worker_id, attempts,
 		       last_error, last_response_code, last_response_body, next_attempt_at,
 		       created_at, updated_at, started_at, completed_at
-		FROM webhook_jobs`
-	args := []any{}
-	if status != "" {
-		countQuery += statusWhereClause
-		listQuery += statusWhereClause
-		args = append(args, status)
-	}
-
-	var total int
-	if err := r.db.Pool.QueryRow(ctx, countQuery, args...).Scan(&total); err != nil {
-		return nil, 0, err
-	}
-
-	listQuery += " ORDER BY created_at DESC, id DESC"
-	args = append(args, limit, offset)
+		FROM webhook_jobs` + where + " ORDER BY created_at DESC, id DESC"
+	args = append(args, filter.Limit, filter.Offset)
 	listQuery += fmt.Sprintf(" LIMIT $%d OFFSET $%d", len(args)-1, len(args))
 
 	rows, err := r.db.Pool.Query(ctx, listQuery, args...)
@@ -260,6 +253,56 @@ func (r *WebhookJobRepository) Retry(ctx context.Context, id int64) error {
 		return ErrNotFound
 	}
 	return nil
+}
+
+// CancelQueued marks an accepted webhook job as cancelled so workers will not claim it.
+func (r *WebhookJobRepository) CancelQueued(ctx context.Context, id int64) error {
+	tag, err := r.db.Pool.Exec(ctx, `
+		UPDATE webhook_jobs
+		SET status = 'cancelled',
+		    worker_id = '',
+		    completed_at = now(),
+		    updated_at = now()
+		WHERE id = $1 AND status = 'accepted'`, id,
+	)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func buildWebhookJobWhere(filter JobListFilter) (string, []any) {
+	clauses := []string{}
+	args := []any{}
+	add := func(clause string, value any) {
+		args = append(args, value)
+		clauses = append(clauses, fmt.Sprintf(clause, len(args)))
+	}
+	if filter.Status != "" {
+		add("status = $%d", filter.Status)
+	}
+	if filter.ProjectKey != "" {
+		add("project_id IN (SELECT id FROM projects WHERE key = $%d)", filter.ProjectKey)
+	}
+	if filter.ScanID != nil {
+		return " WHERE false", []any{}
+	}
+	if filter.WorkerID != "" {
+		add("worker_id = $%d", filter.WorkerID)
+	}
+	if filter.CreatedAfter != nil {
+		add("created_at >= $%d", *filter.CreatedAfter)
+	}
+	if filter.CreatedBefore != nil {
+		add("created_at <= $%d", *filter.CreatedBefore)
+	}
+	if len(clauses) == 0 {
+		return "", args
+	}
+	return " WHERE " + strings.Join(clauses, " AND "), args
 }
 
 func scanWebhookJobRow(row pgx.Row) (*WebhookJob, error) {

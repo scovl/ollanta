@@ -6,6 +6,7 @@ import { createInitialState, replaceState, resetProjectState, state } from './co
 import { clearStorage, getToken, loadUser, saveToken, saveUser } from './core/storage.js';
 import { badgeClassForGateStatus, cardClassForGateStatus, escAttr, escHtml, fmtDate } from './core/utils.js';
 import { closeIssueDetail } from './features/issues.js';
+import { bindBackgroundTasksContent, loadBackgroundTasksData, renderBackgroundTasksPage } from './features/admin.js';
 import { bindProjectViewControls, loadProject, renderProjectDetail } from './project-flow.js';
 
 const BRAND_MARK_PATH = '/branding/ollanta-mark.png';
@@ -55,6 +56,8 @@ const API_DOC_SECTIONS = [
       { method: 'GET', path: '/api/v1/projects/{key}/permissions', permission: 'admin', description: 'List project permission grants.' },
       { method: 'GET', path: '/api/v1/admin/index-jobs', permission: 'admin', description: 'Inspect durable index projection jobs.' },
       { method: 'GET', path: '/api/v1/admin/webhook-jobs', permission: 'admin', description: 'Inspect durable webhook delivery jobs.' },
+      { method: 'GET', path: '/api/v1/admin/background-tasks', permission: 'admin', description: 'List normalized scan, index, and webhook background tasks with operational filters.' },
+      { method: 'GET', path: '/api/v1/admin/background-tasks/summary', permission: 'admin', description: 'Read queue depth, stale, retry, failure, and worker lag indicators.' },
       { method: 'GET', path: '/api/v1/ui/settings', permission: 'Authenticated', description: 'Read UI settings such as optional external observability links.' },
     ],
   },
@@ -98,6 +101,7 @@ function renderAdminNavLinks() {
   const links = CORE_OBSERVABILITY_LINKS.concat(configuredLinks);
   return `<div class="admin-nav-links" aria-label="Admin shortcuts">
     <button class="admin-nav-link" type="button" id="apiDocsBtn">API</button>
+    <button class="admin-nav-link" type="button" id="backgroundTasksBtn">Background Tasks</button>
     ${links.map(renderAdminNavLink).join('')}
   </div>`;
 }
@@ -118,6 +122,7 @@ function renderContent() {
   if (state.view === 'projects') return renderDashboard();
   if (state.view === 'project') return renderProjectDetail();
   if (state.view === 'api-docs') return renderApiDocsPage();
+  if (state.view === 'background-tasks') return renderBackgroundTasksPage();
   return '';
 }
 
@@ -389,6 +394,13 @@ function bindMain() {
     state.view = 'api-docs';
     render();
   });
+  document.getElementById('backgroundTasksBtn')?.addEventListener('click', async () => {
+    resetProjectState();
+    state.view = 'background-tasks';
+    render();
+    await loadBackgroundTasksData({ projectKey: '' });
+  });
+  document.getElementById('backgroundTasksBackBtn')?.addEventListener('click', () => loadProjects());
   document.getElementById('apiDocsBackBtn')?.addEventListener('click', () => loadProjects());
   document.getElementById('backBtn')?.addEventListener('click', () => loadProjects());
   document.querySelectorAll('.project-card').forEach(card => {
@@ -396,6 +408,9 @@ function bindMain() {
   });
   if (state.view === 'project') {
     bindProjectViewControls();
+  }
+  if (state.view === 'background-tasks') {
+    bindBackgroundTasksContent();
   }
 }
 

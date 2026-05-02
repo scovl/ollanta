@@ -84,6 +84,13 @@ export function createInitialState() {
     codeSelectedPath: '',
     newCodePeriod: null,
     selectedIssue: null,
+    backgroundTasksData: null,
+    backgroundTasksSummary: null,
+    backgroundTaskFilters: null,
+    selectedBackgroundTask: null,
+    loadingBackgroundTasks: false,
+    loadingBackgroundTaskDetail: false,
+    backgroundTaskError: '',
   };
 }
 
@@ -119,4 +126,11 @@ export function resetProjectState() {
   state.codeSelectedPath = '';
   state.newCodePeriod = null;
   state.selectedIssue = null;
+  state.backgroundTasksData = null;
+  state.backgroundTasksSummary = null;
+  state.backgroundTaskFilters = null;
+  state.selectedBackgroundTask = null;
+  state.loadingBackgroundTasks = false;
+  state.loadingBackgroundTaskDetail = false;
+  state.backgroundTaskError = '';
 }
