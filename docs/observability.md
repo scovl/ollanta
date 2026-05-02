@@ -13,7 +13,7 @@ docker compose --profile server --profile observability up -d
 To include the local scanner UI as well:
 
 ```bash
-docker compose --profile server --profile observability up -d serve
+docker compose --profile server --profile scanner --profile observability up -d local-ui
 ```
 
 ## Endpoints
@@ -55,7 +55,7 @@ If no links are configured, no external observability tools are shown in the nav
   - `ollantaworker:9090/metrics`
   - `ollantaindexer:9090/metrics`
   - `ollantawebhookworker:9090/metrics`
-  - `serve:7777/metrics`
+  - `local-ui:7777/metrics`
 - Jaeger receives HTTP traces and spans from asynchronous loops over OTLP HTTP at `http://jaeger:4318`
 - Promtail reads stdout logs from the `ollanta` project containers and sends them to Loki
 

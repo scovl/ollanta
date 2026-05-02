@@ -4,7 +4,7 @@
 
 Ollanta is a multi-language static analysis platform designed to be fast, extensible, and easy to use. It reads your source code, applies a set of rules to detect problems (bugs, code smells, vulnerabilities), and generates detailed reports. Ollanta is inspired by tools like SonarQube, OpenStaticAnalyzer, and Semgrep, but was built from scratch with a modern, modular architecture.
 
-It analyzes your code, understands its structure, and flags those problems automatically without executing anything — just by reading the source text (hence the term *static analysis*).
+It analyzes your code, understands its structure, and flags those problems automatically without executing anything â€” just by reading the source text (hence the term *static analysis*).
 
 ---
 
@@ -32,23 +32,23 @@ Ollanta has two halves that work together:
   }
 }}%%
 graph LR
-    subgraph SCAN ["  🔍  Scanner  "]
-        A(["📁 Your code"]):::src
-        B["🗂️ Discover\nfiles"]:::step
-        C["🌳 Parse\neach file"]:::step
-        D["📏 Apply\nrules"]:::step
-        E["📄 Generate\nreport"]:::step
+    subgraph SCAN ["  ðŸ”  Scanner  "]
+        A(["ðŸ“ Your code"]):::src
+        B["ðŸ—‚ï¸ Discover\nfiles"]:::step
+        C["ðŸŒ³ Parse\neach file"]:::step
+        D["ðŸ“ Apply\nrules"]:::step
+        E["ðŸ“„ Generate\nreport"]:::step
         A --> B --> C --> D --> E
     end
 
-    E -- "📤 sends report" --> F
+    E -- "ðŸ“¤ sends report" --> F
 
-    subgraph SRV ["  🏢  Server  "]
-        F["📥 Receive\nreport"]:::step
-        G["🔄 Compare with\nprevious scan"]:::step
-        H["🚦 Evaluate\nquality gate"]:::step
-        I["💾 Persist\nto database"]:::step
-        J(["🌐 API"]):::out
+    subgraph SRV ["  ðŸ¢  Server  "]
+        F["ðŸ“¥ Receive\nreport"]:::step
+        G["ðŸ”„ Compare with\nprevious scan"]:::step
+        H["ðŸš¦ Evaluate\nquality gate"]:::step
+        I["ðŸ’¾ Persist\nto database"]:::step
+        J(["ðŸŒ API"]):::out
         F --> G --> H --> I --> J
     end
 
@@ -87,13 +87,13 @@ When you run the scanner, four steps execute in sequence:
 First, the scanner figures out *which* files to analyze. It walks the project directory recursively, looks at each file's extension, and decides the language:
 
 ```
-.go     → Go
-.js     → JavaScript
-.mjs    → JavaScript
-.ts     → TypeScript
-.tsx    → TypeScript
-.py     → Python
-.rs     → Rust
+.go     â†’ Go
+.js     â†’ JavaScript
+.mjs    â†’ JavaScript
+.ts     â†’ TypeScript
+.tsx    â†’ TypeScript
+.py     â†’ Python
+.rs     â†’ Rust
 ```
 
 The following directories are always ignored, regardless of configuration:
@@ -112,7 +112,7 @@ ollanta -project-dir . -exclusions "*_test.go,generated/**"
 
 ### Step 2: Parsing
 
-Source code is just text. To understand its structure, we need to transform it into a **syntax tree** — a representation that knows where each function, `if`, and variable begins. Ollanta uses **two different parsing strategies**:
+Source code is just text. To understand its structure, we need to transform it into a **syntax tree** â€” a representation that knows where each function, `if`, and variable begins. Ollanta uses **two different parsing strategies**:
 
 ```mermaid
 %%{init: {
@@ -128,14 +128,14 @@ Source code is just text. To understand its structure, we need to transform it i
   }
 }}%%
 graph TD
-    File(["📄 file.go / file.js"]):::src
+    File(["ðŸ“„ file.go / file.js"]):::src
 
-    File --> Check{{"🔀 Which language?"}}:::decision
+    File --> Check{{"ðŸ”€ Which language?"}}:::decision
 
-    Check -->|"Go"| GoParser["🐹 go/parser\n(native stdlib, no CGo)\n→ ast.File"]:::gonode
-    Check -->|"JS · TS · Python · Rust"| TSParser["🌳 tree-sitter\n(C library, via CGo)\n→ ParsedFile with Tree"]:::tsnode
+    Check -->|"Go"| GoParser["ðŸ¹ go/parser\n(native stdlib, no CGo)\nâ†’ ast.File"]:::gonode
+    Check -->|"JS Â· TS Â· Python Â· Rust"| TSParser["ðŸŒ³ tree-sitter\n(C library, via CGo)\nâ†’ ParsedFile with Tree"]:::tsnode
 
-    GoParser --> Rules(["✅ Ready to\napply rules"]):::out
+    GoParser --> Rules(["âœ… Ready to\napply rules"]):::out
     TSParser --> Rules
 
     classDef src      fill:#dbeafe,stroke:#3b82f6,stroke-width:2px,color:#1e3a5f
@@ -155,13 +155,13 @@ graph TD
 
 ### Step 3: Rule Execution
 
-With the syntax tree ready, the scanner applies **rules** — each rule knows how to detect one specific type of problem. For example:
+With the syntax tree ready, the scanner applies **rules** â€” each rule knows how to detect one specific type of problem. For example:
 
-- *"This function has more than 40 lines"* → rule `go:no-large-functions`
-- *"This `==` should be `===`"* → rule `js:eqeqeq`
-- *"Using a bare `except Exception:`"* → rule `py:broad-except`
+- *"This function has more than 40 lines"* â†’ rule `go:no-large-functions`
+- *"This `==` should be `===`"* â†’ rule `js:eqeqeq`
+- *"Using a bare `except Exception:`"* â†’ rule `py:broad-except`
 
-Execution is **parallel**: the scanner distributes files across a worker pool (2× the number of CPUs) and each worker processes one file at a time. If a file causes a panic, the worker recovers and continues with the next one — a single bad file cannot take down the entire scan.
+Execution is **parallel**: the scanner distributes files across a worker pool (2Ã— the number of CPUs) and each worker processes one file at a time. If a file causes a panic, the worker recovers and continues with the next one â€” a single bad file cannot take down the entire scan.
 
 ```mermaid
 %%{init: {
@@ -179,11 +179,11 @@ Execution is **parallel**: the scanner distributes files across a worker pool (2
   }
 }}%%
 graph LR
-    subgraph POOL ["  ⚙️  Worker Pool — NumCPU × 2  "]
-        W1["🐹 Worker 1\nhandler.go"]:::worker
-        W2["🐍 Worker 2\nutils.py"]:::worker
-        W3["🟨 Worker 3\nindex.js"]:::worker
-        W4["🦀 Worker N\nmain.rs"]:::worker
+    subgraph POOL ["  âš™ï¸  Worker Pool â€” NumCPU Ã— 2  "]
+        W1["ðŸ¹ Worker 1\nhandler.go"]:::worker
+        W2["ðŸ Worker 2\nutils.py"]:::worker
+        W3["ðŸŸ¨ Worker 3\nindex.js"]:::worker
+        W4["ðŸ¦€ Worker N\nmain.rs"]:::worker
     end
 
     W1 --> Agg
@@ -191,8 +191,8 @@ graph LR
     W3 --> Agg
     W4 --> Agg
 
-    Agg["🗃️ Issue\nCollector"]:::agg
-    Agg --> Report(["📋 Final\nReport"]):::out
+    Agg["ðŸ—ƒï¸ Issue\nCollector"]:::agg
+    Agg --> Report(["ðŸ“‹ Final\nReport"]):::out
 
     classDef worker fill:#dbeafe,stroke:#3b82f6,stroke-width:2px,color:#1e3a5f
     classDef agg    fill:#fef9c3,stroke:#d97706,stroke-width:2px,color:#1c1917
@@ -207,12 +207,12 @@ graph LR
 
 After all rules run, the scanner consolidates everything into a report containing:
 
-1. **Metadata** — project key, timestamp, scan duration, and branch or pull request scope
-2. **Metrics** — file count, line count, bugs, code smells, vulnerabilities, plus optional coverage, test, and mutation metrics
-3. **Issues** — each problem found, with file path, line, rule, severity, message, tags, language, and derived quality domain
+1. **Metadata** â€” project key, timestamp, scan duration, and branch or pull request scope
+2. **Metrics** â€” file count, line count, bugs, code smells, vulnerabilities, plus optional coverage, test, and mutation metrics
+3. **Issues** â€” each problem found, with file path, line, rule, severity, message, tags, language, and derived quality domain
 
 The report is saved in two formats:
-- **JSON** (`.ollanta/report.json`) — consumed by the API/server
+- **JSON** (`.ollanta/report.json`) â€” consumed by the API/server
 
 Example:
 
@@ -252,7 +252,7 @@ Example:
 }
 ```
 
-- **SARIF** (`.ollanta/report.sarif`) — industry-standard format, integrates with GitHub, VS Code, etc.
+- **SARIF** (`.ollanta/report.sarif`) â€” industry-standard format, integrates with GitHub, VS Code, etc.
 
 Example:
 
@@ -304,23 +304,23 @@ The server (`ollantaweb`) is where the magic of **tracking over time** happens. 
 
 When the scanner sends a report to the server via `POST /api/v1/scans`, a 7-step pipeline executes in sequence:
 
-1. **Register the project** — creates the project in the database if it doesn't exist yet.
-2. **Fetch previous scan** — loads the open and closed issues from the last scan of the same project/branch.
-3. **Compare issues** — applies the tracking algorithm to determine which issues are new, which remain open, which were fixed, and which reopened.
-4. **Evaluate quality gate** — checks whether the project satisfies all configured conditions.
-5. **Persist to database** — saves the scan, issues, lifecycle state, and metrics in a single transaction.
-6. **Index for search** — sends issues to the search backend (ZincSearch or Postgres FTS).
-7. **Fire webhooks** — notifies registered external systems (CI, Slack, etc.).
+1. **Register the project** â€” creates the project in the database if it doesn't exist yet.
+2. **Fetch previous scan** â€” loads the open and closed issues from the last scan of the same project/branch.
+3. **Compare issues** â€” applies the tracking algorithm to determine which issues are new, which remain open, which were fixed, and which reopened.
+4. **Evaluate quality gate** â€” checks whether the project satisfies all configured conditions.
+5. **Persist to database** â€” saves the scan, issues, lifecycle state, and metrics in a single transaction.
+6. **Index for search** â€” sends issues to the search backend (ZincSearch or Postgres FTS).
+7. **Fire webhooks** â€” notifies registered external systems (CI, Slack, etc.).
 
 The response returns `gate_status` (OK or ERROR), plus new and closed issue counts. Let's dig into the most interesting steps:
 
 ### How issue tracking works
 
-This is one of the most important concepts in Ollanta. Without tracking, every scan would be independent — you'd have no way of knowing whether a bug is new or has been there all along.
+This is one of the most important concepts in Ollanta. Without tracking, every scan would be independent â€” you'd have no way of knowing whether a bug is new or has been there all along.
 
 **The problem:** between two scans, code changes. Lines are added and removed. An issue that was on line 42 might now be on line 47. How do you know it's the *same* issue?
 
-**The solution: LineHash.** For each issue, Ollanta computes the SHA-256 of the line's content (ignoring whitespace). This hash is stable — regardless of whether the line number changed, the *content* stays the same.
+**The solution: LineHash.** For each issue, Ollanta computes the SHA-256 of the line's content (ignoring whitespace). This hash is stable â€” regardless of whether the line number changed, the *content* stays the same.
 
 The combination `(rule_key, line_hash)` acts as an issue's fingerprint.
 
@@ -342,25 +342,25 @@ The combination `(rule_key, line_hash)` acts as an issue's fingerprint.
   }
 }}%%
 flowchart TD
-    CI(["📋 Issue in current scan\n(rule_key + file + line_hash)"]):::src
+    CI(["ðŸ“‹ Issue in current scan\n(rule_key + file + line_hash)"]):::src
 
-    L1{{"🔍 Layer 1\nExact match?\n(rule_key + file + line_hash)\nin previous OPEN issues"}}:::decision
-    L2{{"🔍 Layer 2\nLoose match?\n(rule_key + line_hash)\nin any previous file"}}:::decision
-    WC{{"❓ Was it previously\nCLOSED?"}}:::decision
+    L1{{"ðŸ” Layer 1\nExact match?\n(rule_key + file + line_hash)\nin previous OPEN issues"}}:::decision
+    L2{{"ðŸ” Layer 2\nLoose match?\n(rule_key + line_hash)\nin any previous file"}}:::decision
+    WC{{"â“ Was it previously\nCLOSED?"}}:::decision
 
-    Unchanged(["♻️ Unchanged\nproblem persists"]):::keep
-    Moved(["🔀 Moved\nsame content, new location"]):::keep
-    Reopened(["🔄 Reopened\ncame back!"]):::warn
-    New(["🆕 New\nnot seen before"]):::new_
+    Unchanged(["â™»ï¸ Unchanged\nproblem persists"]):::keep
+    Moved(["ðŸ”€ Moved\nsame content, new location"]):::keep
+    Reopened(["ðŸ”„ Reopened\ncame back!"]):::warn
+    New(["ðŸ†• New\nnot seen before"]):::new_
 
-    Unmatched(["📋 Previous OPEN issue\nnot matched by anything"]):::prev
-    Closed(["✅ Closed\nwas fixed!"]):::fixed
+    Unmatched(["ðŸ“‹ Previous OPEN issue\nnot matched by anything"]):::prev
+    Closed(["âœ… Closed\nwas fixed!"]):::fixed
 
     CI --> L1
-    L1 -->|"✅ Yes"| Unchanged
-    L1 -->|"❌ No"| L2
-    L2 -->|"✅ Yes"| Moved
-    L2 -->|"❌ No"| WC
+    L1 -->|"âœ… Yes"| Unchanged
+    L1 -->|"âŒ No"| L2
+    L2 -->|"âœ… Yes"| Moved
+    L2 -->|"âŒ No"| WC
     WC -->|"Yes"| Reopened
     WC -->|"No"| New
 
@@ -379,10 +379,10 @@ flowchart TD
 
 | Previous scan (open issues) | Current scan | Result |
 |-----------------------------|--------------|--------|
-| `go:cognitive-complexity` in `handler.go` hash `a1b2` | Same combo present | **Unchanged** — problem persists |
-| `go:magic-number` in `config.go` hash `c3d4` | Combo not found | **Closed** — was fixed! |
-| — | `js:eqeqeq` in `app.js` hash `e5f6` (new) | **New** — new problem |
-| `py:broad-except` in `main.py` hash `g7h8` (was closed) | Same combo reappears | **Reopened** — came back |
+| `go:cognitive-complexity` in `handler.go` hash `a1b2` | Same combo present | **Unchanged** â€” problem persists |
+| `go:magic-number` in `config.go` hash `c3d4` | Combo not found | **Closed** â€” was fixed! |
+| â€” | `js:eqeqeq` in `app.js` hash `e5f6` (new) | **New** â€” new problem |
+| `py:broad-except` in `main.py` hash `g7h8` (was closed) | Same combo reappears | **Reopened** â€” came back |
 
 > **Relevant code:** `ollantaengine/tracking/tracker.go` and `domain/service/tracking.go`
 
@@ -406,19 +406,19 @@ The quality gate is a set of conditions the project must satisfy. Think of it as
   }
 }}%%
 graph LR
-    Measures["📊 Scan metrics\nbugs: 3\nvulnerabilities: 0\ncode_smells: 15"]:::metrics
+    Measures["ðŸ“Š Scan metrics\nbugs: 3\nvulnerabilities: 0\ncode_smells: 15"]:::metrics
 
     Measures --> Gate
 
-    subgraph Gate ["  🚦  Quality Gate  "]
-        C1["bugs > 0?\n3 > 0 → ❌ FAIL"]:::fail
-        C2["vulnerabilities > 0?\n0 > 0 → ✅ PASS"]:::pass
+    subgraph Gate ["  ðŸš¦  Quality Gate  "]
+        C1["bugs > 0?\n3 > 0 â†’ âŒ FAIL"]:::fail
+        C2["vulnerabilities > 0?\n0 > 0 â†’ âœ… PASS"]:::pass
     end
 
-    Gate --> Result{{"❓ Any condition\nfailed?"}}:::decision
+    Gate --> Result{{"â“ Any condition\nfailed?"}}:::decision
 
-    Result -->|"Yes"| ERROR(["🔴 ERROR\nProject did not pass"]):::err
-    Result -->|"No"| OK(["🟢 OK\nProject approved"]):::ok
+    Result -->|"Yes"| ERROR(["ðŸ”´ ERROR\nProject did not pass"]):::err
+    Result -->|"No"| OK(["ðŸŸ¢ OK\nProject approved"]):::ok
 
     classDef metrics  fill:#dbeafe,stroke:#3b82f6,stroke-width:2px,color:#1e3a5f
     classDef fail     fill:#fee2e2,stroke:#ef4444,stroke-width:2px,color:#7f1d1d
@@ -434,16 +434,16 @@ graph LR
 
 | Metric | Condition | Meaning |
 |--------|-----------|---------|
-| `bugs` | > 0 → ERROR | No bugs are tolerated |
-| `vulnerabilities` | > 0 → ERROR | No vulnerabilities are tolerated |
+| `bugs` | > 0 â†’ ERROR | No bugs are tolerated |
+| `vulnerabilities` | > 0 â†’ ERROR | No vulnerabilities are tolerated |
 
-You can create custom gates with additional conditions (minimum coverage, maximum duplication, etc.) and even evaluate **only new code** — useful for teams inheriting legacy projects who want to ensure new code doesn't introduce problems.
+You can create custom gates with additional conditions (minimum coverage, maximum duplication, etc.) and even evaluate **only new code** â€” useful for teams inheriting legacy projects who want to ensure new code doesn't introduce problems.
 
 > **Relevant code:** `ollantaengine/qualitygate/gate.go`
 
 ---
 
-## Part 4: The Rules System — how to add a rule
+## Part 4: The Rules System â€” how to add a rule
 
 The rules system is designed to be extensible. Adding a new rule involves three things:
 
@@ -457,7 +457,7 @@ var MagicNumber = ollantarules.Rule{
     Check: func(ctx *ollantarules.AnalysisContext) []*domain.Issue {
         // Walks the AST looking for numeric literals
         // outside const/var declarations
-        // If found → creates issue
+        // If found â†’ creates issue
     },
 }
 ```
@@ -491,7 +491,7 @@ func init() {
 
 `MustRegister` reads the metadata JSONs (embedded in the binary via `go:embed`), links each JSON to its `CheckFunc` by `MetaKey`, and registers everything in the global registry. At scan time, the sensor queries this registry to know which rules to run.
 
-### How rules detect problems — the two sensors
+### How rules detect problems â€” the two sensors
 
 There are two "sensors" that know how to execute rules, one for each parser type:
 
@@ -511,21 +511,21 @@ There are two "sensors" that know how to execute rules, one for each parser type
   }
 }}%%
 graph TB
-    subgraph GOSENSOR ["  🐹  GoSensor (for Go)  "]
+    subgraph GOSENSOR ["  ðŸ¹  GoSensor (for Go)  "]
         GA(["go/parser.ParseFile()"]):::gosrc
         GAST["ast.File\n(native Go tree)"]:::gonode
         GI["ast.Inspect(node)\nWalks the tree\nlooking for patterns"]:::gonode
         GA --> GAST --> GI
     end
 
-    subgraph TSSENSOR ["  🌳  TreeSitterSensor (for JS, TS, Python, Rust)  "]
+    subgraph TSSENSOR ["  ðŸŒ³  TreeSitterSensor (for JS, TS, Python, Rust)  "]
         TA(["tree-sitter.Parse()"]):::tssrc
         TAST["ParsedFile\n(tree-sitter tree)"]:::tsnode
         TQ["QueryRunner.Run(query)\nRuns S-expressions\nagainst the tree"]:::tsnode
         TA --> TAST --> TQ
     end
 
-    GI --> Out(["✅ Issues found"]):::out
+    GI --> Out(["âœ… Issues found"]):::out
     TQ --> Out
 
     classDef gosrc  fill:#d1fae5,stroke:#059669,stroke-width:2px,color:#064e3b
@@ -538,7 +538,7 @@ graph TB
     style TSSENSOR fill:#f5f3ff,stroke:#c4b5fd,stroke-width:2px,stroke-dasharray:6 3
 ```
 
-**S-expressions** are tree-sitter's query mechanism. They work like "CSS selectors for code" — they let you select patterns in the syntax tree in a declarative way. For example, to find all `console.log` calls in JavaScript:
+**S-expressions** are tree-sitter's query mechanism. They work like "CSS selectors for code" â€” they let you select patterns in the syntax tree in a declarative way. For example, to find all `console.log` calls in JavaScript:
 
 ```scheme
 ;; "Find all console.log calls"
@@ -550,7 +550,7 @@ graph TB
 
 ---
 
-## Part 5: Internal Organization — Hexagonal Architecture
+## Part 5: Internal Organization â€” Hexagonal Architecture
 
 So far we've covered *what* Ollanta does. Now let's look at *how* the code is organized.
 
@@ -580,14 +580,14 @@ Think of three concentric circles, like an onion:
   }
 }}%%
 graph TB
-    subgraph OUTER ["  🔵  OUTER Ring — Adapters  "]
-        subgraph MIDDLE ["  🟡  MIDDLE Ring — Application  "]
-            subgraph INNER ["  🟢  INNER Ring — Domain  "]
-                D["📦 Models: Issue, Project, Scan, Rule\n🔌 Ports: IProjectRepo, IScanRepo, IIssueRepo\n⚙️ Services: Track(), Evaluate()\n────────────────────\nZero external deps. Only Go stdlib."]:::inner
+    subgraph OUTER ["  ðŸ”µ  OUTER Ring â€” Adapters  "]
+        subgraph MIDDLE ["  ðŸŸ¡  MIDDLE Ring â€” Application  "]
+            subgraph INNER ["  ðŸŸ¢  INNER Ring â€” Domain  "]
+                D["ðŸ“¦ Models: Issue, Project, Scan, Rule\nðŸ”Œ Ports: IProjectRepo, IScanRepo, IIssueRepo\nâš™ï¸ Services: Track(), Evaluate()\nâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€\nZero external deps. Only Go stdlib."]:::inner
             end
-            A["🗂️ ScanUseCase: discover → parse → analyze → report\n📥 IngestUseCase: persist → track → evaluate → index\n────────────────────\nKnows the ORDER, not the HOW.\nCalls interfaces, never implementations."]:::middle
+            A["ðŸ—‚ï¸ ScanUseCase: discover â†’ parse â†’ analyze â†’ report\nðŸ“¥ IngestUseCase: persist â†’ track â†’ evaluate â†’ index\nâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€\nKnows the ORDER, not the HOW.\nCalls interfaces, never implementations."]:::middle
         end
-        E["🐘 PostgreSQL (pgx/v5) → IProjectRepo, IScanRepo\n🔎 ZincSearch (HTTP) → ISearcher, IIndexer\n🌐 chi/v5 (HTTP Router) → calls UseCases\n🌳 tree-sitter (CGo) → IParser\n🔑 OAuth (GitHub/GitLab) → IOAuthProvider\n────────────────────\n'Dirty' code: SQL, HTTP, CGo.\nCan be swapped without touching inner rings."]:::outer
+        E["ðŸ˜ PostgreSQL (pgx/v5) â†’ IProjectRepo, IScanRepo\nðŸ”Ž ZincSearch (HTTP) â†’ ISearcher, IIndexer\nðŸŒ chi/v5 (HTTP Router) â†’ calls UseCases\nðŸŒ³ tree-sitter (CGo) â†’ IParser\nðŸ”‘ OAuth (GitHub/GitLab) â†’ IOAuthProvider\nâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€\n'Dirty' code: SQL, HTTP, CGo.\nCan be swapped without touching inner rings."]:::outer
     end
 
     E --> A --> D
@@ -623,14 +623,14 @@ Ollanta has 10 Go modules split into two groups: the **hexagonal core** (new, wh
   }
 }}%%
 graph TB
-    subgraph NEW ["  🆕  Hexagonal Core (target)  "]
-        domain["🟢 domain/\nModels + Ports + Pure services\nZero external dependencies"]:::inner
-        application["🟡 application/\nUse cases\nDepends only on domain/"]:::middle
-        adapter["🔵 adapter/\nHTTP, OAuth, Postgres, Parser\nImplements ports"]:::outer
+    subgraph NEW ["  ðŸ†•  Hexagonal Core (target)  "]
+        domain["ðŸŸ¢ domain/\nModels + Ports + Pure services\nZero external dependencies"]:::inner
+        application["ðŸŸ¡ application/\nUse cases\nDepends only on domain/"]:::middle
+        adapter["ðŸ”µ adapter/\nHTTP, OAuth, Postgres, Parser\nImplements ports"]:::outer
         domain --> application --> adapter
     end
 
-    subgraph LEGACY ["  🗄️  Legacy Modules (functional, being migrated)  "]
+    subgraph LEGACY ["  ðŸ—„ï¸  Legacy Modules (functional, being migrated)  "]
         ollantacore["ollantacore/\nShared types"]:::leg
         ollantaparser["ollantaparser/\nTree-sitter (CGo)"]:::leg
         ollantarules["ollantarules/\nRules & sensors"]:::leg
@@ -659,9 +659,9 @@ graph TB
 
 | Module | Ring | CGo? | What it does |
 |--------|------|------|--------------|
-| `domain` | 🟢 Inner | No | Pure models, port interfaces, I/O-free services |
-| `application` | 🟡 Middle | No | Orchestrates use cases by calling ports |
-| `adapter` | 🔵 Outer | Yes* | Implements ports with concrete technologies |
+| `domain` | ðŸŸ¢ Inner | No | Pure models, port interfaces, I/O-free services |
+| `application` | ðŸŸ¡ Middle | No | Orchestrates use cases by calling ports |
+| `adapter` | ðŸ”µ Outer | Yes* | Implements ports with concrete technologies |
 | `ollantacore` | Legacy | No | Shared types (`Issue`, `Rule`, `Component`) |
 | `ollantaparser` | Legacy | **Yes** | Only module with CGo (tree-sitter) |
 | `ollantarules` | Legacy | Yes* | Rule registry + Go/tree-sitter sensors |
@@ -703,7 +703,7 @@ The domain only knows these interfaces. Who implements them (PostgreSQL? MongoDB
 
 ## Part 6: Advanced Engine Concepts
 
-### New Code Period — "what counts as new code?"
+### New Code Period â€” "what counts as new code?"
 
 When a team inherits a legacy project with 500 issues, it doesn't make sense to require fixing all of them at once. The **new code period** concept lets you focus only on new code: "from when are we measuring?". Ollanta supports 5 strategies for defining this baseline:
 
@@ -723,7 +723,7 @@ When a team inherits a legacy project with 500 issues, it doesn't make sense to 
   }
 }}%%
 graph LR
-    Strategy{{"📅 Which baseline\nto use?"}}:::decision
+    Strategy{{"ðŸ“… Which baseline\nto use?"}}:::decision
 
     Strategy --> Auto
     Strategy --> PV
@@ -731,11 +731,11 @@ graph LR
     Strategy --> Specific
     Strategy --> Branch
 
-    Auto["🤖 auto\nDetects semver tags (v1.2.3)\nFallback: last 30 days"]:::opt
-    PV["📦 previous_version\nThe second-to-last scan"]:::opt
-    Days["🗓️ number_of_days\nScans in the last N days\n(default: 30)"]:::opt
-    Specific["🎯 specific_analysis\nAn exact scan ID"]:::opt
-    Branch["🌿 reference_branch\nLast scan of a specific\nbranch (e.g. main)"]:::opt
+    Auto["ðŸ¤– auto\nDetects semver tags (v1.2.3)\nFallback: last 30 days"]:::opt
+    PV["ðŸ“¦ previous_version\nThe second-to-last scan"]:::opt
+    Days["ðŸ—“ï¸ number_of_days\nScans in the last N days\n(default: 30)"]:::opt
+    Specific["ðŸŽ¯ specific_analysis\nAn exact scan ID"]:::opt
+    Branch["ðŸŒ¿ reference_branch\nLast scan of a specific\nbranch (e.g. main)"]:::opt
 
     classDef decision fill:#fef3c7,stroke:#f59e0b,stroke-width:2px,color:#92400e
     classDef opt      fill:#fef9c3,stroke:#d97706,stroke-width:2px,color:#1c1917
@@ -743,7 +743,7 @@ graph LR
 
 > **Relevant code:** `ollantaengine/newcode/resolver.go`
 
-### Summarizer — bottom-up metrics
+### Summarizer â€” bottom-up metrics
 
 Ollanta organizes a project into a **component tree**: the project contains modules, which contain packages, which contain files. Metrics are computed at the file (leaf) level, but we need totals at the project level. The **summarizer** propagates metrics bottom-up:
 
@@ -764,21 +764,21 @@ Ollanta organizes a project into a **component tree**: the project contains modu
 }}%%
 graph TB
     subgraph "Before propagation"
-        P1["📁 Project — bugs: ???"]
-        P1 --> M1["📂 src/ — bugs: ???"]
-        P1 --> M2["📂 lib/ — bugs: ???"]
-        M1 --> F1["📄 handler.go — bugs: 2"]
-        M1 --> F2["📄 utils.go — bugs: 1"]
-        M2 --> F3["📄 parser.py — bugs: 3"]
+        P1["ðŸ“ Project â€” bugs: ???"]
+        P1 --> M1["ðŸ“‚ src/ â€” bugs: ???"]
+        P1 --> M2["ðŸ“‚ lib/ â€” bugs: ???"]
+        M1 --> F1["ðŸ“„ handler.go â€” bugs: 2"]
+        M1 --> F2["ðŸ“„ utils.go â€” bugs: 1"]
+        M2 --> F3["ðŸ“„ parser.py â€” bugs: 3"]
     end
 
     subgraph "After CumSum"
-        P2["📁 Project — bugs: 6 ✓"]
-        P2 --> M3["📂 src/ — bugs: 3"]
-        P2 --> M4["📂 lib/ — bugs: 3"]
-        M3 --> F4["📄 handler.go — bugs: 2"]
-        M3 --> F5["📄 utils.go — bugs: 1"]
-        M4 --> F6["📄 parser.py — bugs: 3"]
+        P2["ðŸ“ Project â€” bugs: 6 âœ“"]
+        P2 --> M3["ðŸ“‚ src/ â€” bugs: 3"]
+        P2 --> M4["ðŸ“‚ lib/ â€” bugs: 3"]
+        M3 --> F4["ðŸ“„ handler.go â€” bugs: 2"]
+        M3 --> F5["ðŸ“„ utils.go â€” bugs: 1"]
+        M4 --> F6["ðŸ“„ parser.py â€” bugs: 3"]
     end
 
     style P2 fill:#264653,color:#fff
@@ -787,8 +787,8 @@ graph TB
 ```
 
 Two algorithms:
-- **CumSum** — sum: the project's total bugs equals the sum of bugs across all files
-- **CumAvg** — weighted average: the project's average complexity accounts for each file's size
+- **CumSum** â€” sum: the project's total bugs equals the sum of bugs across all files
+- **CumAvg** â€” weighted average: the project's average complexity accounts for each file's size
 
 > **Relevant code:** `ollantaengine/summarizer/cumsum.go`
 
@@ -796,7 +796,7 @@ Two algorithms:
 
 ## Part 7: Persistence and Search
 
-### PostgreSQL — the primary database
+### PostgreSQL â€” the primary database
 
 All Ollanta data is stored in PostgreSQL 17. Here is the simplified data model:
 
@@ -862,11 +862,11 @@ erDiagram
 | Technique | Where | Why |
 |-----------|-------|-----|
 | **Partitioned table** | `issues` (by `created_at`) | Old scans can be pruned without reindexing. Queries on recent scans are fast |
-| **COPY protocol** | Issue and measure inserts | Up to 50× faster than `INSERT` for thousands of rows |
+| **COPY protocol** | Issue and measure inserts | Up to 50Ã— faster than `INSERT` for thousands of rows |
 | **Connection pool** | pgx pool (max 25, idle 5min) | Reuses TCP connections to the database |
 | **Advisory locks** | Indexing coordination | Prevents two replicas from indexing the same scan |
 
-### Full-text search — two options
+### Full-text search â€” two options
 
 Ollanta needs to search issues by free text (e.g., "all issues with 'null pointer'"). It offers two interchangeable backends:
 
@@ -886,12 +886,12 @@ Ollanta needs to search issues by free text (e.g., "all issues with 'null pointe
   }
 }}%%
 graph TB
-    Config{{"⚙️ OLLANTA_SEARCH_BACKEND\n= ?"}}:::decision
+    Config{{"âš™ï¸ OLLANTA_SEARCH_BACKEND\n= ?"}}:::decision
 
-    Config -->|"zincsearch (default)"| Zinc["🔎 ZincSearch\nElasticsearch-compatible API\nHTTP + Basic Auth\nBest for large volumes"]:::zinc
-    Config -->|"postgres"| PGFTS["🐘 Postgres Full-Text Search\ntsvector + ts_rank + GIN index\nZero extra infrastructure\nGreat for simple deploys"]:::pg
+    Config -->|"zincsearch (default)"| Zinc["ðŸ”Ž ZincSearch\nElasticsearch-compatible API\nHTTP + Basic Auth\nBest for large volumes"]:::zinc
+    Config -->|"postgres"| PGFTS["ðŸ˜ Postgres Full-Text Search\ntsvector + ts_rank + GIN index\nZero extra infrastructure\nGreat for simple deploys"]:::pg
 
-    Zinc --> Port(["🔌 ISearcher + IIndexer\n(same interface)"]):::out
+    Zinc --> Port(["ðŸ”Œ ISearcher + IIndexer\n(same interface)"]):::out
     PGFTS --> Port
 
     classDef decision fill:#fef3c7,stroke:#f59e0b,stroke-width:2px,color:#92400e
@@ -943,27 +943,27 @@ This keeps the runtime simple: no extra coordinator, no distributed job table, a
   }
 }}%%
 graph TB
-    subgraph PWD ["  🔑  1. Password login  "]
+    subgraph PWD ["  ðŸ”‘  1. Password login  "]
         L1(["POST /api/v1/auth/login"]):::req
-        L2["🔐 bcrypt(password, hash)"]:::step
-        L3(["✅ JWT 15min\n+ Refresh Token 30 days"]):::ok
+        L2["ðŸ” bcrypt(password, hash)"]:::step
+        L3(["âœ… JWT 15min\n+ Refresh Token 30 days"]):::ok
         L1 --> L2 --> L3
     end
 
-    subgraph OAUTH ["  🌐  2. OAuth — GitHub · GitLab · Google  "]
+    subgraph OAUTH ["  ðŸŒ  2. OAuth â€” GitHub Â· GitLab Â· Google  "]
         O1(["GET /api/v1/auth/github"]):::req
-        O2["↪ Redirect → GitHub authorize"]:::step
+        O2["â†ª Redirect â†’ GitHub authorize"]:::step
         O3["Callback with code"]:::step
         O4["Exchange code for access_token"]:::step
         O5["Fetch user profile"]:::step
-        O6(["✅ Create/update user\n+ return JWT"]):::ok
+        O6(["âœ… Create/update user\n+ return JWT"]):::ok
         O1 --> O2 --> O3 --> O4 --> O5 --> O6
     end
 
-    subgraph TOKEN ["  🪙  3. API Token  "]
-        T1(["Authorization: Bearer olt_abc123…"]):::req
-        T2["🔍 Look up token hash in DB"]:::step
-        T3(["✅ Identifies the user"]):::ok
+    subgraph TOKEN ["  ðŸª™  3. API Token  "]
+        T1(["Authorization: Bearer olt_abc123â€¦"]):::req
+        T2["ðŸ” Look up token hash in DB"]:::step
+        T3(["âœ… Identifies the user"]):::ok
         T1 --> T2 --> T3
     end
 
@@ -990,15 +990,15 @@ graph TB
 Ollanta has two levels of permissions:
 
 **Global** (apply to everything):
-- `admin` — full access
-- `manage_users` — create/edit/delete users
-- `manage_groups` — manage groups
+- `admin` â€” full access
+- `manage_users` â€” create/edit/delete users
+- `manage_groups` â€” manage groups
 
 **Per-project** (apply to a specific project):
-- `project_admin` — configure gates, profiles, webhooks
-- `can_scan` — submit scan reports
-- `can_view` — view results
-- `can_comment` — transition issues (confirm, close, reopen)
+- `project_admin` â€” configure gates, profiles, webhooks
+- `can_scan` â€” submit scan reports
+- `can_view` â€” view results
+- `can_comment` â€” transition issues (confirm, close, reopen)
 
 Permissions can be assigned directly to users or to groups.
 
@@ -1006,7 +1006,7 @@ Permissions can be assigned directly to users or to groups.
 
 ## Part 9: Infrastructure and Deployment
 
-### Docker Compose — full environment
+### Docker Compose â€” full environment
 
 ```mermaid
 %%{init: {
@@ -1024,20 +1024,20 @@ Permissions can be assigned directly to users or to groups.
   }
 }}%%
 graph TB
-    subgraph DEFAULT ["  🔍  Profile: default (scanner only)  "]
-        serve["🔍 serve\nScanner + local UI\nPort 7777\nMounts your code as a volume"]:::step
+    subgraph SCANNER ["  ðŸ”  Profile: scanner (local UI)  "]
+      localUI["ðŸ” local-ui\nScanner + local UI\nPort 7777\nMounts your code as a volume"]:::step
     end
 
-    subgraph SERVER ["  🏢  Profile: server (full stack)  "]
-        postgres["🐘 PostgreSQL 17\nPort 5432\nPersistent volume"]:::pg
-        zinc["🔎 ZincSearch\nPort 4080\nFull-text search"]:::zinc
-        web["🌐 ollantaweb\nPort 8080\nREST API + Frontend"]:::web
+    subgraph SERVER ["  ðŸ¢  Profile: server (full stack)  "]
+        postgres["ðŸ˜ PostgreSQL 17\nPort 5432\nPersistent volume"]:::pg
+        zinc["ðŸ”Ž ZincSearch\nPort 4080\nFull-text search"]:::zinc
+        web["ðŸŒ ollantaweb\nPort 8080\nREST API + Frontend"]:::web
         web --> postgres
         web --> zinc
     end
 
-    subgraph PUSH ["  📤  Profile: push (scanner → server)  "]
-        push["📤 push\nScans and sends\nto ollantaweb"]:::step
+    subgraph PUSH ["  ðŸ“¤  Profile: push (scanner â†’ server)  "]
+        push["ðŸ“¤ push\nScans and sends\nto ollantaweb"]:::step
         push -->|"POST report"| web
     end
 
@@ -1046,7 +1046,7 @@ graph TB
     classDef zinc fill:#ede9fe,stroke:#7c3aed,stroke-width:2px,color:#3b0764
     classDef web  fill:#d1fae5,stroke:#059669,stroke-width:2px,color:#064e3b
 
-    style DEFAULT fill:#fffbeb,stroke:#fbbf24,stroke-width:2px,stroke-dasharray:6 3
+    style SCANNER fill:#fffbeb,stroke:#fbbf24,stroke-width:2px,stroke-dasharray:6 3
     style SERVER  fill:#eff6ff,stroke:#93c5fd,stroke-width:2px,stroke-dasharray:6 3
     style PUSH    fill:#f0fdf4,stroke:#6ee7b7,stroke-width:2px,stroke-dasharray:6 3
 ```
@@ -1055,7 +1055,7 @@ graph TB
 
 ```bash
 # Just want to scan and see results locally?
-docker compose up serve
+docker compose --profile scanner up local-ui
 
 # Want the full server stack with database, search, and API?
 docker compose --profile server up -d
@@ -1080,7 +1080,7 @@ The most important ones for configuring the server:
 | `OLLANTA_ZINCSEARCH_URL` | `http://localhost:4080` | ZincSearch URL |
 | `OLLANTA_LOG_LEVEL` | `info` | Log level |
 
-OAuth (optional — configure to enable social login):
+OAuth (optional â€” configure to enable social login):
 
 | Variable | Purpose |
 |----------|---------|
@@ -1117,13 +1117,13 @@ Ollanta uses a two-stage build to keep the final image small and secure:
   }
 }}%%
 flowchart LR
-    subgraph BUILD ["  🔨  Stage 1: Build  "]
+    subgraph BUILD ["  ðŸ”¨  Stage 1: Build  "]
         A["golang:1.21-bookworm\n(large image with compiler)"]:::src
         B["Compile binary\nCGO_ENABLED=1\nstatic linking"]:::step
         A --> B
     end
 
-    subgraph PROD ["  🚀  Stage 2: Production  "]
+    subgraph PROD ["  ðŸš€  Stage 2: Production  "]
         C["distroless/static\n(minimal image, ~2MB)"]:::out
         D["Copy binary only\nRun as nonroot"]:::step
         C --> D
@@ -1139,7 +1139,7 @@ flowchart LR
     style PROD  fill:#f0fdf4,stroke:#6ee7b7,stroke-width:2px,stroke-dasharray:6 3
 ```
 
-Result: final image is ~20 MB, no shell, no tools — minimal attack surface.
+Result: final image is ~20 MB, no shell, no tools â€” minimal attack surface.
 
 ---
 
@@ -1163,15 +1163,15 @@ The pipeline runs on GitHub Actions with 5 parallel jobs:
   }
 }}%%
 flowchart TB
-    Push(["📬 Push or PR\nto main"]):::src
+    Push(["ðŸ“¬ Push or PR\nto main"]):::src
 
     Push --> L & TS & TW & TA & DB
 
-    L["🔍 Lint\ngolangci-lint v2\n(5 modules)"]:::job
-    TS["🧪 Test Scanner\nCGO_ENABLED=1\nollantacore, parser,\nrules, scanner, engine"]:::cgo
-    TW["🧪 Test Web\nCGO_ENABLED=0\nollantastore, ollantaweb"]:::job
-    TA["🧪 Test Adapter\nCGO_ENABLED=1\nadapter/"]:::cgo
-    DB["🐳 Docker Build\nSmoke test\nDockerfiles"]:::docker
+    L["ðŸ” Lint\ngolangci-lint v2\n(5 modules)"]:::job
+    TS["ðŸ§ª Test Scanner\nCGO_ENABLED=1\nollantacore, parser,\nrules, scanner, engine"]:::cgo
+    TW["ðŸ§ª Test Web\nCGO_ENABLED=0\nollantastore, ollantaweb"]:::job
+    TA["ðŸ§ª Test Adapter\nCGO_ENABLED=1\nadapter/"]:::cgo
+    DB["ðŸ³ Docker Build\nSmoke test\nDockerfiles"]:::docker
 
     classDef src    fill:#dbeafe,stroke:#3b82f6,stroke-width:2px,color:#1e3a5f
     classDef job    fill:#fef9c3,stroke:#d97706,stroke-width:2px,color:#1c1917
@@ -1185,7 +1185,7 @@ flowchart TB
 
 ---
 
-## Part 11: REST API — Quick Reference
+## Part 11: REST API â€” Quick Reference
 
 ### Public endpoints (no authentication)
 
@@ -1194,7 +1194,7 @@ flowchart TB
 | `GET` | `/healthz` | Liveness probe |
 | `GET` | `/readyz` | Readiness probe |
 | `GET` | `/metrics` | Prometheus metrics |
-| `POST` | `/api/v1/auth/login` | Password login → JWT |
+| `POST` | `/api/v1/auth/login` | Password login â†’ JWT |
 | `POST` | `/api/v1/auth/refresh` | Renew JWT with refresh token |
 | `GET` | `/api/v1/auth/github` | Start GitHub OAuth login |
 | `GET` | `/api/v1/projects/{key}/badge` | Quality gate SVG badge |
@@ -1234,7 +1234,7 @@ flowchart TB
 
 ---
 
-## Part 12: Webhooks — automatic notifications
+## Part 12: Webhooks â€” automatic notifications
 
 Webhooks let external systems be notified when something happens in Ollanta.
 
@@ -1243,7 +1243,7 @@ Webhooks let external systems be notified when something happens in Ollanta.
 | Event | When it fires |
 |-------|---------------|
 | `scan.completed` | A scan was processed successfully |
-| `gate.changed` | Quality gate status changed (OK → ERROR or vice versa) |
+| `gate.changed` | Quality gate status changed (OK â†’ ERROR or vice versa) |
 | `project.created` | A new project was created |
 | `project.deleted` | A project was deleted |
 
@@ -1261,7 +1261,7 @@ sequenceDiagram
     D->>W: POST url + security headers
 
     alt Success (2xx)
-        W-->>D: 200 OK ✓
+        W-->>D: 200 OK âœ“
     else Failure
         W-->>D: 500 / timeout
         Note over D: Retry at 1min, 5min, 30min
@@ -1273,9 +1273,9 @@ sequenceDiagram
 ```
 
 **Sent headers:**
-- `X-Ollanta-Event: scan.completed` — which event
-- `X-Ollanta-Signature: sha256=abc123...` — HMAC for authenticity verification
-- `X-Ollanta-Delivery: uuid` — unique delivery ID
+- `X-Ollanta-Event: scan.completed` â€” which event
+- `X-Ollanta-Signature: sha256=abc123...` â€” HMAC for authenticity verification
+- `X-Ollanta-Delivery: uuid` â€” unique delivery ID
 
 ---
 
@@ -1312,13 +1312,13 @@ The schema evolves via numbered migrations applied in order:
 |------|---------|
 | **Issue** | A problem found in code (bug, vulnerability, code smell, hotspot) |
 | **Scan** | A complete analysis run over a project |
-| **Component** | A node in the hierarchy: project → module → package → file |
+| **Component** | A node in the hierarchy: project â†’ module â†’ package â†’ file |
 | **Rule** | A rule that knows how to detect one type of problem (e.g., "function too long") |
 | **Measure** | A numeric metric value for a component (e.g., ncloc = 1500) |
 | **Quality Gate** | A set of conditions that determine whether a project passes or fails |
 | **Quality Profile** | A set of active rules for a language (e.g., "Sonar Way Go") |
 | **New Code Period** | A reference point that defines what counts as "new code" |
-| **LineHash** | SHA-256 of a line's content — the stable identity of an issue |
+| **LineHash** | SHA-256 of a line's content â€” the stable identity of an issue |
 | **Tracking** | Algorithm that correlates issues across scans using (rule_key + line_hash) |
 | **Sensor** | Component that runs rules: GoSensor (native Go) or TreeSitterSensor |
 | **Ingestion** | Pipeline that receives a report and persists scans, issues, and metrics |
@@ -1326,20 +1326,20 @@ The schema evolves via numbered migrations applied in order:
 | **Adapter** | Concrete implementation of a port (e.g., PostgreSQL implements IProjectRepo) |
 | **Index Worker** | In-process background worker that indexes scan issues after ingest |
 | **CumSum** | Metric propagation from leaves to the root of the component tree |
-| **SARIF** | Static Analysis Results Interchange Format — industry-standard format |
+| **SARIF** | Static Analysis Results Interchange Format â€” industry-standard format |
         PG["secondary/postgres\npgx/v5"]
-        SEARCH["secondary/search\nZincSearch · Postgres FTS"]
-        OAUTH["secondary/oauth\nGitHub · GitLab · Google"]
+        SEARCH["secondary/search\nZincSearch Â· Postgres FTS"]
+        OAUTH["secondary/oauth\nGitHub Â· GitLab Â· Google"]
         WH["secondary/webhook\noutbound dispatcher"]
         PARSER["secondary/parser\nTree-sitter CGo"]
         RULES_BRIDGE["secondary/rules\nrule registry bridge"]
     end
 
-    subgraph App["📦 Application (use cases)"]
-        UC["ingest · analysis\nscan orchestration"]
+    subgraph App["ðŸ“¦ Application (use cases)"]
+        UC["ingest Â· analysis\nscan orchestration"]
     end
 
-    subgraph Domain["🏛️ Domain (inner core — zero external deps)"]
+    subgraph Domain["ðŸ›ï¸ Domain (inner core â€” zero external deps)"]
         D["pure models\nport interfaces\ndomain services"]
     end
 
@@ -1361,15 +1361,15 @@ Each Go module has a single responsibility. Arrows mean "depends on".
 
 ```mermaid
 graph LR
-    ollantacore["ollantacore\nshared types\nIssue · Metric · Rule"]
+    ollantacore["ollantacore\nshared types\nIssue Â· Metric Â· Rule"]
 
-    ollantaparser["ollantaparser\nlanguage parsers\nGo AST · Tree-sitter"]
-    ollantarules["ollantarules\nrule definitions\nsensors · thresholds"]
+    ollantaparser["ollantaparser\nlanguage parsers\nGo AST Â· Tree-sitter"]
+    ollantarules["ollantarules\nrule definitions\nsensors Â· thresholds"]
     ollantascanner["ollantascanner\nscan orchestration\nJSON + SARIF output"]
     ollantaengine["ollantaengine\nquality gates\nissue tracking\nmetric aggregation"]
-    ollantastore["ollantastore\nPostgreSQL repos\nZincSearch · Postgres FTS"]
+    ollantastore["ollantastore\nPostgreSQL repos\nZincSearch Â· Postgres FTS"]
     ollantaweb["ollantaweb\nREST API server\n(Docker entry point)"]
-    adapter["adapter/\nHTTP · OAuth · Webhook\nTelemetry · Breaker"]
+    adapter["adapter/\nHTTP Â· OAuth Â· Webhook\nTelemetry Â· Breaker"]
 
     ollantaparser --> ollantacore
     ollantarules  --> ollantacore
@@ -1405,7 +1405,7 @@ sequenceDiagram
     Target-->>CLI: file list
 
     loop for each file
-        CLI->>Parser: parse file → AST
+        CLI->>Parser: parse file â†’ AST
         Parser-->>CLI: AST / tree-sitter tree
         CLI->>Sensor: run sensor (GoSensor or TreeSitterSensor)
         Sensor->>Rules: FindByLanguage(lang)
@@ -1450,7 +1450,7 @@ classDiagram
     Rule --> CheckFunc
 ```
 
-**How rules load at startup** — the `init()` pattern:
+**How rules load at startup** â€” the `init()` pattern:
 
 ```mermaid
 sequenceDiagram
@@ -1463,7 +1463,7 @@ sequenceDiagram
     Binary->>Init: Go calls init() before main()
     Init->>FS: read all *.json files
     FS-->>Init: raw JSON bytes
-    Init->>MR: MustRegister(MetaFS, "*.json", Rule1, Rule2, …)
+    Init->>MR: MustRegister(MetaFS, "*.json", Rule1, Rule2, â€¦)
     MR->>MR: for each Rule: find MetaKey in JSON, bind RuleMeta
     MR->>GR: Registry.Register(rule)
     Note over GR: panics if key missing or duplicate
