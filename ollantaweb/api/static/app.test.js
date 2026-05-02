@@ -125,6 +125,45 @@ test('render outputs the unified login card before authentication', () => {
   assert.match(html, /Sign in/);
 });
 
+test('render shows API docs and only configured observability links in the global nav', () => {
+  const { app: harnessApp, elements } = createHarness();
+
+  harnessApp.state.view = 'projects';
+  harnessApp.state.user = { login: 'admin', name: 'Administrator' };
+  harnessApp.state.uiSettings = { observabilityLinks: [{ label: 'Datadog', href: 'https://app.datadoghq.com/dashboard/abc' }] };
+
+  harnessApp.render();
+
+  const html = elements.get('app').innerHTML;
+  assert.match(html, /aria-label="Admin shortcuts"/);
+  assert.match(html, /id="apiDocsBtn"/);
+  assert.doesNotMatch(html, /href="\/api\/v1\/system\/info"/);
+  assert.match(html, /href="\/metrics"/);
+  assert.match(html, /https:\/\/app\.datadoghq\.com\/dashboard\/abc/);
+  assert.doesNotMatch(html, /http:\/\/localhost:9091\/targets/);
+  assert.doesNotMatch(html, /http:\/\/localhost:16686/);
+  assert.doesNotMatch(html, /http:\/\/localhost:3100\/ready/);
+});
+
+test('renderApiDocsPage documents Ollanta API groups', () => {
+  const { app: harnessApp } = createHarness();
+
+  const html = harnessApp.renderApiDocsPage();
+
+  assert.match(html, /Ollanta API/);
+  assert.match(html, /Authorization: Bearer/);
+  assert.match(html, /<details class="api-endpoint-row">/);
+  assert.match(html, /api-example-toggle/);
+  assert.match(html, /curl -X GET/);
+  assert.match(html, /curl -X POST/);
+  assert.match(html, /Authorization: Bearer \$OLLANTA_TOKEN/);
+  assert.match(html, /project_key/);
+  assert.match(html, /\/api\/v1\/auth\/login/);
+  assert.match(html, /\/api\/v1\/projects\/{key}\/issues/);
+  assert.match(html, /\/api\/v1\/system\/info/);
+  assert.match(html, /\/metrics/);
+});
+
 test('renderScopeToolbar shows the real default branch name in the branch selector', () => {
   const { app: harnessApp } = createHarness();
 
@@ -137,8 +176,24 @@ test('renderScopeToolbar shows the real default branch name in the branch select
   harnessApp.state.pullRequestsData = [];
 
   const html = harnessApp.renderScopeToolbar();
-  assert.match(html, /<option value="main">main · default<\/option>/);
+  assert.match(html, /<option value="main">main Ã‚Â· default<\/option>/);
   assert.doesNotMatch(html, /<option value="">Default branch<\/option>/);
+});
+
+test('renderAdminLinksTab exposes API and observability shortcuts', () => {
+  const { app: harnessApp } = createHarness();
+
+  harnessApp.state.currentProject = { key: 'demo' };
+  harnessApp.state.uiSettings = { observabilityLinks: [{ label: 'Grafana', href: 'https://grafana.example.com' }] };
+
+  const html = harnessApp.renderAdminLinksTab();
+
+  assert.match(html, /data-admin-api="\/system\/info"/);
+  assert.match(html, /data-admin-api="\/projects\/demo\/permissions"/);
+  assert.match(html, /https:\/\/grafana\.example\.com/);
+  assert.doesNotMatch(html, /http:\/\/localhost:9091\/targets/);
+  assert.doesNotMatch(html, /http:\/\/localhost:16686/);
+  assert.match(html, /\/metrics/);
 });
 
 test('changeScope refreshes scoped data and persists the branch in the URL', async () => {

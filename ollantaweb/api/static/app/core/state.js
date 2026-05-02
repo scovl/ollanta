@@ -55,6 +55,7 @@ export function emptyScope() {
 export function createInitialState() {
   return {
     user: null,
+    uiSettings: { observabilityLinks: [] },
     view: 'login',
     projects: [],
     currentProject: null,

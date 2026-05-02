@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/scovl/ollanta/ollantacore/configfile"
@@ -19,6 +20,7 @@ type fileConfig struct {
 	Server   serverFileConfig   `toml:"server"`
 	Database databaseFileConfig `toml:"database"`
 	Search   searchFileConfig   `toml:"search"`
+	UI       uiFileConfig       `toml:"ui"`
 }
 
 type serverFileConfig struct {
@@ -55,6 +57,16 @@ type searchFileConfig struct {
 	Port     int    `toml:"port"`
 	User     string `toml:"user"`
 	Password string `toml:"password"`
+}
+
+type uiFileConfig struct {
+	ObservabilityLinks []ObservabilityLink `toml:"observability_links"`
+}
+
+// ObservabilityLink describes an optional external observability tool link shown in the web UI.
+type ObservabilityLink struct {
+	Label string `toml:"label" json:"label"`
+	URL   string `toml:"url" json:"url"`
 }
 
 // Config holds all runtime configuration for the ollantaweb server.
@@ -112,6 +124,9 @@ type Config struct {
 	// ScannerToken is a pre-shared key accepted for POST /api/v1/scans.
 	// If empty, scanner push requires a regular JWT or API token.
 	ScannerToken string
+
+	// ObservabilityLinks are optional external links shown in the admin navigation.
+	ObservabilityLinks []ObservabilityLink
 }
 
 // Load reads configuration from config.toml and environment variables, then validates required fields.
@@ -177,6 +192,9 @@ func applyFileConfig(cfg *Config, file fileConfig) error {
 	}
 	applyDatabaseFileConfig(cfg, file.Database)
 	applySearchFileConfig(cfg, file.Search)
+	if err := applyUIFileConfig(cfg, file.UI); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -224,6 +242,15 @@ func applySearchFileConfig(cfg *Config, file searchFileConfig) {
 	}
 	applyStringValue(&cfg.ZincSearchUser, file.User)
 	applyStringValue(&cfg.ZincSearchPassword, file.Password)
+}
+
+func applyUIFileConfig(cfg *Config, file uiFileConfig) error {
+	links, err := validateObservabilityLinks(file.ObservabilityLinks)
+	if err != nil {
+		return err
+	}
+	cfg.ObservabilityLinks = links
+	return nil
 }
 
 func hasDatabaseParts(file databaseFileConfig) bool {
@@ -285,6 +312,9 @@ func applyServerEnvOverrides(cfg *Config) error {
 	applyEnvStringValue(&cfg.GoogleClientID, "OLLANTA_GOOGLE_CLIENT_ID")
 	applyEnvStringValue(&cfg.GoogleClientSecret, "OLLANTA_GOOGLE_CLIENT_SECRET")
 	applyEnvStringValue(&cfg.ScannerToken, "OLLANTA_SCANNER_TOKEN")
+	if err := applyEnvObservabilityLinks(cfg, "OLLANTA_OBSERVABILITY_LINKS"); err != nil {
+		return err
+	}
 	if err := applyEnvDurationValue(&cfg.JWTExpiry, "OLLANTA_JWT_EXPIRY"); err != nil {
 		return errors.New("invalid OLLANTA_JWT_EXPIRY")
 	}
@@ -292,6 +322,62 @@ func applyServerEnvOverrides(cfg *Config) error {
 		return errors.New("invalid OLLANTA_REFRESH_EXPIRY")
 	}
 	return nil
+}
+
+func applyEnvObservabilityLinks(cfg *Config, key string) error {
+	value, ok := os.LookupEnv(key)
+	if !ok {
+		return nil
+	}
+	links, err := parseObservabilityLinks(value)
+	if err != nil {
+		return errors.New("invalid " + key)
+	}
+	cfg.ObservabilityLinks = links
+	return nil
+}
+
+func parseObservabilityLinks(value string) ([]ObservabilityLink, error) {
+	if strings.TrimSpace(value) == "" {
+		return nil, nil
+	}
+	parts := strings.Split(value, ";")
+	links := make([]ObservabilityLink, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		label, linkURL, found := strings.Cut(part, "=")
+		if !found {
+			return nil, errors.New("missing label or url")
+		}
+		links = append(links, ObservabilityLink{Label: strings.TrimSpace(label), URL: strings.TrimSpace(linkURL)})
+	}
+	return validateObservabilityLinks(links)
+}
+
+func validateObservabilityLinks(links []ObservabilityLink) ([]ObservabilityLink, error) {
+	if len(links) == 0 {
+		return nil, nil
+	}
+	valid := make([]ObservabilityLink, 0, len(links))
+	for _, link := range links {
+		label := strings.TrimSpace(link.Label)
+		linkURL := strings.TrimSpace(link.URL)
+		if label == "" || linkURL == "" {
+			return nil, errors.New("observability links require label and url")
+		}
+		parsed, err := url.Parse(linkURL)
+		if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+			return nil, errors.New("observability links require absolute urls")
+		}
+		if parsed.Scheme != "http" && parsed.Scheme != "https" {
+			return nil, errors.New("observability links support http and https urls")
+		}
+		valid = append(valid, ObservabilityLink{Label: label, URL: linkURL})
+	}
+	return valid, nil
 }
 
 func applyStringValue(dst *string, value string) {

@@ -24,6 +24,30 @@ docker compose --profile server --profile observability up -d serve
 - Ollanta API: `http://localhost:8080`
 - Scanner UI local: `http://localhost:7777`
 
+## Optional UI Links
+
+The Ollanta web UI always shows Ollanta-owned observability endpoints such as `/metrics`. Links to external tools are optional because deployments may use Prometheus, Jaeger, Loki, Datadog, Grafana Cloud, Elastic, Honeycomb, or another stack.
+
+Configure links in `config.toml`:
+
+```toml
+[[ui.observability_links]]
+label = "Datadog"
+url = "https://app.datadoghq.com/dashboard/example"
+
+[[ui.observability_links]]
+label = "Grafana"
+url = "https://grafana.example.com/d/ollanta"
+```
+
+Or with the `OLLANTA_OBSERVABILITY_LINKS` environment variable. Entries are separated by semicolons and each entry uses `Label=https://absolute-url`:
+
+```bash
+OLLANTA_OBSERVABILITY_LINKS="Prometheus=http://localhost:9091/targets;Jaeger=http://localhost:16686;Loki=http://localhost:3100/ready"
+```
+
+If no links are configured, no external observability tools are shown in the navigation.
+
 ## What Gets Collected
 
 - Prometheus scrapes:

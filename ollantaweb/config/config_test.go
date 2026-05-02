@@ -30,6 +30,10 @@ refresh_expiry = "48h"
 oauth_redirect_base = "http://localhost:8080"
 scanner_token = "scanner-secret"
 
+[[ui.observability_links]]
+label = "Grafana"
+url = "https://grafana.example.com/d/ollanta"
+
 [database]
 url = "postgres://file@localhost:5432/ollanta?sslmode=disable"
 
@@ -237,5 +241,60 @@ func assertServerFileConfig(t *testing.T, cfg *Config) {
 	}
 	if cfg.ScannerToken != "scanner-secret" {
 		t.Fatalf("ScannerToken = %q, want scanner-secret", cfg.ScannerToken)
+	}
+	if len(cfg.ObservabilityLinks) != 1 {
+		t.Fatalf("ObservabilityLinks length = %d, want 1", len(cfg.ObservabilityLinks))
+	}
+	if cfg.ObservabilityLinks[0].Label != "Grafana" || cfg.ObservabilityLinks[0].URL != "https://grafana.example.com/d/ollanta" {
+		t.Fatalf("ObservabilityLinks[0] = %+v, want Grafana link", cfg.ObservabilityLinks[0])
+	}
+}
+
+func TestLoadEnvOverridesObservabilityLinks(t *testing.T) {
+	dir := t.TempDir()
+	enterDir(t, dir)
+	configPath := filepath.Join(dir, configFileName)
+	config := []byte(`[database]
+url = "postgres://file@localhost:5432/ollanta?sslmode=disable"
+
+[[ui.observability_links]]
+label = "Prometheus"
+url = "http://localhost:9091/targets"
+`)
+	writeConfigFile(t, configPath, config)
+
+	t.Setenv("OLLANTA_OBSERVABILITY_LINKS", "Datadog=https://app.datadoghq.com/dashboard/abc;Grafana=https://grafana.example.com")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf(loadError, err)
+	}
+	if len(cfg.ObservabilityLinks) != 2 {
+		t.Fatalf("ObservabilityLinks length = %d, want 2", len(cfg.ObservabilityLinks))
+	}
+	if cfg.ObservabilityLinks[0].Label != "Datadog" || cfg.ObservabilityLinks[0].URL != "https://app.datadoghq.com/dashboard/abc" {
+		t.Fatalf("ObservabilityLinks[0] = %+v, want Datadog link", cfg.ObservabilityLinks[0])
+	}
+	if cfg.ObservabilityLinks[1].Label != "Grafana" || cfg.ObservabilityLinks[1].URL != "https://grafana.example.com" {
+		t.Fatalf("ObservabilityLinks[1] = %+v, want Grafana link", cfg.ObservabilityLinks[1])
+	}
+}
+
+func TestLoadRejectsInvalidObservabilityLinks(t *testing.T) {
+	dir := t.TempDir()
+	enterDir(t, dir)
+	configPath := filepath.Join(dir, configFileName)
+	config := []byte(`[database]
+url = "postgres://file@localhost:5432/ollanta?sslmode=disable"
+
+[[ui.observability_links]]
+label = "Broken"
+url = "localhost:9091"
+`)
+	writeConfigFile(t, configPath, config)
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("Load() error = nil, want invalid observability link error")
 	}
 }

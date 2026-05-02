@@ -12,7 +12,7 @@ import {
 } from './core/scope.js';
 import { resetProjectState, state } from './core/state.js';
 import { badgeClassForGateStatus, escAttr, escHtml, fmtDate, fmtK, fmtNum } from './core/utils.js';
-import { bindAdminTabContent, loadGateData, loadProfilesData, loadWebhooksData, renderGateTab, renderProfilesTab, renderWebhooksTab } from './features/admin.js';
+import { bindAdminTabContent, loadGateData, loadProfilesData, loadWebhooksData, renderAdminLinksTab, renderGateTab, renderProfilesTab, renderWebhooksTab } from './features/admin.js';
 import { loadActivityData, renderActivityTab } from './features/activity.js';
 import { loadCodeFileData, loadCodeTreeData, renderCodeTab } from './features/code.js';
 import { loadIssues, openIssueDetail, renderIssuesSection } from './features/issues.js';
@@ -26,7 +26,7 @@ export function configureProjectFlowFeature(options) {
 }
 
 function renderProjectTabs(activeTab, issueCount) {
-  const tabs = ['overview', 'issues', 'activity', 'branches', 'pull-requests', 'code', 'information', 'gate', 'webhooks', 'profiles'];
+  const tabs = ['overview', 'issues', 'activity', 'branches', 'pull-requests', 'code', 'information', 'admin', 'gate', 'webhooks', 'profiles'];
   const labels = {
     overview: 'Overview',
     issues: 'Issues',
@@ -35,6 +35,7 @@ function renderProjectTabs(activeTab, issueCount) {
     'pull-requests': 'Pull Requests',
     code: 'Code',
     information: 'Project Information',
+    admin: 'Admin',
     gate: 'Quality Gate',
     webhooks: 'Webhooks',
     profiles: 'Profiles',
@@ -53,6 +54,7 @@ function renderProjectTabContent(tab) {
   if (tab === 'pull-requests') return renderPullRequestsTab();
   if (tab === 'code') return renderCodeTab();
   if (tab === 'information') return renderProjectInformationTab();
+  if (tab === 'admin') return renderAdminLinksTab();
   if (tab === 'gate') return renderGateTab();
   if (tab === 'webhooks') return renderWebhooksTab();
   if (tab === 'profiles') return renderProfilesTab();
@@ -148,30 +150,34 @@ async function ensureProjectTabLoaded(tab) {
     return;
   }
 
-  const loaders = {
-    activity: loadActivityData,
-    branches: loadBranchesData,
-    'pull-requests': loadPullRequestsData,
-    code: loadCodeTreeData,
-    information: loadProjectInfoData,
-    gate: loadGateData,
-    webhooks: loadWebhooksData,
-    profiles: loadProfilesData,
-  };
-  const stateKeys = {
-    activity: 'activityData',
-    branches: 'branchesData',
-    'pull-requests': 'pullRequestsData',
-    code: 'codeTreeData',
-    information: 'projectInfoData',
-    gate: 'gateData',
-    webhooks: 'webhooksData',
-    profiles: 'profilesData',
-  };
-  const stateKey = stateKeys[tab];
-  const loader = loaders[tab];
-  if (!stateKey || !loader || state[stateKey] !== null) return;
-  await loader();
+  switch (tab) {
+    case 'activity':
+      if (state.activityData === null) await loadActivityData();
+      return;
+    case 'branches':
+      if (state.branchesData === null) await loadBranchesData();
+      return;
+    case 'pull-requests':
+      if (state.pullRequestsData === null) await loadPullRequestsData();
+      return;
+    case 'code':
+      if (state.codeTreeData === null) await loadCodeTreeData();
+      return;
+    case 'information':
+      if (state.projectInfoData === null) await loadProjectInfoData();
+      return;
+    case 'gate':
+      if (state.gateData === null) await loadGateData();
+      return;
+    case 'webhooks':
+      if (state.webhooksData === null) await loadWebhooksData();
+      return;
+    case 'profiles':
+      if (state.profilesData === null) await loadProfilesData();
+      return;
+    default:
+      return;
+  }
 }
 
 export async function changeScope(scope) {
@@ -230,10 +236,10 @@ export function renderScopeToolbar() {
   const branches = (state.branchesData || []).filter(item => item?.name);
   const pullRequests = state.pullRequestsData || [];
   const branchOptions = branches.length
-    ? branches.map(item => `<option value="${escAttr(item.name)}">${escHtml(item.name)}${item.is_default ? ' · default' : ''}</option>`).join('')
+    ? branches.map(item => `<option value="${escAttr(item.name)}">${escHtml(item.name)}${item.is_default ? ' Ã‚Â· default' : ''}</option>`).join('')
     : '<option value="">No detected branch</option>';
   const prOptions = [`<option value="">No pull request</option>`].concat(
-    pullRequests.map(item => `<option value="${escAttr(item.key)}">#${escHtml(item.key)} · ${escHtml(item.branch || 'unknown')} \u2192 ${escHtml(item.base_branch || 'unknown')}</option>`)
+    pullRequests.map(item => `<option value="${escAttr(item.key)}">#${escHtml(item.key)} Ã‚Â· ${escHtml(item.branch || 'unknown')} \u2192 ${escHtml(item.base_branch || 'unknown')}</option>`)
   ).join('');
 
   return `<div class="scope-toolbar">

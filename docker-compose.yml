@@ -158,6 +158,7 @@ services:
       OLLANTA_LOG_LEVEL: "info"
       OTEL_EXPORTER_OTLP_ENDPOINT: "${OTEL_EXPORTER_OTLP_ENDPOINT:-http://jaeger:4318}"
       OLLANTA_SCANNER_TOKEN: "${OLLANTA_SCANNER_TOKEN:-ollanta-dev-scanner-token}"
+      OLLANTA_OBSERVABILITY_LINKS: "${OLLANTA_OBSERVABILITY_LINKS:-}"
     ports:
       - "8080:8080"
     restart: unless-stopped
