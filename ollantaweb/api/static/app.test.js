@@ -137,6 +137,7 @@ test('render shows API docs and only configured observability links in the globa
   const html = elements.get('app').innerHTML;
   assert.match(html, /aria-label="Admin shortcuts"/);
   assert.match(html, /id="apiDocsBtn"/);
+  assert.match(html, /id="backgroundTasksBtn"/);
   assert.doesNotMatch(html, /href="\/api\/v1\/system\/info"/);
   assert.match(html, /href="\/metrics"/);
   assert.match(html, /https:\/\/app\.datadoghq\.com\/dashboard\/abc/);
@@ -176,24 +177,90 @@ test('renderScopeToolbar shows the real default branch name in the branch select
   harnessApp.state.pullRequestsData = [];
 
   const html = harnessApp.renderScopeToolbar();
-  assert.match(html, /<option value="main">main Ã‚Â· default<\/option>/);
+  assert.match(html, /<option value="main">main<\/option>/);
   assert.doesNotMatch(html, /<option value="">Default branch<\/option>/);
 });
 
-test('renderAdminLinksTab exposes API and observability shortcuts', () => {
+test('renderBackgroundTasksPage renders filters, summary and project-first task rows', () => {
   const { app: harnessApp } = createHarness();
 
-  harnessApp.state.currentProject = { key: 'demo' };
-  harnessApp.state.uiSettings = { observabilityLinks: [{ label: 'Grafana', href: 'https://grafana.example.com' }] };
+  harnessApp.state.view = 'background-tasks';
+  harnessApp.state.backgroundTasksSummary = { queue_depth: 2, running_count: 1, failed_count: 3, stale_count: 1, retry_count: 0, recent_completion_count: 4 };
+  harnessApp.state.backgroundTasksData = {
+    total: 1,
+    limit: 25,
+    offset: 0,
+    items: [{ id: 'index:7', type: 'index', status: 'failed', project_key: 'demo', scan_id: 99, attempts: 2, worker_id: 'worker-1', last_error: 'boom' }],
+  };
 
-  const html = harnessApp.renderAdminLinksTab();
+  const html = harnessApp.renderBackgroundTasksPage();
 
-  assert.match(html, /data-admin-api="\/system\/info"/);
-  assert.match(html, /data-admin-api="\/projects\/demo\/permissions"/);
-  assert.match(html, /https:\/\/grafana\.example\.com/);
-  assert.doesNotMatch(html, /http:\/\/localhost:9091\/targets/);
-  assert.doesNotMatch(html, /http:\/\/localhost:16686/);
-  assert.match(html, /\/metrics/);
+  assert.match(html, /Background Tasks/);
+  assert.match(html, /id="backgroundTasksBackBtn"/);
+  assert.match(html, /id="taskProjectFilter" value=""/);
+  assert.match(html, /<strong>demo<\/strong>/);
+  assert.match(html, /index:7/);
+  assert.match(html, /Search indexing/);
+  assert.match(html, /task-status-failed/);
+  assert.match(html, /boom/);
+});
+
+test('renderProjectDetail does not duplicate Background Tasks in project tabs', () => {
+  const { app: harnessApp, elements } = createHarness();
+
+  harnessApp.state.currentProject = { key: 'demo', name: 'Demo' };
+  harnessApp.state.user = { login: 'admin' };
+  harnessApp.state.view = 'project';
+  harnessApp.state.projectTab = 'overview';
+  harnessApp.state.overviewData = { last_scan: { total_issues: 0 } };
+  harnessApp.state.branchesData = [];
+  harnessApp.state.pullRequestsData = [];
+
+  harnessApp.render();
+  const html = elements.get('app').innerHTML;
+  const tabsHtml = html.match(/<div class="proj-tabs">[\s\S]*?<\/div>/)?.[0] || '';
+
+  assert.match(html, /id="backgroundTasksBtn"/);
+  assert.doesNotMatch(tabsHtml, /data-tab="admin"/);
+  assert.doesNotMatch(tabsHtml, /Background Tasks/);
+});
+
+test('renderBackgroundTasksPage shows task details and guarded actions', () => {
+  const { app: harnessApp } = createHarness();
+
+  harnessApp.state.backgroundTasksData = { total: 0, limit: 25, offset: 0, items: [] };
+  harnessApp.state.selectedBackgroundTask = {
+    id: 'scan:12',
+    type: 'scan',
+    status: 'queued',
+    internal_status: 'accepted',
+    project_key: 'demo',
+    attempts: 0,
+    created_at: '2026-05-02T12:00:00Z',
+    supported_actions: ['cancel'],
+    scanner_parameters: {
+      scanner_options: {
+        project_dir: '/workspace/ollanta',
+        project_key: 'demo',
+        sources: ['./...'],
+        format: 'all',
+        tests: { enabled: true, mode: 'run', modules: [{ name: 'api', root: 'ollantaweb', command: 'go test ./api' }] },
+      },
+      analysis_scope: { branch: 'main', commit_sha: 'abc123' },
+    },
+    details: { source_job_type: 'scan_job', project_key: 'demo' },
+  };
+
+  const html = harnessApp.renderBackgroundTasksPage();
+
+  assert.match(html, /scan:12/);
+  assert.match(html, /task-status-queued/);
+  assert.match(html, /data-task-action="cancel"/);
+  assert.match(html, /Scanner parameters/);
+  assert.match(html, /\/workspace\/ollanta/);
+  assert.match(html, /\.\/\.\.\./);
+  assert.match(html, /go test \.\/api/);
+  assert.match(html, /source_job_type/);
 });
 
 test('changeScope refreshes scoped data and persists the branch in the URL', async () => {
@@ -309,7 +376,7 @@ test('changeScope refreshes project information for a selected pull request', as
   assert.match(harnessApp.renderProjectInformationTab(), /Pull request/i);
 });
 
-test('loadCodeTreeData fetches the scoped file and renderCodeTab shows issue markers', async () => {
+test('loadCodeTreeData fetches the scoped file and renderCoverageTab shows issue markers', async () => {
   const { app: harnessApp, requests } = createHarness({
     fetchHandler(url) {
       if (url === apiPrefix + '/projects/demo/code/tree?branch=release') {
@@ -340,6 +407,14 @@ test('loadCodeTreeData fetches the scoped file and renderCodeTab shows issue mar
 
   harnessApp.state.currentProject = { key: 'demo' };
   harnessApp.state.scope = harnessApp.normalizeScope({ type: 'branch', branch: 'release', defaultBranch: 'main' });
+  harnessApp.state.overviewData = {
+    summary: {
+      coverage: {
+        coverage: 50,
+        files: [{ component_path: 'src/app.go', lines_to_cover: 2, covered_lines: 1, covered_line_numbers: [1], uncovered_line_numbers: [2], coverage: 50 }],
+      },
+    },
+  };
 
   await harnessApp.loadCodeTreeData();
 
@@ -347,11 +422,12 @@ test('loadCodeTreeData fetches the scoped file and renderCodeTab shows issue mar
     apiPrefix + '/projects/demo/code/tree?branch=release',
     apiPrefix + '/projects/demo/code/file?path=src%2Fapp.go&branch=release',
   ]);
-  const html = harnessApp.renderCodeTab();
+  const html = harnessApp.renderCoverageTab();
   assert.match(html, /src\/app\.go/);
   assert.match(html, /go:no-large-functions/);
   assert.match(html, /has-issue/);
   assert.match(html, /sev-major/);
+  assert.match(html, /not covered/);
 });
 
 test('loadIssues includes tracking_state when lifecycle filter is active', async () => {

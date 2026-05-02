@@ -2,6 +2,7 @@ package ingest
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -68,6 +69,72 @@ func TestIngestUsesBranchScopedPreviousScan(t *testing.T) {
 	if len(issueRepo.lastQueryScanIDs) != 0 {
 		t.Fatalf("previous issue query scan IDs = %v, want none", issueRepo.lastQueryScanIDs)
 	}
+}
+
+func TestIngestAcceptsOptionalTestSignals(t *testing.T) {
+	t.Parallel()
+
+	projectRepo := &scopeAwareProjectRepo{project: &model.Project{ID: 1, Key: "shop", MainBranch: defaultMainBranch}}
+	scanRepo := &observingScanRepo{defaultBranch: defaultMainBranch}
+	uc := NewIngestUseCase(projectRepo, scanRepo, &queryIssueRepo{}, &fakeMeasureRepo{}, nil, nil, nil)
+
+	result, err := uc.Ingest(context.Background(), &IngestRequest{
+		Metadata: IngestMetadata{
+			ProjectKey:   "shop",
+			AnalysisDate: time.Now().UTC().Format(time.RFC3339),
+		},
+		Measures:    IngestMeasures{Files: 1, Lines: 8, Ncloc: 8},
+		Issues:      []*model.Issue{},
+		TestSignals: json.RawMessage(`{"summary":{"enabled":true,"modules":1},"modules":[{"name":"domain","root":"domain"}]}`),
+	})
+	if err != nil {
+		t.Fatalf(ingestErrorMessage, err)
+	}
+	if result.ScanID == 0 {
+		t.Fatal("ScanID = 0, want persisted scan")
+	}
+	if len(scanRepo.created) != 1 {
+		t.Fatalf("created scans = %d, want 1", len(scanRepo.created))
+	}
+}
+
+func TestIngestPersistsCoverageFileMeasures(t *testing.T) {
+	t.Parallel()
+
+	projectRepo := &scopeAwareProjectRepo{project: &model.Project{ID: 1, Key: "shop", MainBranch: defaultMainBranch}}
+	scanRepo := &observingScanRepo{defaultBranch: defaultMainBranch}
+	measureRepo := &fakeMeasureRepo{}
+	uc := NewIngestUseCase(projectRepo, scanRepo, &queryIssueRepo{}, measureRepo, nil, nil, nil)
+
+	_, err := uc.Ingest(context.Background(), &IngestRequest{
+		Metadata: IngestMetadata{
+			ProjectKey:   "shop",
+			AnalysisDate: time.Now().UTC().Format(time.RFC3339),
+		},
+		Measures:    IngestMeasures{Files: 1, Lines: 8, Ncloc: 8},
+		Issues:      []*model.Issue{},
+		TestSignals: json.RawMessage(`{"modules":[{"name":"scan","files":[{"path":"application/scan/usecase.go","lines_to_cover":10,"covered_lines":7,"uncovered_lines":[12,18,24]}]}]}`),
+	})
+	if err != nil {
+		t.Fatalf(ingestErrorMessage, err)
+	}
+	coverage := findInsertedMeasure(measureRepo.inserted, model.MetricCoverage, "application/scan/usecase.go")
+	if coverage == nil || coverage.Value != 70 {
+		t.Fatalf("coverage measure = %+v, want 70", coverage)
+	}
+	uncovered := findInsertedMeasure(measureRepo.inserted, model.MetricUncoveredLines, "application/scan/usecase.go")
+	if uncovered == nil || uncovered.Value != 3 {
+		t.Fatalf("uncovered measure = %+v, want 3", uncovered)
+	}
+}
+
+func findInsertedMeasure(rows []model.MeasureRow, metricKey, componentPath string) *model.MeasureRow {
+	for i := range rows {
+		if rows[i].MetricKey == metricKey && rows[i].ComponentPath == componentPath {
+			return &rows[i]
+		}
+	}
+	return nil
 }
 
 func TestIngestUsesPullRequestScopedPreviousScan(t *testing.T) {

@@ -16,6 +16,7 @@ type OverviewHandler struct {
 	scans    *postgres.ScanRepository
 	issues   *postgres.IssueRepository
 	measures *postgres.MeasureRepository
+	scanJobs *postgres.ScanJobRepository
 	gates    *postgres.GateRepository
 	periods  *postgres.NewCodePeriodRepository
 }

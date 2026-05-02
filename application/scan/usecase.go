@@ -17,6 +17,7 @@ import (
 
 // ScanOptions holds every parameter that controls a scan run.
 type ScanOptions struct {
+	ConfigPath        string
 	ProjectDir        string
 	Sources           []string // source directory patterns (Go-style ./... accepted)
 	Exclusions        []string // glob patterns relative to ProjectDir
@@ -36,6 +37,7 @@ type ScanOptions struct {
 	ServerWait        bool          // wait for accepted server job until completion
 	WaitTimeout       time.Duration // maximum time to wait for server-side job completion
 	WaitPoll          time.Duration // polling interval while waiting for server-side job completion
+	Tests             TestOptions   // optional test-signal discovery and collection
 }
 
 // ParseFlags parses args (typically os.Args[1:]) into ScanOptions.
@@ -62,6 +64,9 @@ func ParseFlags(args []string) (*ScanOptions, error) {
 	serverWait := fs.Bool("server-wait", false, "Wait for an accepted server-side scan job to complete")
 	waitTimeout := fs.Duration("server-wait-timeout", 10*time.Minute, "Maximum time to wait for a server-side scan job")
 	waitPoll := fs.Duration("server-wait-poll", 2*time.Second, "Polling interval while waiting for a server-side scan job")
+	withTests := fs.Bool("with-tests", false, "Enable test signal discovery and report collection without running tests")
+	testsMode := fs.String("tests-mode", TestModeCollect, "Test signal mode: collect, run, or doctor")
+	testsRun := fs.Bool("tests-run", false, "Explicitly allow configured test commands to run")
 
 	if err := fs.Parse(args); err != nil {
 		return nil, err
@@ -91,6 +96,12 @@ func ParseFlags(args []string) (*ScanOptions, error) {
 		ServerWait:        *serverWait,
 		WaitTimeout:       *waitTimeout,
 		WaitPoll:          *waitPoll,
+		Tests: TestOptions{
+			Enabled:  *withTests,
+			Mode:     *testsMode,
+			Discover: true,
+			Run:      *testsRun || *testsMode == TestModeRun,
+		},
 	}
 
 	for _, s := range strings.Split(*sources, ",") {
@@ -168,7 +179,7 @@ func (uc *ScanUseCase) Run(ctx context.Context, opts *ScanOptions) (*Report, err
 	}
 
 	// 3. Assemble report
-	return Build(opts.ProjectKey, opts.ProjectDir, files, issues, time.Since(start), Metadata{
+	report := Build(opts.ProjectKey, opts.ProjectDir, files, issues, time.Since(start), Metadata{
 		ProjectKey:      opts.ProjectKey,
 		Version:         Version,
 		ElapsedMs:       time.Since(start).Milliseconds(),
@@ -177,7 +188,106 @@ func (uc *ScanUseCase) Run(ctx context.Context, opts *ScanOptions) (*Report, err
 		CommitSHA:       scmCtx.CommitSHA,
 		PullRequestKey:  scmCtx.PullRequestKey,
 		PullRequestBase: scmCtx.PullRequestBase,
-	}), nil
+	})
+	report.ScannerOptions = scannerOptionsFromScanOptions(opts)
+	if opts.Tests.Enabled {
+		testSignals, err := CollectTestSignals(opts.ProjectDir, opts.Tests, start)
+		if err != nil {
+			return nil, fmt.Errorf("test signals: %w", err)
+		}
+		report.TestSignals = testSignals
+		applyTestSignalMeasures(report, testSignals)
+	}
+	return report, nil
+}
+
+func scannerOptionsFromScanOptions(opts *ScanOptions) ScannerOptions {
+	if opts == nil {
+		return ScannerOptions{}
+	}
+	return ScannerOptions{
+		ConfigPath:        opts.ConfigPath,
+		ProjectDir:        opts.ProjectDir,
+		Sources:           append([]string(nil), opts.Sources...),
+		Exclusions:        append([]string(nil), opts.Exclusions...),
+		ProjectKey:        opts.ProjectKey,
+		Branch:            opts.Branch,
+		CommitSHA:         opts.CommitSHA,
+		PullRequestKey:    opts.PullRequestKey,
+		PullRequestBranch: opts.PullRequestBranch,
+		PullRequestBase:   opts.PullRequestBase,
+		Format:            opts.Format,
+		Debug:             opts.Debug,
+		LocalUI:           opts.Serve,
+		Port:              opts.Port,
+		Bind:              opts.Bind,
+		Server:            opts.Server,
+		ServerWait:        opts.ServerWait,
+		WaitTimeout:       opts.WaitTimeout.String(),
+		WaitPoll:          opts.WaitPoll.String(),
+		Tests:             scannerTestOptionsFromTestOptions(opts.Tests),
+	}
+}
+
+func scannerTestOptionsFromTestOptions(opts TestOptions) ScannerTestOptions {
+	testOptions := ScannerTestOptions{
+		Enabled:        opts.Enabled,
+		Mode:           opts.Mode,
+		Discover:       opts.Discover,
+		Run:            opts.Run,
+		Exclusions:     append([]string(nil), opts.Exclusions...),
+		MaxDepth:       opts.MaxDepth,
+		MaxCandidates:  opts.MaxCandidates,
+		MaxReportBytes: opts.MaxReportBytes,
+		CommandPolicy:  opts.CommandPolicy,
+		PathMappings:   append([]TestPathMapping(nil), opts.PathMappings...),
+		Modules:        make([]ScannerTestModuleOptions, 0, len(opts.Modules)),
+	}
+	if opts.MaxReportAge > 0 {
+		testOptions.MaxReportAge = opts.MaxReportAge.String()
+	}
+	for _, module := range opts.Modules {
+		testOptions.Modules = append(testOptions.Modules, ScannerTestModuleOptions{
+			Name:                 module.Name,
+			Root:                 module.Root,
+			Language:             module.Language,
+			ArchitectureRole:     module.ArchitectureRole,
+			TestPolicy:           module.TestPolicy,
+			IgnoreReason:         module.IgnoreReason,
+			Command:              module.Command,
+			ArtifactRoot:         module.ArtifactRoot,
+			ReportRoot:           module.ReportRoot,
+			CoverageReports:      append([]string(nil), module.CoverageReports...),
+			TestReports:          append([]string(nil), module.TestReports...),
+			MutationReports:      append([]string(nil), module.MutationReports...),
+			NativeReports:        append([]string(nil), module.NativeReports...),
+			CoverageThreshold:    module.CoverageThreshold,
+			NewCoverageThreshold: module.NewCoverageThreshold,
+			MutationThreshold:    module.MutationThreshold,
+			Owner:                module.Owner,
+			Team:                 module.Team,
+			IntegrationRequired:  module.IntegrationRequired,
+		})
+	}
+	return testOptions
+}
+
+func applyTestSignalMeasures(report *Report, testSignals *TestSignalReport) {
+	if report == nil || testSignals == nil {
+		return
+	}
+	report.Measures.Coverage = testSignals.Summary.Coverage
+	report.Measures.Tests = testSignals.Summary.Tests
+	report.Measures.TestFailures = testSignals.Summary.TestFailures
+	report.Measures.TestErrors = testSignals.Summary.TestErrors
+	report.Measures.TestSkipped = testSignals.Summary.TestSkipped
+	report.Measures.TestDurationMs = testSignals.Summary.TestDurationMs
+	report.Measures.MutationScore = testSignals.Summary.MutationScore
+	report.Measures.MutantsTotal = testSignals.Summary.MutantsTotal
+	report.Measures.MutantsKilled = testSignals.Summary.MutantsKilled
+	report.Measures.MutantsSurvived = testSignals.Summary.MutantsSurvived
+	report.Measures.MutantsTimeout = testSignals.Summary.MutantsTimeout
+	report.Measures.MutantsError = testSignals.Summary.MutantsError
 }
 
 // PrintSummary writes a human-readable scan summary to stdout.
@@ -190,6 +300,9 @@ func PrintSummary(r *Report) {
 	fmt.Printf("Lines:         %d\n", r.Measures.Lines)
 	fmt.Printf("NCLOC:         %d\n", r.Measures.Ncloc)
 	fmt.Printf("Comment lines: %d\n", r.Measures.Comments)
+	if r.Measures.Coverage != nil {
+		fmt.Printf("Coverage:      %.1f%%\n", *r.Measures.Coverage)
+	}
 	fmt.Printf("Issues:        %d\n", len(r.Issues))
 	if r.Measures.Bugs > 0 || r.Measures.CodeSmells > 0 || r.Measures.Vulnerabilities > 0 {
 		fmt.Printf("Bugs: %d  Code Smells: %d  Vulnerabilities: %d\n",

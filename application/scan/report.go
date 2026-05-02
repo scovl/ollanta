@@ -60,12 +60,77 @@ type Metadata struct {
 	PullRequestBase string `json:"pull_request_base,omitempty"`
 }
 
+// ScannerOptions describes the scanner parameters used to produce a report.
+type ScannerOptions struct {
+	ConfigPath        string             `json:"config_path,omitempty"`
+	ProjectDir        string             `json:"project_dir,omitempty"`
+	Sources           []string           `json:"sources,omitempty"`
+	Exclusions        []string           `json:"exclusions,omitempty"`
+	ProjectKey        string             `json:"project_key,omitempty"`
+	Branch            string             `json:"branch,omitempty"`
+	CommitSHA         string             `json:"commit_sha,omitempty"`
+	PullRequestKey    string             `json:"pull_request_key,omitempty"`
+	PullRequestBranch string             `json:"pull_request_branch,omitempty"`
+	PullRequestBase   string             `json:"pull_request_base,omitempty"`
+	Format            string             `json:"format,omitempty"`
+	Debug             bool               `json:"debug,omitempty"`
+	LocalUI           bool               `json:"local_ui,omitempty"`
+	Port              int                `json:"port,omitempty"`
+	Bind              string             `json:"bind,omitempty"`
+	Server            string             `json:"server,omitempty"`
+	ServerWait        bool               `json:"server_wait,omitempty"`
+	WaitTimeout       string             `json:"server_wait_timeout,omitempty"`
+	WaitPoll          string             `json:"server_wait_poll,omitempty"`
+	Tests             ScannerTestOptions `json:"tests,omitempty"`
+}
+
+// ScannerTestOptions describes test-signal scanner parameters without secrets.
+type ScannerTestOptions struct {
+	Enabled        bool                       `json:"enabled,omitempty"`
+	Mode           string                     `json:"mode,omitempty"`
+	Discover       bool                       `json:"discover,omitempty"`
+	Run            bool                       `json:"run,omitempty"`
+	MaxReportAge   string                     `json:"max_report_age,omitempty"`
+	Exclusions     []string                   `json:"exclusions,omitempty"`
+	MaxDepth       int                        `json:"max_depth,omitempty"`
+	MaxCandidates  int                        `json:"max_candidates,omitempty"`
+	MaxReportBytes int64                      `json:"max_report_bytes,omitempty"`
+	CommandPolicy  string                     `json:"command_policy,omitempty"`
+	PathMappings   []TestPathMapping          `json:"path_mappings,omitempty"`
+	Modules        []ScannerTestModuleOptions `json:"modules,omitempty"`
+}
+
+// ScannerTestModuleOptions describes one configured test module.
+type ScannerTestModuleOptions struct {
+	Name                 string   `json:"name,omitempty"`
+	Root                 string   `json:"root,omitempty"`
+	Language             string   `json:"language,omitempty"`
+	ArchitectureRole     string   `json:"architecture_role,omitempty"`
+	TestPolicy           string   `json:"test_policy,omitempty"`
+	IgnoreReason         string   `json:"ignore_reason,omitempty"`
+	Command              string   `json:"command,omitempty"`
+	ArtifactRoot         string   `json:"artifact_root,omitempty"`
+	ReportRoot           string   `json:"report_root,omitempty"`
+	CoverageReports      []string `json:"coverage_reports,omitempty"`
+	TestReports          []string `json:"test_reports,omitempty"`
+	MutationReports      []string `json:"mutation_reports,omitempty"`
+	NativeReports        []string `json:"native_reports,omitempty"`
+	CoverageThreshold    *float64 `json:"coverage_threshold,omitempty"`
+	NewCoverageThreshold *float64 `json:"new_coverage_threshold,omitempty"`
+	MutationThreshold    *float64 `json:"mutation_threshold,omitempty"`
+	Owner                string   `json:"owner,omitempty"`
+	Team                 string   `json:"team,omitempty"`
+	IntegrationRequired  bool     `json:"integration_required,omitempty"`
+}
+
 // Report is the complete output of a scan run.
 type Report struct {
-	Metadata     Metadata            `json:"metadata"`
-	Measures     Measures            `json:"measures"`
-	Issues       []*model.Issue      `json:"issues"`
-	CodeSnapshot *model.CodeSnapshot `json:"code_snapshot,omitempty"`
+	Metadata       Metadata            `json:"metadata"`
+	ScannerOptions ScannerOptions      `json:"scanner_options,omitempty"`
+	Measures       Measures            `json:"measures"`
+	Issues         []*model.Issue      `json:"issues"`
+	CodeSnapshot   *model.CodeSnapshot `json:"code_snapshot,omitempty"`
+	TestSignals    *TestSignalReport   `json:"test_signals,omitempty"`
 }
 
 // Build assembles a Report from the discovered files, analysis results, and elapsed time.

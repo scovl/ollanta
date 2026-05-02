@@ -41,21 +41,28 @@ function duplicationCardClass(dupDensity) {
   return 'card-red';
 }
 
-function metricSignal(label, value, colorCls, statusCls, typeFilter) {
-  const interactive = typeFilter ? ' clickable' : '';
+function metricSignal(label, value, colorCls, statusCls, typeFilter, action) {
+  const interactive = typeFilter || action ? ' clickable' : '';
   const dataAttr = typeFilter ? ` data-mc-type="${typeFilter}"` : '';
-  return `<button class="metric-signal ${statusCls}${interactive}"${dataAttr}>
+  const actionAttr = action ? ` data-overview-action="${escAttr(action)}"` : '';
+  return `<button class="metric-signal ${statusCls}${interactive}"${dataAttr}${actionAttr}>
     <span class="metric-signal-label">${label}</span>
-    <span class="metric-signal-value ${colorCls}">${fmtNum(value)}</span>
+    <span class="metric-signal-value ${colorCls || ''}">${fmtNum(value)}</span>
   </button>`;
 }
 
-function metricSignalPct(label, value, statusCls) {
+function metricSignalPct(label, value, statusCls, action) {
   const displayValue = value == null ? '\u2014' : fmtPct(value);
-  return `<div class="metric-signal ${statusCls}">
+  if (!action) {
+    return `<div class="metric-signal ${statusCls}">
+      <span class="metric-signal-label">${label}</span>
+      <span class="metric-signal-value">${displayValue}</span>
+    </div>`;
+  }
+  return `<button class="metric-signal ${statusCls} clickable" data-overview-action="${escAttr(action)}">
     <span class="metric-signal-label">${label}</span>
     <span class="metric-signal-value">${displayValue}</span>
-  </div>`;
+  </button>`;
 }
 
 function metricSignalK(label, value, statusCls) {
@@ -104,7 +111,7 @@ function renderOverviewMetrics(measures) {
     ${metricSignal('Bugs', bugs, bugColorClass, bugCardClass, 'bug')}
     ${metricSignal('Vulnerabilities', vulns, vulnColorClass, vulnCardClass, 'vulnerability')}
     ${metricSignal('Code Smells', smells, 'muted', smellCardClass, 'code_smell')}
-    ${metricSignalPct('Coverage', coverage, coverageCardClass(coverage))}
+    ${metricSignalPct('Coverage', coverage, coverageCardClass(coverage), 'coverage')}
     ${metricSignalPct('Duplication', dupDensity, duplicationCardClass(dupDensity))}
     ${metricSignalK('Lines of Code', ncloc, 'card-neutral')}
   </div>`;
@@ -356,13 +363,13 @@ function renderSummaryNewCode(newCode) {
     <p class="section-title">New Code Focus</p>
     ${newCode?.baseline?.label ? `<div class="summary-baseline">${escHtml(newCode.baseline.label)}</div>` : ''}
     <div class="metric-signals compact">
-      ${metricSignal('New Issues', metrics.new_issues || 0, (metrics.new_issues || 0) > 0 ? 'warning' : 'success', (metrics.new_issues || 0) > 0 ? 'card-yellow' : 'card-green')}
+      ${metricSignal('New Issues', metrics.new_issues || 0, (metrics.new_issues || 0) > 0 ? 'warning' : 'success', (metrics.new_issues || 0) > 0 ? 'card-yellow' : 'card-green', null, 'new-issues')}
       ${metricSignal('New Bugs', metrics.new_bugs || 0, (metrics.new_bugs || 0) > 0 ? 'danger' : 'success', (metrics.new_bugs || 0) > 0 ? 'card-red' : 'card-green', 'bug')}
       ${metricSignal('New Vulnerabilities', metrics.new_vulnerabilities || 0, (metrics.new_vulnerabilities || 0) > 0 ? 'warning' : 'success', (metrics.new_vulnerabilities || 0) > 0 ? 'card-yellow' : 'card-green', 'vulnerability')}
       ${metricSignal('New Code Smells', metrics.new_code_smells || 0, 'muted', (metrics.new_code_smells || 0) > 0 ? 'card-yellow' : 'card-green', 'code_smell')}
-      ${metricSignalPct('New Coverage', metrics.new_coverage, coverageCardClass(metrics.new_coverage))}
+      ${metricSignalPct('New Coverage', metrics.new_coverage, coverageCardClass(metrics.new_coverage), 'coverage')}
       ${metricSignalPct('New Duplication', metrics.new_duplications, duplicationCardClass(metrics.new_duplications))}
-      ${metricSignal('Closed Issues', metrics.closed_issues || 0, 'success', (metrics.closed_issues || 0) > 0 ? 'card-green' : 'card-neutral')}
+      ${metricSignal('Closed Issues', metrics.closed_issues || 0, 'success', (metrics.closed_issues || 0) > 0 ? 'card-green' : 'card-neutral', null, 'closed-issues')}
     </div>
   </section>`;
 }
@@ -380,10 +387,10 @@ function renderSummaryMustFixNow(items) {
   return `<section class="overview-panel summary-section hotspot-section">
     <p class="section-title">Must Fix Now</p>
     <div class="hotspot-list">
-      ${items.map(item => {
+      ${items.map((item, index) => {
         const short = (item.component_path || '').replaceAll('\\', '/').split('/').slice(-3).join('/');
         const location = item.line ? `:${fmtNum(item.line)}` : '';
-        return `<div class="hotspot-row" data-file="${escAttr(item.component_path || '')}">
+        return `<button class="hotspot-row" data-overview-issue-index="${index}">
           <div class="summary-row-main">
             <div class="summary-row-title">${escHtml(short)}${location ? `<span style="color:var(--text-muted)">${escHtml(location)}</span>` : ''}</div>
             <div class="summary-row-subtitle">${escHtml(item.message || item.rule_key || '')}</div>
@@ -392,7 +399,7 @@ function renderSummaryMustFixNow(items) {
             ${severityBadge(item.severity)}
             ${item.why_selected ? `<span class="summary-row-note">${escHtml(item.why_selected)}</span>` : ''}
           </div>
-        </div>`;
+        </button>`;
       }).join('')}
     </div>
   </section>`;

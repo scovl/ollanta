@@ -109,6 +109,36 @@ func (r *MeasureRepository) GetForScanComponent(ctx context.Context, scanID int6
 	return m, err
 }
 
+// ListForScanMetric returns component-level metric values for a scan.
+func (r *MeasureRepository) ListForScanMetric(ctx context.Context, scanID int64, metricKey string, limit int) ([]*MeasureRow, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	rows, err := r.db.Pool.Query(ctx, `
+		SELECT id, scan_id, project_id, metric_key, component_path, value, created_at
+		FROM measures
+		WHERE scan_id = $1
+		  AND metric_key = $2
+		  AND component_path <> ''
+		ORDER BY value ASC, component_path ASC
+		LIMIT $3`, scanID, metricKey, limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var measures []*MeasureRow
+	for rows.Next() {
+		measure := &MeasureRow{}
+		if err := rows.Scan(&measure.ID, &measure.ScanID, &measure.ProjectID, &measure.MetricKey, &measure.ComponentPath, &measure.Value, &measure.CreatedAt); err != nil {
+			return nil, err
+		}
+		measures = append(measures, measure)
+	}
+	return measures, rows.Err()
+}
+
 // Trend returns a time-ordered series of project-level metric values between from and to.
 func (r *MeasureRepository) Trend(ctx context.Context, projectID int64, metricKey string, from, to time.Time) ([]TrendPoint, error) {
 	rows, err := r.db.Pool.Query(ctx, `

@@ -5,6 +5,7 @@ package ingest
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -54,10 +55,12 @@ type IngestMeasures struct {
 // IngestRequest is the payload accepted by POST /api/v1/scans.
 // Its JSON shape is identical to the report.json produced by ollantascanner.
 type IngestRequest struct {
-	Metadata     IngestMetadata      `json:"metadata"`
-	Measures     IngestMeasures      `json:"measures"`
-	Issues       []*model.Issue      `json:"issues"`
-	CodeSnapshot *model.CodeSnapshot `json:"code_snapshot,omitempty"`
+	Metadata       IngestMetadata      `json:"metadata"`
+	ScannerOptions json.RawMessage     `json:"scanner_options,omitempty"`
+	Measures       IngestMeasures      `json:"measures"`
+	Issues         []*model.Issue      `json:"issues"`
+	CodeSnapshot   *model.CodeSnapshot `json:"code_snapshot,omitempty"`
+	TestSignals    json.RawMessage     `json:"test_signals,omitempty"`
 }
 
 // IngestResult is the response returned after a successful ingest.
@@ -268,7 +271,7 @@ func (uc *IngestUseCase) Ingest(ctx context.Context, req *IngestRequest) (*Inges
 	}
 
 	// ── 7. Bulk insert measures ──────────────────────────────────────────────
-	measureRows := buildMeasureRows(req.Measures, scan.ID, project.ID)
+	measureRows := buildMeasureRows(req.Measures, req.TestSignals, scan.ID, project.ID)
 	if err := pipelineSteps.bulkInsMeasures.run(ctx, func(ctx context.Context) error {
 		return uc.measures.BulkInsert(ctx, measureRows)
 	}); err != nil {
@@ -384,7 +387,7 @@ func domainToIssueRow(iss *model.Issue, scanID, projectID int64, trackingState s
 	}
 }
 
-func buildMeasureRows(m IngestMeasures, scanID, projectID int64) []model.MeasureRow {
+func buildMeasureRows(m IngestMeasures, testSignals json.RawMessage, scanID, projectID int64) []model.MeasureRow {
 	rows := []model.MeasureRow{
 		{ScanID: scanID, ProjectID: projectID, MetricKey: "files", Value: float64(m.Files)},
 		{ScanID: scanID, ProjectID: projectID, MetricKey: "lines", Value: float64(m.Lines)},
@@ -438,6 +441,48 @@ func buildMeasureRows(m IngestMeasures, scanID, projectID int64) []model.Measure
 			ComponentPath: lang,
 			Value:         float64(count),
 		})
+	}
+	rows = append(rows, buildCoverageFileMeasureRows(testSignals, scanID, projectID)...)
+	return rows
+}
+
+type ingestTestSignalReport struct {
+	Modules []ingestTestModuleSignal `json:"modules"`
+}
+
+type ingestTestModuleSignal struct {
+	Files []ingestTestFileCoverage `json:"files"`
+}
+
+type ingestTestFileCoverage struct {
+	Path           string `json:"path"`
+	LinesToCover   int    `json:"lines_to_cover"`
+	CoveredLines   int    `json:"covered_lines"`
+	UncoveredLines []int  `json:"uncovered_lines"`
+}
+
+func buildCoverageFileMeasureRows(testSignals json.RawMessage, scanID, projectID int64) []model.MeasureRow {
+	if len(testSignals) == 0 {
+		return nil
+	}
+	var report ingestTestSignalReport
+	if err := json.Unmarshal(testSignals, &report); err != nil {
+		return nil
+	}
+	var rows []model.MeasureRow
+	for _, module := range report.Modules {
+		for _, file := range module.Files {
+			if file.Path == "" || file.LinesToCover <= 0 {
+				continue
+			}
+			coverage := float64(file.CoveredLines) * 100 / float64(file.LinesToCover)
+			rows = append(rows,
+				model.MeasureRow{ScanID: scanID, ProjectID: projectID, MetricKey: model.MetricCoverage, ComponentPath: file.Path, Value: coverage},
+				model.MeasureRow{ScanID: scanID, ProjectID: projectID, MetricKey: model.MetricLinesToCover, ComponentPath: file.Path, Value: float64(file.LinesToCover)},
+				model.MeasureRow{ScanID: scanID, ProjectID: projectID, MetricKey: model.MetricCoveredLines, ComponentPath: file.Path, Value: float64(file.CoveredLines)},
+				model.MeasureRow{ScanID: scanID, ProjectID: projectID, MetricKey: model.MetricUncoveredLines, ComponentPath: file.Path, Value: float64(len(file.UncoveredLines))},
+			)
+		}
 	}
 	return rows
 }

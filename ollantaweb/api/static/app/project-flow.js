@@ -12,9 +12,9 @@ import {
 } from './core/scope.js';
 import { resetProjectState, state } from './core/state.js';
 import { badgeClassForGateStatus, escAttr, escHtml, fmtDate, fmtK, fmtNum } from './core/utils.js';
-import { bindAdminTabContent, loadGateData, loadProfilesData, loadWebhooksData, renderAdminLinksTab, renderGateTab, renderProfilesTab, renderWebhooksTab } from './features/admin.js';
+import { bindAdminTabContent, loadGateData, loadProfilesData, loadWebhooksData, renderGateTab, renderProfilesTab, renderWebhooksTab } from './features/admin.js';
 import { loadActivityData, renderActivityTab } from './features/activity.js';
-import { loadCodeFileData, loadCodeTreeData, renderCodeTab } from './features/code.js';
+import { loadCodeFileData, loadCodeTreeData, renderCoverageTab } from './features/code.js';
 import { loadIssues, openIssueDetail, renderIssuesSection } from './features/issues.js';
 import { renderOverviewTab } from './features/overview.js';
 import { loadProjectInfoData, renderProjectInformationTab } from './features/project-information.js';
@@ -25,17 +25,21 @@ export function configureProjectFlowFeature(options) {
   renderView = options.render;
 }
 
+function normalizeProjectTab(tab) {
+  if (tab === 'admin') return 'overview';
+  return tab === 'code' ? 'coverage' : tab;
+}
+
 function renderProjectTabs(activeTab, issueCount) {
-  const tabs = ['overview', 'issues', 'activity', 'branches', 'pull-requests', 'code', 'information', 'admin', 'gate', 'webhooks', 'profiles'];
+  const tabs = ['overview', 'issues', 'coverage', 'activity', 'branches', 'pull-requests', 'information', 'gate', 'webhooks', 'profiles'];
   const labels = {
     overview: 'Overview',
     issues: 'Issues',
     activity: 'Activity',
     branches: 'Branches',
     'pull-requests': 'Pull Requests',
-    code: 'Code',
+    coverage: 'Coverage',
     information: 'Project Information',
-    admin: 'Admin',
     gate: 'Quality Gate',
     webhooks: 'Webhooks',
     profiles: 'Profiles',
@@ -52,9 +56,8 @@ function renderProjectTabContent(tab) {
   if (tab === 'activity') return renderActivityTab();
   if (tab === 'branches') return renderBranchesTab();
   if (tab === 'pull-requests') return renderPullRequestsTab();
-  if (tab === 'code') return renderCodeTab();
+  if (tab === 'coverage') return renderCoverageTab();
   if (tab === 'information') return renderProjectInformationTab();
-  if (tab === 'admin') return renderAdminLinksTab();
   if (tab === 'gate') return renderGateTab();
   if (tab === 'webhooks') return renderWebhooksTab();
   if (tab === 'profiles') return renderProfilesTab();
@@ -66,7 +69,7 @@ export async function loadProject(key, route) {
   state.view = 'project';
   resetProjectState();
   state.currentProject = { key };
-  state.projectTab = nextRoute.tab || 'overview';
+  state.projectTab = normalizeProjectTab(nextRoute.tab || 'overview');
   state.scope = normalizeScope({
     type: nextRoute.pullRequest ? 'pull_request' : 'branch',
     branch: nextRoute.branch,
@@ -144,39 +147,49 @@ async function loadPullRequestsData() {
   renderView();
 }
 
-async function ensureProjectTabLoaded(tab) {
-  if (tab === 'issues') {
-    if (state.issues.length === 0 && !state.loadingIssues) await loadIssues();
-    return;
-  }
+const projectTabLoaders = {
+  issues: {
+    shouldLoad: () => state.issues.length === 0 && !state.loadingIssues,
+    load: loadIssues,
+  },
+  activity: {
+    shouldLoad: () => state.activityData === null,
+    load: loadActivityData,
+  },
+  branches: {
+    shouldLoad: () => state.branchesData === null,
+    load: loadBranchesData,
+  },
+  'pull-requests': {
+    shouldLoad: () => state.pullRequestsData === null,
+    load: loadPullRequestsData,
+  },
+  coverage: {
+    shouldLoad: () => state.codeTreeData === null,
+    load: loadCodeTreeData,
+  },
+  information: {
+    shouldLoad: () => state.projectInfoData === null,
+    load: loadProjectInfoData,
+  },
+  gate: {
+    shouldLoad: () => state.gateData === null,
+    load: loadGateData,
+  },
+  webhooks: {
+    shouldLoad: () => state.webhooksData === null,
+    load: loadWebhooksData,
+  },
+  profiles: {
+    shouldLoad: () => state.profilesData === null,
+    load: loadProfilesData,
+  },
+};
 
-  switch (tab) {
-    case 'activity':
-      if (state.activityData === null) await loadActivityData();
-      return;
-    case 'branches':
-      if (state.branchesData === null) await loadBranchesData();
-      return;
-    case 'pull-requests':
-      if (state.pullRequestsData === null) await loadPullRequestsData();
-      return;
-    case 'code':
-      if (state.codeTreeData === null) await loadCodeTreeData();
-      return;
-    case 'information':
-      if (state.projectInfoData === null) await loadProjectInfoData();
-      return;
-    case 'gate':
-      if (state.gateData === null) await loadGateData();
-      return;
-    case 'webhooks':
-      if (state.webhooksData === null) await loadWebhooksData();
-      return;
-    case 'profiles':
-      if (state.profilesData === null) await loadProfilesData();
-      return;
-    default:
-      return;
+async function ensureProjectTabLoaded(tab) {
+  const loader = projectTabLoaders[tab];
+  if (loader?.shouldLoad()) {
+    await loader.load();
   }
 }
 
@@ -236,10 +249,10 @@ export function renderScopeToolbar() {
   const branches = (state.branchesData || []).filter(item => item?.name);
   const pullRequests = state.pullRequestsData || [];
   const branchOptions = branches.length
-    ? branches.map(item => `<option value="${escAttr(item.name)}">${escHtml(item.name)}${item.is_default ? ' Ã‚Â· default' : ''}</option>`).join('')
+    ? branches.map(item => `<option value="${escAttr(item.name)}">${escHtml(item.name)}</option>`).join('')
     : '<option value="">No detected branch</option>';
   const prOptions = [`<option value="">No pull request</option>`].concat(
-    pullRequests.map(item => `<option value="${escAttr(item.key)}">#${escHtml(item.key)} Ã‚Â· ${escHtml(item.branch || 'unknown')} \u2192 ${escHtml(item.base_branch || 'unknown')}</option>`)
+    pullRequests.map(item => `<option value="${escAttr(item.key)}">#${escHtml(item.key)} - ${escHtml(item.branch || 'unknown')} -> ${escHtml(item.base_branch || 'unknown')}</option>`)
   ).join('');
 
   return `<div class="scope-toolbar">
@@ -337,11 +350,11 @@ function renderPullRequestsTab() {
 }
 
 export async function switchTab(tab) {
-  state.projectTab = tab;
+  state.projectTab = normalizeProjectTab(tab);
   syncProjectUrl(false);
   renderView();
-  await ensureProjectTabLoaded(tab);
-  if (tab === 'issues' && state.issues.length > 0) renderIssuesSection();
+  await ensureProjectTabLoaded(state.projectTab);
+  if (state.projectTab === 'issues' && state.issues.length > 0) renderIssuesSection();
 }
 
 function bindTabContent() {
@@ -395,9 +408,9 @@ function bindTabContent() {
     });
   });
 
-  document.querySelectorAll('[data-code-path]').forEach(btn => {
+  document.querySelectorAll('[data-coverage-source-path]').forEach(btn => {
     btn.addEventListener('click', () => {
-      loadCodeFileData(btn.dataset.codePath);
+      loadCodeFileData(btn.dataset.coverageSourcePath);
     });
   });
 
@@ -411,6 +424,44 @@ function bindTabContent() {
   bindAdminTabContent();
 }
 
+function resetIssueFilters() {
+  state.issueFilter.quality = 'all';
+  state.issueFilter.severity = 'all';
+  state.issueFilter.type = 'all';
+  state.issueFilter.status = 'all';
+  state.issueFilter.trackingState = 'all';
+  state.issueFilter.language = 'all';
+  state.issueFilter.rule = 'all';
+  state.issueFilter.tag = 'all';
+  state.issueFilter.securityCategory = 'all';
+  state.issueFilter.directory = 'all';
+  state.issueFilter.file = 'all';
+  state.issueFilter.search = '';
+  state.issues = [];
+  state.issuesTotal = 0;
+  state.issueOffset = 0;
+}
+
+function openIssuesFromOverview(updates) {
+  resetIssueFilters();
+  Object.assign(state.issueFilter, updates);
+  switchTab('issues');
+}
+
+function handleOverviewAction(action) {
+  if (action === 'coverage') {
+    switchTab('coverage');
+    return;
+  }
+  if (action === 'new-issues') {
+    openIssuesFromOverview({ trackingState: 'new' });
+    return;
+  }
+  if (action === 'closed-issues') {
+    openIssuesFromOverview({ status: 'closed' });
+  }
+}
+
 export function bindProjectViewControls() {
   document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.addEventListener('click', () => switchTab(btn.dataset.tab));
@@ -418,30 +469,38 @@ export function bindProjectViewControls() {
 
   document.querySelectorAll('.metric-card.clickable, .metric-signal.clickable').forEach(btn => {
     btn.addEventListener('click', () => {
+      const action = btn.dataset.overviewAction;
+      if (action) {
+        handleOverviewAction(action);
+        return;
+      }
       const type = btn.dataset.mcType;
       if (type) {
-        state.issueFilter.type = type === 'all' ? 'all' : type;
-        state.issueFilter.severity = 'all';
-        state.issueFilter.status = 'all';
-        state.issueFilter.trackingState = 'all';
-        state.issueFilter.search = '';
-        state.issues = [];
-        switchTab('issues');
+        openIssuesFromOverview({ type: type === 'all' ? 'all' : type });
       }
     });
   });
 
   document.querySelectorAll('.hotspot-row').forEach(row => {
     row.addEventListener('click', () => {
+      if (row.dataset.overviewIssueIndex != null) {
+        const issue = state.overviewData?.summary?.must_fix_now?.[Number(row.dataset.overviewIssueIndex)];
+        if (issue) openIssueDetail(issue);
+        return;
+      }
       const file = row.dataset.file;
       if (file) {
-        state.issueFilter.search = file;
-        state.issueFilter.type = 'all';
-        state.issueFilter.severity = 'all';
-        state.issueFilter.status = 'all';
-        state.issueFilter.trackingState = 'all';
-        state.issues = [];
-        switchTab('issues');
+        openIssuesFromOverview({ search: file });
+      }
+    });
+  });
+
+  document.querySelectorAll('[data-coverage-path]').forEach(row => {
+    row.addEventListener('click', () => {
+      const file = row.dataset.coveragePath;
+      if (file) {
+        state.codeSelectedPath = file;
+        switchTab('coverage');
       }
     });
   });

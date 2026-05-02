@@ -3,6 +3,7 @@ package api
 import (
 	"cmp"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -31,6 +32,7 @@ type overviewSummary struct {
 	NewCode       *overviewSummaryNewCode    `json:"new_code,omitempty"`
 	MustFixNow    []*overviewSummaryIssue    `json:"must_fix_now"`
 	ImpactedFiles []*overviewSummaryFile     `json:"impacted_files"`
+	Coverage      *overviewCoverageSummary   `json:"coverage,omitempty"`
 	OverallCode   *overviewSummaryOverall    `json:"overall_code,omitempty"`
 	EmptyState    *overviewSummaryEmptyState `json:"empty_state,omitempty"`
 }
@@ -86,6 +88,23 @@ type overviewSummaryOverall struct {
 	Metrics map[string]float64 `json:"metrics"`
 }
 
+type overviewCoverageSummary struct {
+	Coverage     *float64                `json:"coverage,omitempty"`
+	Files        []*overviewCoverageFile `json:"files"`
+	FilesCovered int                     `json:"files_covered,omitempty"`
+	FilesMissing int                     `json:"files_missing,omitempty"`
+}
+
+type overviewCoverageFile struct {
+	ComponentPath        string  `json:"component_path"`
+	Coverage             float64 `json:"coverage"`
+	LinesToCover         int     `json:"lines_to_cover,omitempty"`
+	CoveredLines         int     `json:"covered_lines,omitempty"`
+	UncoveredLines       int     `json:"uncovered_lines,omitempty"`
+	CoveredLineNumbers   []int   `json:"covered_line_numbers,omitempty"`
+	UncoveredLineNumbers []int   `json:"uncovered_line_numbers,omitempty"`
+}
+
 type overviewSummaryEmptyState struct {
 	HasScans          bool   `json:"has_scans"`
 	Headline          string `json:"headline"`
@@ -116,6 +135,11 @@ func (h *OverviewHandler) loadOverviewSummary(ctx context.Context, resolved *res
 	if err := h.fillSummaryFileMetrics(ctx, scan.ID, summary.ImpactedFiles); err != nil {
 		return nil, err
 	}
+	coverage, err := h.loadCoverageSummary(ctx, scan, resp.Measures)
+	if err != nil {
+		return nil, err
+	}
+	summary.Coverage = coverage
 	return summary, nil
 }
 
@@ -204,6 +228,90 @@ func (h *OverviewHandler) fillSummaryFileMetrics(ctx context.Context, scanID int
 	return nil
 }
 
+func (h *OverviewHandler) loadCoverageSummary(ctx context.Context, scan *postgres.Scan, measures map[string]float64) (*overviewCoverageSummary, error) {
+	if h.measures == nil || scan == nil {
+		return nil, nil
+	}
+	coverageRows, err := h.measures.ListForScanMetric(ctx, scan.ID, model.MetricCoverage, 20)
+	if err != nil {
+		return nil, err
+	}
+	if len(coverageRows) == 0 {
+		return nil, nil
+	}
+	lineDetails := h.loadCoverageLineDetails(ctx, scan.ID)
+	coverageSummary := &overviewCoverageSummary{Files: make([]*overviewCoverageFile, 0, len(coverageRows))}
+	if coverage, ok := measures[model.MetricCoverage]; ok {
+		coverageSummary.Coverage = &coverage
+	}
+	for _, row := range coverageRows {
+		file := &overviewCoverageFile{ComponentPath: row.ComponentPath, Coverage: row.Value}
+		fillCoverageFileMetric(ctx, h.measures, scan.ID, file, model.MetricLinesToCover, &file.LinesToCover)
+		fillCoverageFileMetric(ctx, h.measures, scan.ID, file, model.MetricCoveredLines, &file.CoveredLines)
+		fillCoverageFileMetric(ctx, h.measures, scan.ID, file, model.MetricUncoveredLines, &file.UncoveredLines)
+		if details, ok := lineDetails[file.ComponentPath]; ok {
+			file.CoveredLineNumbers = details.CoveredLineNumbers
+			file.UncoveredLineNumbers = details.UncoveredLineNumbers
+		}
+		if file.UncoveredLines > 0 {
+			coverageSummary.FilesMissing++
+		} else {
+			coverageSummary.FilesCovered++
+		}
+		coverageSummary.Files = append(coverageSummary.Files, file)
+	}
+	return coverageSummary, nil
+}
+
+type coverageLineDetails struct {
+	CoveredLineNumbers   []int
+	UncoveredLineNumbers []int
+}
+
+func (h *OverviewHandler) loadCoverageLineDetails(ctx context.Context, scanID int64) map[string]coverageLineDetails {
+	if h.scanJobs == nil {
+		return nil
+	}
+	job, err := h.scanJobs.GetByScanID(ctx, scanID)
+	if err != nil || job == nil || len(job.Payload) == 0 {
+		return nil
+	}
+	var payload struct {
+		TestSignals struct {
+			Modules []struct {
+				Files []struct {
+					Path               string `json:"path"`
+					CoveredLineNumbers []int  `json:"covered_line_numbers"`
+					UncoveredLines     []int  `json:"uncovered_lines"`
+				} `json:"files"`
+			} `json:"modules"`
+		} `json:"test_signals"`
+	}
+	if err := json.Unmarshal(job.Payload, &payload); err != nil {
+		return nil
+	}
+	details := map[string]coverageLineDetails{}
+	for _, module := range payload.TestSignals.Modules {
+		for _, file := range module.Files {
+			if file.Path == "" {
+				continue
+			}
+			details[file.Path] = coverageLineDetails{
+				CoveredLineNumbers:   append([]int(nil), file.CoveredLineNumbers...),
+				UncoveredLineNumbers: append([]int(nil), file.UncoveredLines...),
+			}
+		}
+	}
+	return details
+}
+
+func fillCoverageFileMetric(ctx context.Context, measures *postgres.MeasureRepository, scanID int64, file *overviewCoverageFile, metricKey string, target *int) {
+	measure, err := measures.GetForScanComponent(ctx, scanID, metricKey, file.ComponentPath)
+	if err == nil && measure != nil {
+		*target = int(measure.Value)
+	}
+}
+
 func buildOverviewSummary(
 	scan *postgres.Scan,
 	gate *overviewGate,
@@ -232,6 +340,7 @@ func buildEmptyOverviewSummary() *overviewSummary {
 		NewCode:       &overviewSummaryNewCode{Metrics: map[string]float64{}},
 		MustFixNow:    []*overviewSummaryIssue{},
 		ImpactedFiles: []*overviewSummaryFile{},
+		Coverage:      &overviewCoverageSummary{Files: []*overviewCoverageFile{}},
 		OverallCode:   &overviewSummaryOverall{Metrics: map[string]float64{}},
 		EmptyState: &overviewSummaryEmptyState{
 			HasScans:          false,
@@ -510,16 +619,16 @@ func violatesOverviewCondition(operator string, actual, threshold float64) bool 
 
 func overviewMetricLabel(metric string) string {
 	labels := map[string]string{
-		"bugs":                "Bugs",
-		"vulnerabilities":     "Vulnerabilities",
-		"code_smells":         "Code smells",
-		"coverage":            "Coverage",
+		"bugs":                     "Bugs",
+		"vulnerabilities":          "Vulnerabilities",
+		"code_smells":              "Code smells",
+		"coverage":                 "Coverage",
 		"duplicated_lines_density": "Duplication",
-		"new_bugs":            "New bugs",
-		"new_vulnerabilities": "New vulnerabilities",
-		"new_code_smells":     "New code smells",
-		"new_coverage":        "New coverage",
-		"new_duplications":    "New duplication",
+		"new_bugs":                 "New bugs",
+		"new_vulnerabilities":      "New vulnerabilities",
+		"new_code_smells":          "New code smells",
+		"new_coverage":             "New coverage",
+		"new_duplications":         "New duplication",
 	}
 	if label, ok := labels[metric]; ok {
 		return label
