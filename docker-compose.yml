@@ -161,7 +161,7 @@ services:
         condition: service_started
     environment:
       OLLANTA_ADDR: ":8080"
-      OLLANTA_DATABASE_URL: "postgres://ollanta:${PG_PASSWORD-}@postgres:5432/ollanta?sslmode=disable"
+      OLLANTA_DATABASE_URL: "postgres://ollanta:${PG_PASSWORD:-ollanta_dev}@postgres:5432/ollanta?sslmode=disable"
       OLLANTA_ZINCSEARCH_URL: "http://zincsearch:4080"
       OLLANTA_ZINCSEARCH_USER: "${ZINC_USER:-admin}"
       OLLANTA_ZINCSEARCH_PASSWORD: "${ZINC_PASSWORD:-ollanta_dev}"
@@ -196,7 +196,7 @@ services:
         condition: service_started
     environment:
       OLLANTA_ADMIN_ADDR: ":9090"
-      OLLANTA_DATABASE_URL: "postgres://ollanta:${PG_PASSWORD-}@postgres:5432/ollanta?sslmode=disable"
+      OLLANTA_DATABASE_URL: "postgres://ollanta:${PG_PASSWORD:-ollanta_dev}@postgres:5432/ollanta?sslmode=disable"
       OLLANTA_LOG_LEVEL: "info"
       OLLANTA_JWT_SECRET: "${OLLANTA_JWT_SECRET:-ollanta-dev-jwt-secret-change-me}"
       OLLANTA_AUTO_MIGRATE: "${OLLANTA_AUTO_MIGRATE:-true}"
@@ -221,7 +221,7 @@ services:
         condition: service_started
     environment:
       OLLANTA_ADMIN_ADDR: ":9090"
-      OLLANTA_DATABASE_URL: "postgres://ollanta:${PG_PASSWORD-}@postgres:5432/ollanta?sslmode=disable"
+      OLLANTA_DATABASE_URL: "postgres://ollanta:${PG_PASSWORD:-ollanta_dev}@postgres:5432/ollanta?sslmode=disable"
       OLLANTA_ZINCSEARCH_URL: "http://zincsearch:4080"
       OLLANTA_ZINCSEARCH_USER: "${ZINC_USER:-admin}"
       OLLANTA_ZINCSEARCH_PASSWORD: "${ZINC_PASSWORD:-ollanta_dev}"
@@ -247,7 +247,7 @@ services:
         condition: service_healthy
     environment:
       OLLANTA_ADMIN_ADDR: ":9090"
-      OLLANTA_DATABASE_URL: "postgres://ollanta:${PG_PASSWORD-}@postgres:5432/ollanta?sslmode=disable"
+      OLLANTA_DATABASE_URL: "postgres://ollanta:${PG_PASSWORD:-ollanta_dev}@postgres:5432/ollanta?sslmode=disable"
       OLLANTA_LOG_LEVEL: "info"
       OLLANTA_JWT_SECRET: "${OLLANTA_JWT_SECRET:-ollanta-dev-jwt-secret-change-me}"
       OLLANTA_AUTO_MIGRATE: "${OLLANTA_AUTO_MIGRATE:-true}"
@@ -269,7 +269,7 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      OLLANTA_DATABASE_URL: "postgres://ollanta:${PG_PASSWORD-}@postgres:5432/ollanta?sslmode=disable"
+      OLLANTA_DATABASE_URL: "postgres://ollanta:${PG_PASSWORD:-ollanta_dev}@postgres:5432/ollanta?sslmode=disable"
       OLLANTA_LOG_LEVEL: "info"
       OLLANTA_JWT_SECRET: "${OLLANTA_JWT_SECRET:-ollanta-dev-jwt-secret-change-me}"
     restart: "no"
