@@ -69,7 +69,7 @@ services:
     restart: "no"
     profiles: ["scanner"]
 
-  # â”€â”€ scan-only: one-shot, no server, exits after writing the report â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  # scan-only: one-shot, no server, exits after writing the report
   scan-only:
     image: ollanta-scanner:latest
     build:
@@ -87,7 +87,7 @@ services:
     restart: "no"
     profiles: ["scanner"]
 
-  # â”€â”€ push: scan and push results to ollantaweb â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  # push: scan and push results to ollantaweb
   push:
     image: ollanta-scanner:latest
     build:
@@ -110,7 +110,7 @@ services:
     restart: "no"
     profiles: ["push"]
 
-  # â”€â”€ postgres: data store â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  # postgres: data store
   postgres:
     image: postgres:17-alpine
     environment:
@@ -128,7 +128,7 @@ services:
       retries: 10
     profiles: ["server"]
 
-  # â”€â”€ zincsearch: full-text search engine â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  # zincsearch: full-text search engine
   zincsearch:
     image: public.ecr.aws/zinclabs/zincsearch:0.4.10
     environment:
@@ -148,7 +148,7 @@ services:
       retries: 5
     profiles: ["server"]
 
-  # â”€â”€ ollantaweb: centralized API server â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  # ollantaweb: centralized API server
   ollantaweb:
     image: ollanta-server:latest
     build:
@@ -182,7 +182,7 @@ services:
     restart: unless-stopped
     profiles: ["server"]
 
-  # â”€â”€ ollantaworker: background compute role â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  # ollantaworker: background compute role
   ollantaworker:
     image: ollanta-server:latest
     build:
@@ -207,7 +207,7 @@ services:
     restart: unless-stopped
     profiles: ["server"]
 
-  # â”€â”€ ollantaindexer: durable search projection role â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  # ollantaindexer: durable search projection role
   ollantaindexer:
     image: ollanta-server:latest
     build:
@@ -235,7 +235,7 @@ services:
     restart: unless-stopped
     profiles: ["server"]
 
-  # â”€â”€ ollantawebhookworker: durable webhook delivery role â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  # ollantawebhookworker: durable webhook delivery role
   ollantawebhookworker:
     image: ollanta-server:latest
     build:
@@ -275,7 +275,7 @@ services:
     restart: "no"
     profiles: ["migrate"]
 
-  # â”€â”€ prometheus: metrics scraping and local query UI â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  # prometheus: metrics scraping and local query UI
   prometheus:
     image: prom/prometheus:v2.54.1
     command:
@@ -292,7 +292,7 @@ services:
       - "9091:9090"
     profiles: ["observability"]
 
-  # â”€â”€ jaeger: tracing backend and UI â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  # jaeger: tracing backend and UI
   jaeger:
     image: jaegertracing/all-in-one:1.67.0
     environment:
@@ -302,7 +302,7 @@ services:
       - "4318:4318"
     profiles: ["observability"]
 
-  # â”€â”€ loki: log storage and query API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  # loki: log storage and query API
   loki:
     image: grafana/loki:3.1.1
     command:
@@ -317,7 +317,7 @@ services:
       - "3100:3100"
     profiles: ["observability"]
 
-  # â”€â”€ promtail: collects container stdout for Loki â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  # promtail: collects container stdout for Loki
   promtail:
     image: grafana/promtail:3.1.1
     command:

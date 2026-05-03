@@ -3,264 +3,201 @@
 </p>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/scovl/Ollanta/refs/heads/main/docs/imgs/o01.png" alt="Ollanta screenshot">
+  <img src="https://raw.githubusercontent.com/scovl/Ollanta/refs/heads/main/docs/imgs/o01.png" alt="Ollanta local dashboard">
 </p>
 
-Ollanta is a multi-language static analysis platform written in Go. It analyzes source code, reports quality issues, computes code metrics, and evaluates configurable quality gates so teams can enforce coding standards locally, in CI, and in centralized review workflows.
+# Ollanta
 
-Inspired by [OpenStaticAnalyzer](https://github.com/sed-inf-u-szeged/OpenStaticAnalyzer), [Semgrep](https://semgrep.dev/), and [SonarQube](https://www.sonarqube.org/), Ollanta is organized as a modular platform where each concern lives in its own Go module.
+Ollanta is a multi-language static analysis platform written in Go. It scans source code, reports bugs, code smells and vulnerabilities, computes metrics, and evaluates configurable quality gates.
 
----
+You can use Ollanta in two ways:
 
-## Language Coverage
+- **Scanner**: a local CLI that scans a project and writes JSON/SARIF reports. It can also open an embedded local UI on port `7777`.
+- **Server**: a centralized API that receives scan reports, stores history, tracks issues across scans, evaluates quality gates, exposes dashboards, and runs background workers.
 
-| Language | Engine | Bundled rules |
+## Language Support
+
+| Language | Parser | Bundled rules |
 |----------|--------|---------------|
-| Go | Native (`go/ast`) | 8 built-in rules |
-| JavaScript | Tree-sitter | 4 built-in rules |
-| TypeScript | Tree-sitter | Parser and scan-pipeline support; no bundled rules yet |
-| Python | Tree-sitter | 5 built-in rules |
-| Rust | Tree-sitter | Parser and scan-pipeline support; no bundled rules yet |
+| Go | Native `go/ast` | 8 |
+| JavaScript | Tree-sitter | 4 |
+| TypeScript | Tree-sitter | Parser support; no bundled rules yet |
+| Python | Tree-sitter | 5 |
+| Rust | Tree-sitter | Parser support; no bundled rules yet |
 
----
+## Requirements
 
-## Architecture
+For the scanner and local development:
 
-Ollanta follows a hexagonal (ports and adapters) layout: inner modules stay dependency-light while adapters plug in at the edges. See [docs/architecture.md](docs/architecture.md) for the full module layout.
+- Go `1.21+`
+- CGO enabled
+- A C compiler for Tree-sitter
+  - Linux/macOS: install `gcc` or `clang` with your package manager
+  - Windows: install [MSYS2](https://www.msys2.org/), then run `pacman -S mingw-w64-x86_64-gcc`
+- Docker and Docker Compose, optional but recommended for the server stack
 
-For contributor workflow and module-aware validation, see [CONTRIBUTIONS.md](CONTRIBUTIONS.md) and [docs/contributing.md](docs/contributing.md).
+For frontend changes in the scanner UI, Node.js is also required under [ollantascanner/server/static](ollantascanner/server/static).
 
----
+On Windows, the Makefile prepends `C:\msys64\mingw64\bin` to `PATH` for its own targets. If MSYS2 is installed somewhere else, add your MinGW `bin` directory to `PATH` before running Go commands.
 
 ## Quick Start
 
-### Local scanner UI
+### 1. Run a local scan with the embedded UI
+
+From the repository root:
 
 ```sh
-ollanta \
+go run github.com/scovl/ollanta/ollantascanner/cmd/ollanta \
   -project-dir . \
-  -project-key my-project \
+  -project-key ollanta \
   -format all \
   -local-ui
 ```
 
-This runs a local scan and opens the embedded web UI at `http://localhost:7777`.
+Open `http://localhost:7777` to inspect issues, metrics, rule details, and optional `Fix with AI` suggestions.
 
-### Docker scanner UI
+Reports are written to `.ollanta/` inside the scanned project:
+
+- `.ollanta/report.json`
+- `.ollanta/report.sarif`
+
+### 2. Run the scanner with Docker
 
 ```sh
 docker compose --profile scanner up local-ui
 ```
 
-This builds the scanner image, scans the mounted project directory, and serves the embedded UI on port `7777`.
+Useful overrides:
 
-### Centralized server stack
+```sh
+PROJECT_DIR=/path/to/project PROJECT_KEY=my-project docker compose --profile scanner up local-ui
+PORT=7788 docker compose --profile scanner up local-ui
+```
+
+### 3. Generate CI-friendly reports only
+
+```sh
+go run github.com/scovl/ollanta/ollantascanner/cmd/ollanta \
+  -project-dir . \
+  -project-key my-project \
+  -format sarif
+```
+
+Use `-format json`, `-format sarif`, or `-format all` depending on what your CI consumes.
+
+### 4. Start the centralized server
 
 ```sh
 docker compose --profile server up -d
 ```
 
-This starts PostgreSQL, ZincSearch, the `ollantaweb` API on port `8080`, plus three background roles: `ollantaworker`, `ollantaindexer`, and `ollantawebhookworker`.
+This starts:
 
-### Push results to a centralized server
+- PostgreSQL on port `5432`
+- ZincSearch on port `4080`
+- `ollantaweb` on port `8080`
+- `ollantaworker`, `ollantaindexer`, and `ollantawebhookworker`
+
+The development scanner token defaults to `ollanta-dev-scanner-token` in Docker Compose.
+
+### 5. Push a scan to the server
 
 ```sh
-ollanta \
+go run github.com/scovl/ollanta/ollantascanner/cmd/ollanta \
   -project-dir . \
   -project-key my-project \
   -format all \
   -server http://localhost:8080 \
-  -server-token ollanta-dev-scanner-token
+  -server-token ollanta-dev-scanner-token \
+  -server-wait
 ```
 
-Add `-server-wait` if you want the CLI to wait for the accepted server-side scan job to finish instead of stopping at `202 Accepted`.
+`-server-wait` makes the CLI wait until the accepted server-side scan job finishes. Without it, the server returns after accepting the job.
 
-### Configure with `config.toml`
-
-Both the scanner CLI and `ollantaweb` can load runtime settings from `config.toml` in the current working directory.
-Use `OLLANTA_CONFIG_FILE=/path/to/config.toml` or `-config /path/to/config.toml` on the scanner CLI when the file lives elsewhere.
-
-Use `[scanner]` for scanner-local settings such as `local_ui`, `port`, `bind`, `server_url`, and `server_wait`.
-Use `[server]` for the Ollanta backend itself, such as `addr`, `admin_addr`, `log_level`, and `scanner_token`.
-Use `[database]` for PostgreSQL connectivity and `[search]` for the configured search backend.
-For both `[database]` and `[search]`, you can either provide a full `url` or explicit connection fields such as `host`, `port`, and credentials.
-
-Precedence is:
-
-- scanner: built-in defaults, then `config.toml`, then CLI flags
-- server: built-in defaults, then `config.toml`, then `OLLANTA_*` environment variables
-
-An end-to-end example lives in [config.toml.example](d:\projects\ollanta\config.toml.example).
-
----
-
-## Prerequisites
-
-- **Go 1.21+** with CGO enabled
-- **GCC** (required by the Tree-sitter runtime)
-  - Linux/macOS: `gcc` from your system package manager
-  - Windows: [MSYS2](https://www.msys2.org/) â†’ `pacman -S mingw-w64-x86_64-gcc`
-- **Docker** (optional) â€” for container-based scanning or running the server stack
-
----
-
-## Build And Validation
+Docker push mode is also available:
 
 ```sh
-# Build the scanner-side CGO modules
+PROJECT_DIR=/path/to/project PROJECT_KEY=my-project docker compose --profile push run --build --rm push
+```
+
+## Configuration
+
+Ollanta can read settings from [config.toml.example](config.toml.example). Use it as a starting point:
+
+```sh
+cp config.toml.example config.toml
+```
+
+Scanner settings live under `[scanner]`, including `project_dir`, `project_key`, `format`, `local_ui`, `server_url`, and `server_wait`.
+
+Server settings live under `[server]`, `[database]`, and `[search]`.
+
+Configuration precedence:
+
+| Runtime | Precedence |
+|---------|------------|
+| Scanner | defaults, then `config.toml`, then CLI flags |
+| Server | defaults, then `config.toml`, then `OLLANTA_*` environment variables |
+
+Important environment variables for Docker/server use:
+
+| Variable | Default in local compose | Purpose |
+|----------|--------------------------|---------|
+| `PROJECT_DIR` | `.` | Host project directory mounted into the scanner container |
+| `PROJECT_KEY` | `project` | Project identifier used in reports and server history |
+| `OLLANTA_SERVER` | `http://ollantaweb:8080` | Server URL used by Docker push mode |
+| `OLLANTA_TOKEN` | `ollanta-dev-scanner-token` | Scanner token sent by Docker push mode |
+| `OLLANTA_SCANNER_TOKEN` | `ollanta-dev-scanner-token` | Token accepted by `ollantaweb` for scan push |
+| `PG_PASSWORD` | `ollanta_dev` | PostgreSQL password for the compose stack |
+| `ZINC_USER` | `admin` | ZincSearch user |
+| `ZINC_PASSWORD` | `ollanta_dev` | ZincSearch password |
+
+## Common Scanner Flags
+
+| Flag | Purpose |
+|------|---------|
+| `-project-dir` | Root directory to scan |
+| `-project-key` | Stable project identifier |
+| `-sources` | Comma-separated source patterns; default is `./...` |
+| `-exclusions` | Comma-separated glob exclusions |
+| `-format` | `summary`, `json`, `sarif`, or `all` |
+| `-local-ui` | Start the embedded local UI |
+| `-bind` | Bind address for the local UI |
+| `-port` | Port for the local UI; default is `7777` |
+| `-server` | `ollantaweb` URL for pushing results |
+| `-server-token` | Bearer token used when pushing results |
+| `-server-wait` | Wait for server-side processing to complete |
+| `-config` | Explicit path to a TOML config file |
+
+Branch and pull request metadata can be provided with `-branch`, `-commit-sha`, `-pull-request-key`, `-pull-request-branch`, and `-pull-request-base`.
+
+Test and mutation evidence collection is optional. See [docs/test-signals.md](docs/test-signals.md) for `collect`, `run`, and `doctor` modes.
+
+## Validate A Local Checkout
+
+```sh
 make build
-
-# Run their tests
 make test
-
-# Run their linter
-make lint
-
-# Format those same modules
-make fmt
-
-# Run the supported local smoke validation workflow
 make smoke-local
 ```
 
-Those targets cover `ollantacore`, `ollantaparser`, `ollantarules`, `ollantascanner`, and `ollantaengine`.
+The Makefile covers the scanner-side CGO modules. For the full contributor workflow, including module-specific tests and linting, see [CONTRIBUTIONS.md](CONTRIBUTIONS.md) and [docs/contributing.md](docs/contributing.md).
 
-For `application/`, `domain/`, `ollantastore/`, `ollantaweb/`, and `adapter/`, use the module-aware workflow documented in [CONTRIBUTIONS.md](CONTRIBUTIONS.md) and [docs/contributing.md](docs/contributing.md).
+## Documentation
 
-On Windows, the `Makefile` prepends `C:\msys64\mingw64\bin` to `PATH` and sets `CGO_ENABLED=1` for its own targets.
-
-`make smoke-local` is the supported local smoke test for the critical scanner to server path. The current implementation is PowerShell-based and Windows-oriented. It:
-
-- starts `postgres` and `zincsearch` with `docker compose`
-- runs `ollantaweb` from the local source tree using [config.toml.example](config.toml.example)
-- chooses a dedicated backend port starting at `18080` and moves to the next free port if needed
-- creates a minimal temporary Git-backed Go project for deterministic scanning
-- runs the scanner with `-server-wait` enabled and verifies both `/readyz` and the latest-scan API
-
-If you need a specific backend port, override it with:
-
-```sh
-make smoke-local SMOKE_BACKEND_PORT=18082
-```
-
-If the smoke workflow fails, it keeps the temporary project and server log paths so you can inspect the failure locally.
-
----
-
-## Common CLI Flags
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `-project-dir` | `.` | Root directory to scan |
-| `-project-key` | directory name | Identifier used in reports |
-| `-sources` | `./...` | Comma-separated source patterns |
-| `-exclusions` | none | Comma-separated glob patterns to exclude |
-| `-format` | `all` | `summary`, `json`, `sarif`, or `all` |
-| `-local-ui` | `false` | Open the local scanner UI after the scan |
-| `-port` | `7777` | Port for `-local-ui` |
-| `-bind` | `127.0.0.1` | Bind address for `-local-ui` |
-| `-server` | none | URL of `ollantaweb` for pushed scans |
-| `-server-token` | none | Bearer token used when pushing to `ollantaweb` |
-| `-config` | none | Explicit path to `config.toml` for scanner settings |
-
-Scope flags:
-
-- `-branch`
-- `-commit-sha`
-- `-pull-request-key`
-- `-pull-request-branch`
-- `-pull-request-base`
-
-Async server-wait flags:
-
-- `-server-wait`
-- `-server-wait-timeout`
-- `-server-wait-poll`
-
-See [docs/api.md](docs/api.md) for the async intake flow and the server-side scan-job API.
-
-## Scope-aware Analysis
-
-Ollanta now tracks scan state per analysis scope instead of flattening everything into one project timeline.
-
-- Branch mode uses `-branch` when provided, otherwise it auto-detects the Git branch for `-project-dir`.
-- Pull request mode is enabled when `-pull-request-key`, `-pull-request-branch`, and `-pull-request-base` are present, whether from flags or CI metadata.
-- Supported CI pull-request environments are `OLLANTA_PULL_REQUEST_*`, GitHub Actions, GitLab CI, and Azure Pipelines.
-- Detached HEAD executions fail fast unless `-branch` is provided explicitly.
-
-If you are enabling scope-aware analysis on an existing project, set `main_branch` when the default branch is not `main` or `master`, then run one fresh analysis on the default branch to establish the current baseline.
-
----
-
-## Fix With AI In The Local UI
-
-The local scanner UI includes a `Fix with AI` tab in issue details.
-
-Minimal OpenAI-compatible setup:
-
-```sh
-export OPENAI_API_KEY=your_api_key
-export OLLANTA_AI_OPENAI_MODEL=gpt-4.1-mini
-```
-
-Local mock setup:
-
-```sh
-export OLLANTA_AI_ENABLE_MOCK=1
-```
-
-For multiple configured agents, use `OLLANTA_AI_AGENTS` with a JSON array. If you run the scanner through Docker Compose, export the AI-related environment variables before recreating `local-ui`.
-
-## Docker Workflows
-
-### Common commands
-
-```sh
-# Scan current directory and open UI at http://localhost:7777
-docker compose --profile scanner up local-ui
-
-# Scan a specific project
-PROJECT_DIR=/path/to/myapp PROJECT_KEY=myapp docker compose --profile scanner up local-ui
-
-# One-shot scan (no UI, just write report files)
-docker compose run --rm scan-only
-
-# Push a scan through Docker
-OLLANTA_SERVER=http://your-server:8080 docker compose --profile push run --build --rm push
-```
-
-### Common overrides
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `PROJECT_DIR` | `.` | Host directory to scan |
-| `PROJECT_KEY` | `project` | Project identifier |
-| `PORT` | `7777` | Scanner UI port |
-| `OLLANTA_SERVER` | `http://ollantaweb:8080` | API server URL for push mode |
-| `OLLANTA_TOKEN` | `ollanta-dev-scanner-token` | Scanner token used by `push` |
-| `OLLANTA_SERVER_WAIT` | `false` | Wait for the accepted scan job to finish |
-| `OLLANTA_CONFIG_FILE` | none | Explicit path to `config.toml` for scanner or server binaries |
-| `PG_PASSWORD` | `ollanta_dev` | PostgreSQL password |
-| `ZINC_USER` | `admin` | ZincSearch admin user |
-| `ZINC_PASSWORD` | `ollanta_dev` | ZincSearch admin password |
-
-See [docker-compose.yml](docker-compose.yml) for the full service configuration and the remaining environment defaults.
-
----
-
-## Further Reading
-
-- API reference: [docs/api.md](docs/api.md)
-- Rules and rule authoring: [docs/rules.md](docs/rules.md)
-- Quality gates: [docs/quality-gates.md](docs/quality-gates.md)
+- Architecture: [docs/architecture.md](docs/architecture.md) and [docs/arquitetura.md](docs/arquitetura.md)
+- API: [docs/api.md](docs/api.md)
 - Authentication: [docs/authentication.md](docs/authentication.md)
-- Webhooks: [docs/webhooks.md](docs/webhooks.md)
+- Background tasks: [docs/background-tasks.md](docs/background-tasks.md)
+- Database: [docs/database.md](docs/database.md)
 - Issue tracking: [docs/issue-tracking.md](docs/issue-tracking.md)
-- Kubernetes deployment: [docs/kubernetes.md](docs/kubernetes.md)
-- Contributor workflow: [CONTRIBUTIONS.md](CONTRIBUTIONS.md)
-
----
+- Observability: [docs/observability.md](docs/observability.md)
+- Operations runbooks: [docs/operations-runbooks.md](docs/operations-runbooks.md)
+- Quality gates: [docs/quality-gates.md](docs/quality-gates.md)
+- Rules: [docs/rules.md](docs/rules.md)
+- Test and mutation evidence: [docs/test-signals.md](docs/test-signals.md)
+- Webhooks: [docs/webhooks.md](docs/webhooks.md)
 
 ## License
 
-Apache-2.0 - see [LICENSE](LICENSE).
+Apache-2.0. See [LICENSE](LICENSE).
