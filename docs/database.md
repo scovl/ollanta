@@ -1,6 +1,6 @@
 # Database Schema
 
-Ollanta uses **PostgreSQL 17** as its primary data store. The schema is managed by 26 sequential migrations in `ollantastore/postgres/migrations/`.
+Ollanta uses **PostgreSQL 17** as its primary data store. The schema is managed by 27 sequential migrations in `ollantastore/postgres/migrations/`.
 
 Key design choices:
 - **Partitioned `issues` table** — range-partitioned by `created_at` for fast queries on recent scans
@@ -51,9 +51,12 @@ erDiagram
     projects ||--o{ project_profiles : "uses"
     projects ||--o{ project_gates : "uses"
     projects ||--o{ webhooks : "has"
+    projects ||--o{ scan_profile_snapshots : "records profiles"
+    projects ||--o{ quality_profile_changelog : "audits profiles"
 
     scans ||--o{ issues : "contains"
     scans ||--o{ measures : "contains"
+    scans ||--o{ scan_profile_snapshots : "records profiles"
 
     users ||--o{ tokens : "owns"
     users ||--o{ sessions : "has"
@@ -69,6 +72,7 @@ erDiagram
 
     quality_profiles ||--o{ quality_profile_rules : "contains"
     quality_profiles ||--o{ project_profiles : "assigned to"
+    quality_profiles ||--o{ quality_profile_changelog : "audited by"
 
     webhooks ||--o{ webhook_deliveries : "has"
 
@@ -126,6 +130,32 @@ One row per scan execution. Stores aggregate counters and quality gate result.
 | `closed_issues` | INT | NOT NULL | Issues closed since previous scan |
 
 **Indexes:** `idx_scans_project_date (project_id, analysis_date DESC)`
+
+---
+
+#### `scan_profile_snapshots`
+
+One row per scan and language with the effective Quality Profile metadata used by the scanner. This table makes profile changes visible in project activity and preserves the policy context for historic reports.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | BIGSERIAL | PK | |
+| `project_id` | BIGINT | FK → projects, NOT NULL | Project analyzed |
+| `scan_id` | BIGINT | FK → scans, NOT NULL | Scan that produced the snapshot |
+| `scope_type` | TEXT | NOT NULL | `branch` or `pull_request` |
+| `branch` | TEXT | NOT NULL | Branch name for branch scans |
+| `pull_request_key` | TEXT | NOT NULL | Pull request identifier when applicable |
+| `language` | TEXT | NOT NULL | Language of the effective profile |
+| `profile_id` | BIGINT | | Server profile ID when available |
+| `profile_name` | TEXT | NOT NULL | Human-readable profile name |
+| `source` | TEXT | NOT NULL | `local`, `remote`, `builtin`, `assigned`, or `default` |
+| `active_rule_count` | INT | NOT NULL | Active rules after disabled/OFF markers are removed |
+| `rules_hash` | TEXT | NOT NULL | Stable hash of normalized effective rules |
+| `metadata_available` | BOOLEAN | NOT NULL | `false` for legacy reports without profile metadata |
+| `diagnostics` | JSONB | NOT NULL | Scanner/server warnings for the profile policy |
+| `created_at` | TIMESTAMPTZ | NOT NULL | |
+
+**Constraints and indexes:** `UNIQUE (scan_id, language)`, `idx_scan_profile_snapshots_project_scope`, `idx_scan_profile_snapshots_scan`
 
 ---
 
@@ -361,6 +391,31 @@ Refresh token sessions for JWT authentication.
 
 **Built-in profiles:** "Ollanta Way" for `go`, `python`, `javascript`, `typescript`, `rust`
 
+Built-in profile rows are created by migrations and synchronized at `ollantaweb` startup from the CGo-free `ollantacore/rulecatalog`. Synchronization is idempotent: it adds or updates bundled rules/default params and parser-only metadata while preserving custom profiles, custom rules, assignments, and overrides.
+
+Disabled rules are represented as effective rule markers rather than physical deletes from the profile model. The scanner skips disabled/OFF rules, while export, inheritance, and rules hashing can still explain why a rule is inactive.
+
+---
+
+#### `quality_profile_changelog`
+
+Append-only audit log for profile changes such as imports, rule activation/deactivation, assignment, and default updates.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | BIGSERIAL | PK | |
+| `profile_id` | BIGINT | | Profile affected when applicable |
+| `project_id` | BIGINT | | Project affected when applicable |
+| `language` | TEXT | NOT NULL | Language affected |
+| `action` | TEXT | NOT NULL | Change type, for example `import`, `activate_rule`, `deactivate_rule` |
+| `rule_key` | TEXT | NOT NULL | Rule affected when applicable |
+| `old_value` | TEXT | NOT NULL | Previous serialized value |
+| `new_value` | TEXT | NOT NULL | New serialized value |
+| `actor_user_id` | BIGINT | | User who made the change when known |
+| `created_at` | TIMESTAMPTZ | NOT NULL | |
+
+**Indexes:** `idx_quality_profile_changelog_profile_created`, `idx_quality_profile_changelog_project_created`
+
 ---
 
 #### `project_profiles` / `project_gates`
@@ -447,6 +502,7 @@ Defines how "new code" is determined for quality gate evaluation.
 | 024 | `add_issue_tracking_state` | `tracking_state` on issues |
 | 025 | `allow_cancelled_jobs` | Cancelled durable job status support |
 | 026 | `add_job_idempotency_and_dedupe` | Scan idempotency fields, payload hashes, attempts, and active job dedupe indexes |
+| 027 | `add_profile_audit_and_scan_snapshots` | `quality_profile_changelog` and `scan_profile_snapshots` |
 
 ## ETL Recommendations
 
@@ -458,6 +514,8 @@ For data warehouse / BI tools (e.g. AWS QuickSight, Apache Superset):
 - `scans` — scan-level aggregates (also serves as a fact table for trend analysis)
 - `issue_transitions` — status change events
 - `issue_changelog` — field-level change events
+- `scan_profile_snapshots` — profile policy snapshots per scan/language
+- `quality_profile_changelog` — profile configuration audit events
 
 **Dimension tables** (low volume, reference data):
 - `projects` — project dimension
@@ -477,6 +535,8 @@ For data warehouse / BI tools (e.g. AWS QuickSight, Apache Superset):
 - `measures.created_at` — metric timeline
 - `issue_transitions.created_at` — change events
 - `issue_changelog.created_at` — audit events
+- `scan_profile_snapshots.created_at` — scan profile policy timeline
+- `quality_profile_changelog.created_at` — profile audit timeline
 
 **Sample join for a main dataset:**
 

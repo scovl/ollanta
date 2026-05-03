@@ -173,7 +173,7 @@ Useful flags:
 - `-server-wait-timeout=10m`: fail if the job does not finish in time
 - `-server-wait-poll=2s`: polling interval while waiting
 
-Scan reports may include optional aggregate test and mutation fields inside `measures`. Missing fields are ignored for backward compatibility.
+Scan reports may include optional aggregate test and mutation fields inside `measures`. Missing fields are ignored for backward compatibility. Reports may also include `quality_profiles`, a scanner policy snapshot array. New reports include profile source, profile name/id, active rule count, stable rules hash, and diagnostics per language; legacy reports without this field are accepted and marked as profile metadata unavailable.
 
 | Measure key | Meaning |
 |-------------|---------|
@@ -223,6 +223,8 @@ Search indexing and webhook deliveries now run through durable PostgreSQL-backed
 
 ## Quality Gates & Profiles
 
+Quality Profiles and Quality Gates are separate APIs. Profiles decide which rules run and with which effective severity/params. Gates evaluate the resulting metrics after ingestion.
+
 | Method | Endpoint                                           | Description |
 |--------|----------------------------------------------------|-------------|
 | GET    | `/api/v1/gates`                                    | List quality gates |
@@ -235,9 +237,50 @@ Search indexing and webhook deliveries now run through durable PostgreSQL-backed
 | GET    | `/api/v1/profiles`                                 | List quality profiles |
 | POST   | `/api/v1/profiles`                                 | Create quality profile |
 | GET    | `/api/v1/profiles/{id}`                            | Get profile |
+| GET    | `/api/v1/profiles/{id}/effective-rules`            | Resolved profile rules after inheritance, overrides, and disabled markers |
+| GET    | `/api/v1/profiles/{id}/export`                     | Export a JSON profile-as-code document |
+| GET    | `/api/v1/profiles/{id}/changelog`                  | Paginated profile change history |
 | POST   | `/api/v1/profiles/{id}/rules`                      | Activate rule in profile |
 | DELETE | `/api/v1/profiles/{id}/rules/{ruleKey}`            | Deactivate rule |
-| POST   | `/api/v1/profiles/{id}/import`                     | Import profile from YAML |
+| POST   | `/api/v1/profiles/{id}/import`                     | Import profile from JSON or YAML |
+| GET    | `/api/v1/projects/{key}/profiles`                  | Project profile assignment/default state per supported language |
+| POST   | `/api/v1/projects/{key}/profiles`                  | Assign a profile to a project language |
+| GET    | `/api/v1/projects/{key}/profiles/effective`        | Effective scanner policy for all supported languages |
+
+### Profile-as-code schema
+
+`POST /api/v1/profiles/{id}/import` accepts JSON or YAML. `GET /api/v1/profiles/{id}/export` returns JSON using the same schema.
+
+```yaml
+version: 1
+profiles:
+  - language: go
+    name: Strict Go
+    rules:
+      - key: go:no-large-functions
+        severity: critical
+        params:
+          max_lines: "30"
+      - key: go:todo-comment
+        active: false
+```
+
+Single-language documents can also place `language`, `name`, and `rules` at the top level. A rule can use `key`, `rule_key`, or `rule`. `active: false`, `activate: false`, or `severity: off` stores a disabled marker so child profiles and effective responses can explain why the rule is inactive.
+
+### Effective profile response
+
+`GET /api/v1/projects/{key}/profiles/effective` returns one item per supported language. Each item includes:
+
+| Field | Meaning |
+|-------|---------|
+| `language` | `go`, `javascript`, `typescript`, `python`, or `rust` |
+| `profile_id`, `profile_name` | Resolved assigned/default profile when available |
+| `source` | `assigned`, `default`, `local`, `remote`, or `builtin` |
+| `rules` | Effective rules with `origin` (`local`, `inherited`, `overridden`, `disabled`) |
+| `active_rule_count` | Count excluding disabled/OFF rules |
+| `rules_hash` | Stable hash of normalized rules, severities, params, and disabled markers |
+| `has_rules`, `parser_only` | Distinguishes actionable languages from parser-only languages |
+| `diagnostics` | Warnings such as missing defaults or parser-only states |
 
 ## New-code Periods & Webhooks
 
