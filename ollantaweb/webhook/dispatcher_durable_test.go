@@ -38,6 +38,22 @@ func TestDispatcherDispatchCreatesWebhookJobs(t *testing.T) {
 	}
 }
 
+func TestDispatcherDispatchReturnsExistingActiveWebhookJob(t *testing.T) {
+	t.Parallel()
+
+	repo := &fakeWebhookStore{
+		hooks: []*postgres.Webhook{{ID: 7, Name: "hook", URL: "http://example.com", Enabled: true}},
+	}
+	jobs := &fakeWebhookJobStore{active: &postgres.WebhookJob{ID: 42, WebhookID: 7, Event: EventScanCompleted, Status: "accepted"}}
+	d := &Dispatcher{repo: repo, jobs: jobs, client: &http.Client{Timeout: time.Second}, workerID: "worker-1", pollDelay: time.Millisecond}
+
+	d.Dispatch(context.Background(), 99, EventScanCompleted, map[string]any{"ok": true})
+
+	if len(jobs.created) != 0 {
+		t.Fatalf("created jobs = %d, want no duplicate create", len(jobs.created))
+	}
+}
+
 func TestDispatcherProcessNextMarksCompleted(t *testing.T) {
 	t.Parallel()
 
@@ -130,6 +146,7 @@ func (s *fakeWebhookStore) CreateDelivery(_ context.Context, d *postgres.Webhook
 
 type fakeWebhookJobStore struct {
 	created       []*postgres.WebhookJob
+	active        *postgres.WebhookJob
 	next          *postgres.WebhookJob
 	counts        map[string]int
 	completedID   int64
@@ -140,6 +157,13 @@ type fakeWebhookJobStore struct {
 func (s *fakeWebhookJobStore) Create(_ context.Context, job *postgres.WebhookJob) error {
 	s.created = append(s.created, job)
 	return nil
+}
+
+func (s *fakeWebhookJobStore) GetActiveByIdentity(_ context.Context, _ int64, _, _ string) (*postgres.WebhookJob, error) {
+	if s.active == nil {
+		return nil, postgres.ErrNotFound
+	}
+	return s.active, nil
 }
 
 func (s *fakeWebhookJobStore) ClaimNext(_ context.Context, _ string) (*postgres.WebhookJob, error) {

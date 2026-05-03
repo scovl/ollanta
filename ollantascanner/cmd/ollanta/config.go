@@ -12,8 +12,9 @@ import (
 )
 
 type rootConfig struct {
-	Scanner scannerConfig `toml:"scanner"`
-	Tests   testsConfig   `toml:"tests"`
+	Scanner   scannerConfig   `toml:"scanner"`
+	Tests     testsConfig     `toml:"tests"`
+	Mutations mutationsConfig `toml:"mutations"`
 }
 
 type scannerConfig struct {
@@ -39,18 +40,21 @@ type scannerConfig struct {
 }
 
 type testsConfig struct {
-	Enabled        *bool               `toml:"enabled"`
-	Mode           string              `toml:"mode"`
-	Discover       *bool               `toml:"discover"`
-	Run            *bool               `toml:"run"`
-	MaxReportAge   string              `toml:"max_report_age"`
-	Exclusions     []string            `toml:"exclusions"`
-	MaxDepth       int                 `toml:"max_depth"`
-	MaxCandidates  int                 `toml:"max_candidates"`
-	MaxReportBytes int64               `toml:"max_report_bytes"`
-	CommandPolicy  string              `toml:"command_policy"`
-	PathMappings   []testsPathMapping  `toml:"path_mapping"`
-	Modules        []testsModuleConfig `toml:"modules"`
+	Enabled                *bool               `toml:"enabled"`
+	Mode                   string              `toml:"mode"`
+	Discover               *bool               `toml:"discover"`
+	Run                    *bool               `toml:"run"`
+	MaxRuntime             string              `toml:"max_runtime"`
+	FailOnTimeout          *bool               `toml:"fail_on_timeout"`
+	MaxReportAge           string              `toml:"max_report_age"`
+	Exclusions             []string            `toml:"exclusions"`
+	MaxDepth               int                 `toml:"max_depth"`
+	MaxCandidates          int                 `toml:"max_candidates"`
+	MaxReportBytes         int64               `toml:"max_report_bytes"`
+	CommandPolicy          string              `toml:"command_policy"`
+	AllowExternalArtifacts *bool               `toml:"allow_external_artifacts"`
+	PathMappings           []testsPathMapping  `toml:"path_mapping"`
+	Modules                []testsModuleConfig `toml:"modules"`
 }
 
 type testsPathMapping struct {
@@ -59,25 +63,76 @@ type testsPathMapping struct {
 }
 
 type testsModuleConfig struct {
-	Name                 string   `toml:"name"`
-	Root                 string   `toml:"root"`
-	Language             string   `toml:"language"`
-	ArchitectureRole     string   `toml:"architecture_role"`
-	TestPolicy           string   `toml:"test_policy"`
-	IgnoreReason         string   `toml:"ignore_reason"`
-	Command              string   `toml:"command"`
-	ArtifactRoot         string   `toml:"artifact_root"`
-	ReportRoot           string   `toml:"report_root"`
-	CoverageReports      []string `toml:"coverage_reports"`
-	TestReports          []string `toml:"test_reports"`
-	MutationReports      []string `toml:"mutation_reports"`
-	NativeReports        []string `toml:"native_reports"`
-	CoverageThreshold    *float64 `toml:"coverage_threshold"`
-	NewCoverageThreshold *float64 `toml:"new_coverage_threshold"`
-	MutationThreshold    *float64 `toml:"mutation_threshold"`
-	Owner                string   `toml:"owner"`
-	Team                 string   `toml:"team"`
-	IntegrationRequired  *bool    `toml:"integration_required"`
+	Name                   string   `toml:"name"`
+	Root                   string   `toml:"root"`
+	Language               string   `toml:"language"`
+	ArchitectureRole       string   `toml:"architecture_role"`
+	TestPolicy             string   `toml:"test_policy"`
+	IgnoreReason           string   `toml:"ignore_reason"`
+	SuiteKind              string   `toml:"suite_kind"`
+	EvidenceConfidence     string   `toml:"evidence_confidence"`
+	Command                string   `toml:"command"`
+	ArtifactRoot           string   `toml:"artifact_root"`
+	ReportRoot             string   `toml:"report_root"`
+	AllowExternalArtifacts *bool    `toml:"allow_external_artifacts"`
+	CoverageReports        []string `toml:"coverage_reports"`
+	TestReports            []string `toml:"test_reports"`
+	MutationReports        []string `toml:"mutation_reports"`
+	NativeReports          []string `toml:"native_reports"`
+	CoverageThreshold      *float64 `toml:"coverage_threshold"`
+	NewCoverageThreshold   *float64 `toml:"new_coverage_threshold"`
+	MutationThreshold      *float64 `toml:"mutation_threshold"`
+	Owner                  string   `toml:"owner"`
+	Team                   string   `toml:"team"`
+	IntegrationRequired    *bool    `toml:"integration_required"`
+}
+
+type mutationsConfig struct {
+	Enabled                *bool                   `toml:"enabled"`
+	Mode                   string                  `toml:"mode"`
+	Discover               *bool                   `toml:"discover"`
+	Run                    *bool                   `toml:"run"`
+	ChangedOnly            *bool                   `toml:"changed_only"`
+	MaxRuntime             string                  `toml:"max_runtime"`
+	MaxMutants             int                     `toml:"max_mutants"`
+	Exclusions             []string                `toml:"exclusions"`
+	MaxReportAge           string                  `toml:"max_report_age"`
+	MaxDepth               int                     `toml:"max_depth"`
+	MaxCandidates          int                     `toml:"max_candidates"`
+	MaxReportBytes         int64                   `toml:"max_report_bytes"`
+	CommandPolicy          string                  `toml:"command_policy"`
+	FailOnTimeout          *bool                   `toml:"fail_on_timeout"`
+	AllowExternalArtifacts *bool                   `toml:"allow_external_artifacts"`
+	PathMappings           []testsPathMapping      `toml:"path_mapping"`
+	Modules                []mutationsModuleConfig `toml:"modules"`
+}
+
+type mutationsModuleConfig struct {
+	Name                   string             `toml:"name"`
+	Root                   string             `toml:"root"`
+	Language               string             `toml:"language"`
+	ArchitectureRole       string             `toml:"architecture_role"`
+	Tool                   string             `toml:"tool"`
+	Command                string             `toml:"command"`
+	SuiteKind              string             `toml:"suite_kind"`
+	EvidenceConfidence     string             `toml:"evidence_confidence"`
+	ArtifactRoot           string             `toml:"artifact_root"`
+	ReportRoot             string             `toml:"report_root"`
+	AllowExternalArtifacts *bool              `toml:"allow_external_artifacts"`
+	ReportPaths            []string           `toml:"report_paths"`
+	NativeReportPaths      []string           `toml:"native_report_paths"`
+	PathMappings           []testsPathMapping `toml:"path_mapping"`
+	Threshold              *float64           `toml:"threshold"`
+	ChangedCodeThreshold   *float64           `toml:"changed_code_threshold"`
+	Owner                  string             `toml:"owner"`
+	Team                   string             `toml:"team"`
+	MutationPolicy         string             `toml:"mutation_policy"`
+	IgnoreReason           string             `toml:"ignore_reason"`
+	ChangedOnly            *bool              `toml:"changed_only"`
+	MaxRuntime             string             `toml:"max_runtime"`
+	MaxMutants             int                `toml:"max_mutants"`
+	Exclusions             []string           `toml:"exclusions"`
+	FailOnTimeout          *bool              `toml:"fail_on_timeout"`
 }
 
 func parseOptions(args []string) (*appscan.ScanOptions, error) {
@@ -103,9 +158,102 @@ func parseOptions(args []string) (*appscan.ScanOptions, error) {
 		if err := applyTestsConfig(opts, cfg.Tests, provided); err != nil {
 			return nil, err
 		}
+		if err := applyMutationsConfig(opts, cfg.Mutations, provided); err != nil {
+			return nil, err
+		}
 	}
 
+	if err := appscan.ValidateOptions(opts); err != nil {
+		return nil, err
+	}
 	return opts, nil
+}
+
+func applyMutationsConfig(opts *appscan.ScanOptions, cfg mutationsConfig, provided map[string]bool) error {
+	applyBoolFlag(&opts.Mutations.Enabled, cfg.Enabled, provided, "with-mutations")
+	applyStringFlag(&opts.Mutations.Mode, cfg.Mode, provided, "mutations-mode")
+	applyBoolFlag(&opts.Mutations.Discover, cfg.Discover, provided, "mutations-discover")
+	applyBoolFlag(&opts.Mutations.Run, cfg.Run, provided, "mutations-run")
+	applyBoolFlag(&opts.Mutations.ChangedOnly, cfg.ChangedOnly, provided, "mutations-changed-only")
+	applyBoolFlag(&opts.Mutations.FailOnTimeout, cfg.FailOnTimeout, provided, "mutations-fail-on-timeout")
+	applyBoolFlag(&opts.Mutations.AllowExternalArtifacts, cfg.AllowExternalArtifacts, provided, "mutations-allow-external-artifacts")
+	if opts.Mutations.Mode == appscan.MutationModeRun {
+		opts.Mutations.Run = true
+	}
+	if err := applyDurationFlag(&opts.Mutations.MaxRuntime, cfg.MaxRuntime, provided, "mutations-max-runtime", "mutations.max_runtime"); err != nil {
+		return err
+	}
+	if err := applyDurationFlag(&opts.Mutations.MaxReportAge, cfg.MaxReportAge, provided, "mutations-max-report-age", "mutations.max_report_age"); err != nil {
+		return err
+	}
+	if cfg.MaxMutants > 0 {
+		opts.Mutations.MaxMutants = cfg.MaxMutants
+	}
+	if cfg.Exclusions != nil {
+		opts.Mutations.Exclusions = append([]string(nil), cfg.Exclusions...)
+	}
+	if cfg.MaxDepth > 0 {
+		opts.Mutations.MaxDepth = cfg.MaxDepth
+	}
+	if cfg.MaxCandidates > 0 {
+		opts.Mutations.MaxCandidates = cfg.MaxCandidates
+	}
+	if cfg.MaxReportBytes > 0 {
+		opts.Mutations.MaxReportBytes = cfg.MaxReportBytes
+	}
+	applyStringFlag(&opts.Mutations.CommandPolicy, cfg.CommandPolicy, provided, "mutations-command-policy")
+	opts.Mutations.PathMappings = make([]appscan.TestPathMapping, 0, len(cfg.PathMappings))
+	for _, mapping := range cfg.PathMappings {
+		opts.Mutations.PathMappings = append(opts.Mutations.PathMappings, appscan.TestPathMapping{From: mapping.From, To: mapping.To})
+	}
+	opts.Mutations.Modules = make([]appscan.MutationModuleConfig, 0, len(cfg.Modules))
+	for _, module := range cfg.Modules {
+		appModule, err := toAppMutationModule(module)
+		if err != nil {
+			return err
+		}
+		opts.Mutations.Modules = append(opts.Mutations.Modules, appModule)
+	}
+	return nil
+}
+
+func toAppMutationModule(module mutationsModuleConfig) (appscan.MutationModuleConfig, error) {
+	appModule := appscan.MutationModuleConfig{
+		Name:                   module.Name,
+		Root:                   module.Root,
+		Language:               module.Language,
+		ArchitectureRole:       module.ArchitectureRole,
+		Tool:                   module.Tool,
+		Command:                module.Command,
+		SuiteKind:              module.SuiteKind,
+		EvidenceConfidence:     module.EvidenceConfidence,
+		ArtifactRoot:           module.ArtifactRoot,
+		ReportRoot:             module.ReportRoot,
+		AllowExternalArtifacts: module.AllowExternalArtifacts,
+		ReportPaths:            append([]string(nil), module.ReportPaths...),
+		NativeReportPaths:      append([]string(nil), module.NativeReportPaths...),
+		Threshold:              module.Threshold,
+		ChangedCodeThreshold:   module.ChangedCodeThreshold,
+		Owner:                  module.Owner,
+		Team:                   module.Team,
+		MutationPolicy:         module.MutationPolicy,
+		IgnoreReason:           module.IgnoreReason,
+		ChangedOnly:            module.ChangedOnly,
+		MaxMutants:             module.MaxMutants,
+		Exclusions:             append([]string(nil), module.Exclusions...),
+		FailOnTimeout:          module.FailOnTimeout,
+	}
+	for _, mapping := range module.PathMappings {
+		appModule.PathMappings = append(appModule.PathMappings, appscan.TestPathMapping{From: mapping.From, To: mapping.To})
+	}
+	if module.MaxRuntime != "" {
+		duration, err := time.ParseDuration(module.MaxRuntime)
+		if err != nil {
+			return appscan.MutationModuleConfig{}, fmt.Errorf("parse mutations.modules.max_runtime: %w", err)
+		}
+		appModule.MaxRuntime = duration
+	}
+	return appModule, nil
 }
 
 func extractConfigPath(args []string) ([]string, string, error) {
@@ -188,8 +336,13 @@ func applyTestsConfig(opts *appscan.ScanOptions, cfg testsConfig, provided map[s
 	applyStringFlag(&opts.Tests.Mode, cfg.Mode, provided, "tests-mode")
 	applyBoolFlag(&opts.Tests.Discover, cfg.Discover, provided, "tests-discover")
 	applyBoolFlag(&opts.Tests.Run, cfg.Run, provided, "tests-run")
+	applyBoolFlag(&opts.Tests.FailOnTimeout, cfg.FailOnTimeout, provided, "tests-fail-on-timeout")
+	applyBoolFlag(&opts.Tests.AllowExternalArtifacts, cfg.AllowExternalArtifacts, provided, "tests-allow-external-artifacts")
 	if opts.Tests.Mode == appscan.TestModeRun {
 		opts.Tests.Run = true
+	}
+	if err := applyDurationFlag(&opts.Tests.MaxRuntime, cfg.MaxRuntime, provided, "tests-max-runtime", "tests.max_runtime"); err != nil {
+		return err
 	}
 	if cfg.MaxReportAge != "" {
 		duration, err := time.ParseDuration(cfg.MaxReportAge)
@@ -210,9 +363,7 @@ func applyTestsConfig(opts *appscan.ScanOptions, cfg testsConfig, provided map[s
 	if cfg.MaxReportBytes > 0 {
 		opts.Tests.MaxReportBytes = cfg.MaxReportBytes
 	}
-	if cfg.CommandPolicy != "" {
-		opts.Tests.CommandPolicy = cfg.CommandPolicy
-	}
+	applyStringFlag(&opts.Tests.CommandPolicy, cfg.CommandPolicy, provided, "tests-command-policy")
 	opts.Tests.PathMappings = make([]appscan.TestPathMapping, 0, len(cfg.PathMappings))
 	for _, mapping := range cfg.PathMappings {
 		opts.Tests.PathMappings = append(opts.Tests.PathMappings, appscan.TestPathMapping{From: mapping.From, To: mapping.To})
@@ -230,25 +381,28 @@ func toAppTestModule(module testsModuleConfig) appscan.TestModuleConfig {
 		integrationRequired = *module.IntegrationRequired
 	}
 	return appscan.TestModuleConfig{
-		Name:                 module.Name,
-		Root:                 module.Root,
-		Language:             module.Language,
-		ArchitectureRole:     module.ArchitectureRole,
-		TestPolicy:           module.TestPolicy,
-		IgnoreReason:         module.IgnoreReason,
-		Command:              module.Command,
-		ArtifactRoot:         module.ArtifactRoot,
-		ReportRoot:           module.ReportRoot,
-		CoverageReports:      append([]string(nil), module.CoverageReports...),
-		TestReports:          append([]string(nil), module.TestReports...),
-		MutationReports:      append([]string(nil), module.MutationReports...),
-		NativeReports:        append([]string(nil), module.NativeReports...),
-		CoverageThreshold:    module.CoverageThreshold,
-		NewCoverageThreshold: module.NewCoverageThreshold,
-		MutationThreshold:    module.MutationThreshold,
-		Owner:                module.Owner,
-		Team:                 module.Team,
-		IntegrationRequired:  integrationRequired,
+		Name:                   module.Name,
+		Root:                   module.Root,
+		Language:               module.Language,
+		ArchitectureRole:       module.ArchitectureRole,
+		TestPolicy:             module.TestPolicy,
+		IgnoreReason:           module.IgnoreReason,
+		SuiteKind:              module.SuiteKind,
+		EvidenceConfidence:     module.EvidenceConfidence,
+		Command:                module.Command,
+		ArtifactRoot:           module.ArtifactRoot,
+		ReportRoot:             module.ReportRoot,
+		AllowExternalArtifacts: module.AllowExternalArtifacts,
+		CoverageReports:        append([]string(nil), module.CoverageReports...),
+		TestReports:            append([]string(nil), module.TestReports...),
+		MutationReports:        append([]string(nil), module.MutationReports...),
+		NativeReports:          append([]string(nil), module.NativeReports...),
+		CoverageThreshold:      module.CoverageThreshold,
+		NewCoverageThreshold:   module.NewCoverageThreshold,
+		MutationThreshold:      module.MutationThreshold,
+		Owner:                  module.Owner,
+		Team:                   module.Team,
+		IntegrationRequired:    integrationRequired,
 	}
 }
 

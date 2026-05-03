@@ -39,6 +39,8 @@ type ICodeSnapshotRepo interface {
 type IScanJobRepo interface {
 	Create(ctx context.Context, job *model.ScanJob) error
 	GetByID(ctx context.Context, id int64) (*model.ScanJob, error)
+	FindByIdempotencyKey(ctx context.Context, projectKey, idempotencyKey string) (*model.ScanJob, error)
+	QueuePressure(ctx context.Context, projectKey string, now time.Time) (model.ScanQueuePressure, error)
 	ClaimNext(ctx context.Context, workerID string) (*model.ScanJob, error)
 	MarkCompleted(ctx context.Context, id, scanID int64) error
 	MarkFailed(ctx context.Context, id int64, lastError string) error

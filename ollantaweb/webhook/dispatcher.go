@@ -40,6 +40,7 @@ type webhookStore interface {
 
 type webhookJobStore interface {
 	Create(ctx context.Context, job *postgres.WebhookJob) error
+	GetActiveByIdentity(ctx context.Context, webhookID int64, event, payloadHash string) (*postgres.WebhookJob, error)
 	ClaimNext(ctx context.Context, workerID string) (*postgres.WebhookJob, error)
 	CountByStatus(ctx context.Context, status string) (int, error)
 	Reschedule(ctx context.Context, id int64, lastError string, nextAttemptAt time.Time, responseCode *int, responseBody *string) error
@@ -113,11 +114,21 @@ func (d *Dispatcher) Dispatch(ctx context.Context, projectID int64, event string
 	}
 
 	for _, wh := range hooks {
+		payloadHash := postgres.HashPayload(data)
+		if existing, err := d.jobs.GetActiveByIdentity(ctx, wh.ID, event, payloadHash); err == nil {
+			slog.DebugContext(ctx, "dedupe active webhook job", "webhook_id", wh.ID, "event", event, "job_id", existing.ID)
+			continue
+		} else if !errors.Is(err, postgres.ErrNotFound) {
+			slog.ErrorContext(ctx, "lookup active webhook job", telemetry.WithTraceAttrs(ctx, "webhook_id", wh.ID, "event", event, "error", err)...)
+			continue
+		}
+
 		traceParent, traceState := tracectx.Inject(ctx)
 		job := &postgres.WebhookJob{
 			WebhookID:     wh.ID,
 			Event:         event,
 			Payload:       data,
+			PayloadHash:   payloadHash,
 			Status:        "accepted",
 			TraceParent:   traceParent,
 			TraceState:    traceState,
@@ -128,6 +139,10 @@ func (d *Dispatcher) Dispatch(ctx context.Context, projectID int64, event string
 			job.ProjectID = &pid
 		}
 		if err := d.jobs.Create(ctx, job); err != nil {
+			if existing, findErr := d.jobs.GetActiveByIdentity(ctx, wh.ID, event, payloadHash); findErr == nil {
+				slog.DebugContext(ctx, "dedupe raced webhook job", "webhook_id", wh.ID, "event", event, "job_id", existing.ID)
+				continue
+			}
 			slog.ErrorContext(ctx, "create webhook job", telemetry.WithTraceAttrs(ctx, "webhook_id", wh.ID, "event", event, "error", err)...)
 		}
 	}

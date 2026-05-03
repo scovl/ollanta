@@ -3,6 +3,9 @@
 // Inspired by GraphConstants.h from OpenStaticAnalyzer.
 package constants
 
+// Version is the current Ollanta product version reported by the scanner and server.
+const Version = "0.2.0"
+
 // Language identifiers — canonical values used in Component.Language and
 // Executor routing to determine which sensor analyzes a file.
 const (

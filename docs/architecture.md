@@ -863,8 +863,9 @@ erDiagram
 |-----------|-------|-----|
 | **Partitioned table** | `issues` (by `created_at`) | Old scans can be pruned without reindexing. Queries on recent scans are fast |
 | **COPY protocol** | Issue and measure inserts | Up to 50Ã— faster than `INSERT` for thousands of rows |
-| **Connection pool** | pgx pool (max 25, idle 5min) | Reuses TCP connections to the database |
-| **Advisory locks** | Indexing coordination | Prevents two replicas from indexing the same scan |
+| **Connection pool** | Configurable pgx pool | Reuses TCP connections to the database and lets roles be sized independently |
+| **Advisory locks** | Migration coordination | Prevents multiple replicas or deploy jobs from applying schema migrations concurrently |
+| **SQL job claims** | Durable background jobs | Lets multiple worker replicas claim scan, index, and webhook jobs safely |
 
 ### Full-text search â€” two options
 
@@ -904,22 +905,29 @@ Switching backends is a single environment variable. Business code doesn't know 
 
 > **Relevant code:** `ollantastore/search/port.go`, `ollantastore/search/factory.go`
 
-### Indexing coordination
+### Durable background work and runtime roles
 
-After each ingest, `ollantaweb` enqueues a background indexing job into an in-process worker attached to the running replica. The same replica that accepted the scan drains the queue, loads issues from PostgreSQL, and updates the active search backend.
+The server side is split into stateless roles backed by PostgreSQL durable jobs. API pods accept scan reports and persist `scan_jobs`. Worker pods claim work with SQL-safe updates, so multiple replicas can run at the same time without an in-memory coordinator.
 
-| Worker | How it works | When to use |
-|--------|--------------|-------------|
-| **memory** | Buffered Go channel + background worker with retries | All current deployments |
+| Role | Binary | Responsibility | Durable source |
+|------|--------|----------------|----------------|
+| API | `ollantaweb` | Auth, REST API, scan intake, admin views, metrics | PostgreSQL |
+| Scan worker | `ollantaworker` | Materializes accepted scan reports into scans, issues, measures, and side-effect jobs | `scan_jobs` |
+| Indexer | `ollantaindexer` | Projects scan data into the configured search backend | `index_jobs` |
+| Webhook worker | `ollantawebhookworker` | Delivers outbound webhook jobs with retry behavior | `webhook_jobs` |
+| Migrator | `ollantamigrate` | Runs schema migrations under an advisory lock as a deploy operation | `schema_migrations` |
 
-In the current design, the indexing flow is:
-1. The API persists the scan, issues, and measures in PostgreSQL
-2. The ingest pipeline enqueues a local index job on the receiving replica
-3. The in-process worker loads the scan issues and updates the search index
+In the current design, the ingest flow is:
 
-This keeps the runtime simple: no extra coordinator, no distributed job table, and no PostgreSQL `LISTEN/NOTIFY` path. If a pod is interrupted before its queue drains, rerun `POST /admin/reindex` to rebuild the search index from PostgreSQL.
+1. The API validates auth, idempotency, body size, and queue pressure.
+2. The API writes an accepted `scan_job` with an idempotency key and payload hash.
+3. A scan worker claims the job, runs the ingest use case, and marks it completed or failed.
+4. The scan worker creates durable index and webhook jobs, with active-job dedupe.
+5. Indexer and webhook worker replicas claim their own jobs independently.
 
-> **Relevant code:** `ollantaweb/ingest/worker.go`
+PostgreSQL is the source of truth. Search is a rebuildable projection, and webhook delivery state is persisted so retries survive pod restarts. The old in-process index queue is no longer the operational path; any remaining local queue or circuit-breaker helpers should be treated as legacy/internal utilities unless a concrete runtime caller is added.
+
+> **Relevant code:** `ollantaweb/ingest/worker.go`, `ollantaweb/webhook/dispatcher.go`, `ollantastore/postgres/*_jobs.go`
 
 ---
 

@@ -29,15 +29,16 @@ type ScanOptions struct {
 	PullRequestBase   string
 	Format            string // "summary" | "json" | "sarif" | "all"
 	Debug             bool
-	Serve             bool          // open local web UI after scan
-	Port              int           // port for -local-ui (default 7777)
-	Bind              string        // bind address for -local-ui (default 127.0.0.1)
-	Server            string        // URL of ollantaweb server for push mode (empty = disabled)
-	ServerToken       string        // Bearer token for authenticating with ollantaweb
-	ServerWait        bool          // wait for accepted server job until completion
-	WaitTimeout       time.Duration // maximum time to wait for server-side job completion
-	WaitPoll          time.Duration // polling interval while waiting for server-side job completion
-	Tests             TestOptions   // optional test-signal discovery and collection
+	Serve             bool            // open local web UI after scan
+	Port              int             // port for -local-ui (default 7777)
+	Bind              string          // bind address for -local-ui (default 127.0.0.1)
+	Server            string          // URL of ollantaweb server for push mode (empty = disabled)
+	ServerToken       string          // Bearer token for authenticating with ollantaweb
+	ServerWait        bool            // wait for accepted server job until completion
+	WaitTimeout       time.Duration   // maximum time to wait for server-side job completion
+	WaitPoll          time.Duration   // polling interval while waiting for server-side job completion
+	Tests             TestOptions     // optional test-signal discovery and collection
+	Mutations         MutationOptions // optional mutation-signal discovery and collection
 }
 
 // ParseFlags parses args (typically os.Args[1:]) into ScanOptions.
@@ -67,6 +68,21 @@ func ParseFlags(args []string) (*ScanOptions, error) {
 	withTests := fs.Bool("with-tests", false, "Enable test signal discovery and report collection without running tests")
 	testsMode := fs.String("tests-mode", TestModeCollect, "Test signal mode: collect, run, or doctor")
 	testsRun := fs.Bool("tests-run", false, "Explicitly allow configured test commands to run")
+	testsMaxRuntime := fs.Duration("tests-max-runtime", 10*time.Minute, "Maximum time for an opt-in test command")
+	testsFailOnTimeout := fs.Bool("tests-fail-on-timeout", false, "Treat test command timeout as a failed scan instead of collecting partial reports")
+	testsCommandPolicy := fs.String("tests-command-policy", CommandPolicyExplicit, "Test command policy: explicit, never, configured_only, discovered, or trusted_shell")
+	testsAllowExternalArtifacts := fs.Bool("tests-allow-external-artifacts", false, "Allow configured test reports outside the project directory")
+	withMutations := fs.Bool("with-mutations", false, "Enable mutation signal discovery and report collection without running mutation tools")
+	mutationsMode := fs.String("mutations-mode", MutationModeCollect, "Mutation signal mode: collect, run, or doctor")
+	mutationsRun := fs.Bool("mutations-run", false, "Explicitly allow configured mutation commands to run")
+	mutationsDiscover := fs.Bool("mutations-discover", true, "Discover mutation tools and report candidates")
+	mutationsChangedOnly := fs.Bool("mutations-changed-only", true, "Prefer changed-code mutation scope when executing mutation commands")
+	mutationsMaxRuntime := fs.Duration("mutations-max-runtime", 10*time.Minute, "Maximum time for an opt-in mutation command")
+	mutationsMaxMutants := fs.Int("mutations-max-mutants", 0, "Maximum mutants for opt-in mutation execution when supported by the tool")
+	mutationsMaxReportAge := fs.Duration("mutations-max-report-age", 24*time.Hour, "Maximum age for mutation reports before they are marked stale")
+	mutationsCommandPolicy := fs.String("mutations-command-policy", CommandPolicyExplicit, "Mutation command policy: explicit, never, configured_only, discovered, or trusted_shell")
+	mutationsFailOnTimeout := fs.Bool("mutations-fail-on-timeout", false, "Treat mutation command timeout as a failed scan instead of collecting partial reports")
+	mutationsAllowExternalArtifacts := fs.Bool("mutations-allow-external-artifacts", false, "Allow configured mutation reports outside the project directory")
 
 	if err := fs.Parse(args); err != nil {
 		return nil, err
@@ -97,10 +113,27 @@ func ParseFlags(args []string) (*ScanOptions, error) {
 		WaitTimeout:       *waitTimeout,
 		WaitPoll:          *waitPoll,
 		Tests: TestOptions{
-			Enabled:  *withTests,
-			Mode:     *testsMode,
-			Discover: true,
-			Run:      *testsRun || *testsMode == TestModeRun,
+			Enabled:                *withTests,
+			Mode:                   *testsMode,
+			Discover:               true,
+			Run:                    *testsRun || *testsMode == TestModeRun,
+			MaxRuntime:             *testsMaxRuntime,
+			FailOnTimeout:          *testsFailOnTimeout,
+			CommandPolicy:          *testsCommandPolicy,
+			AllowExternalArtifacts: *testsAllowExternalArtifacts,
+		},
+		Mutations: MutationOptions{
+			Enabled:                *withMutations,
+			Mode:                   *mutationsMode,
+			Discover:               *mutationsDiscover,
+			Run:                    *mutationsRun || *mutationsMode == MutationModeRun,
+			ChangedOnly:            *mutationsChangedOnly,
+			MaxRuntime:             *mutationsMaxRuntime,
+			MaxMutants:             *mutationsMaxMutants,
+			MaxReportAge:           *mutationsMaxReportAge,
+			CommandPolicy:          *mutationsCommandPolicy,
+			FailOnTimeout:          *mutationsFailOnTimeout,
+			AllowExternalArtifacts: *mutationsAllowExternalArtifacts,
 		},
 	}
 
@@ -125,6 +158,9 @@ func ParseFlags(args []string) (*ScanOptions, error) {
 		opts.ProjectKey = filepath.Base(abs)
 	}
 
+	if err := ValidateOptions(opts); err != nil {
+		return nil, err
+	}
 	return opts, nil
 }
 
@@ -190,15 +226,31 @@ func (uc *ScanUseCase) Run(ctx context.Context, opts *ScanOptions) (*Report, err
 		PullRequestBase: scmCtx.PullRequestBase,
 	})
 	report.ScannerOptions = scannerOptionsFromScanOptions(opts)
-	if opts.Tests.Enabled {
-		testSignals, err := CollectTestSignals(opts.ProjectDir, opts.Tests, start)
-		if err != nil {
-			return nil, fmt.Errorf("test signals: %w", err)
-		}
-		report.TestSignals = testSignals
-		applyTestSignalMeasures(report, testSignals)
+	if err := collectReportTestSignals(report, opts, start); err != nil {
+		return nil, err
 	}
 	return report, nil
+}
+
+func collectReportTestSignals(report *Report, opts *ScanOptions, scanStarted time.Time) error {
+	if opts.Tests.Enabled {
+		testSignals, err := CollectTestSignals(opts.ProjectDir, opts.Tests, scanStarted)
+		if err != nil {
+			return fmt.Errorf("test signals: %w", err)
+		}
+		report.TestSignals = testSignals
+	}
+	if opts.Mutations.Enabled {
+		mutationSignals, err := CollectMutationSignals(opts.ProjectDir, opts.Mutations, scanStarted)
+		if err != nil {
+			return fmt.Errorf("mutation signals: %w", err)
+		}
+		report.TestSignals = mergeMutationSignals(report.TestSignals, mutationSignals)
+	}
+	if report.TestSignals != nil {
+		applyTestSignalMeasures(report, report.TestSignals)
+	}
+	return nil
 }
 
 func scannerOptionsFromScanOptions(opts *ScanOptions) ScannerOptions {
@@ -226,50 +278,122 @@ func scannerOptionsFromScanOptions(opts *ScanOptions) ScannerOptions {
 		WaitTimeout:       opts.WaitTimeout.String(),
 		WaitPoll:          opts.WaitPoll.String(),
 		Tests:             scannerTestOptionsFromTestOptions(opts.Tests),
+		Mutations:         scannerMutationOptionsFromMutationOptions(opts.Mutations),
 	}
 }
 
 func scannerTestOptionsFromTestOptions(opts TestOptions) ScannerTestOptions {
 	testOptions := ScannerTestOptions{
-		Enabled:        opts.Enabled,
-		Mode:           opts.Mode,
-		Discover:       opts.Discover,
-		Run:            opts.Run,
-		Exclusions:     append([]string(nil), opts.Exclusions...),
-		MaxDepth:       opts.MaxDepth,
-		MaxCandidates:  opts.MaxCandidates,
-		MaxReportBytes: opts.MaxReportBytes,
-		CommandPolicy:  opts.CommandPolicy,
-		PathMappings:   append([]TestPathMapping(nil), opts.PathMappings...),
-		Modules:        make([]ScannerTestModuleOptions, 0, len(opts.Modules)),
+		Enabled:                opts.Enabled,
+		Mode:                   opts.Mode,
+		Discover:               opts.Discover,
+		Run:                    opts.Run,
+		FailOnTimeout:          opts.FailOnTimeout,
+		Exclusions:             append([]string(nil), opts.Exclusions...),
+		MaxDepth:               opts.MaxDepth,
+		MaxCandidates:          opts.MaxCandidates,
+		MaxReportBytes:         opts.MaxReportBytes,
+		CommandPolicy:          opts.CommandPolicy,
+		AllowExternalArtifacts: opts.AllowExternalArtifacts,
+		PathMappings:           append([]TestPathMapping(nil), opts.PathMappings...),
+		Modules:                make([]ScannerTestModuleOptions, 0, len(opts.Modules)),
 	}
 	if opts.MaxReportAge > 0 {
 		testOptions.MaxReportAge = opts.MaxReportAge.String()
 	}
+	if opts.MaxRuntime > 0 {
+		testOptions.MaxRuntime = opts.MaxRuntime.String()
+	}
 	for _, module := range opts.Modules {
 		testOptions.Modules = append(testOptions.Modules, ScannerTestModuleOptions{
-			Name:                 module.Name,
-			Root:                 module.Root,
-			Language:             module.Language,
-			ArchitectureRole:     module.ArchitectureRole,
-			TestPolicy:           module.TestPolicy,
-			IgnoreReason:         module.IgnoreReason,
-			Command:              module.Command,
-			ArtifactRoot:         module.ArtifactRoot,
-			ReportRoot:           module.ReportRoot,
-			CoverageReports:      append([]string(nil), module.CoverageReports...),
-			TestReports:          append([]string(nil), module.TestReports...),
-			MutationReports:      append([]string(nil), module.MutationReports...),
-			NativeReports:        append([]string(nil), module.NativeReports...),
-			CoverageThreshold:    module.CoverageThreshold,
-			NewCoverageThreshold: module.NewCoverageThreshold,
-			MutationThreshold:    module.MutationThreshold,
-			Owner:                module.Owner,
-			Team:                 module.Team,
-			IntegrationRequired:  module.IntegrationRequired,
+			Name:                   module.Name,
+			Root:                   module.Root,
+			Language:               module.Language,
+			ArchitectureRole:       module.ArchitectureRole,
+			TestPolicy:             module.TestPolicy,
+			IgnoreReason:           module.IgnoreReason,
+			SuiteKind:              module.SuiteKind,
+			EvidenceConfidence:     module.EvidenceConfidence,
+			Command:                module.Command,
+			ArtifactRoot:           module.ArtifactRoot,
+			ReportRoot:             module.ReportRoot,
+			AllowExternalArtifacts: module.AllowExternalArtifacts,
+			CoverageReports:        append([]string(nil), module.CoverageReports...),
+			TestReports:            append([]string(nil), module.TestReports...),
+			MutationReports:        append([]string(nil), module.MutationReports...),
+			NativeReports:          append([]string(nil), module.NativeReports...),
+			CoverageThreshold:      module.CoverageThreshold,
+			NewCoverageThreshold:   module.NewCoverageThreshold,
+			MutationThreshold:      module.MutationThreshold,
+			Owner:                  module.Owner,
+			Team:                   module.Team,
+			IntegrationRequired:    module.IntegrationRequired,
 		})
 	}
 	return testOptions
+}
+
+func scannerMutationOptionsFromMutationOptions(opts MutationOptions) ScannerMutationOptions {
+	if !opts.Enabled {
+		return ScannerMutationOptions{}
+	}
+	applyMutationDefaults(&opts)
+	mutationOptions := ScannerMutationOptions{
+		Enabled:                opts.Enabled,
+		Mode:                   opts.Mode,
+		Discover:               opts.Discover,
+		Run:                    opts.Run,
+		ChangedOnly:            opts.ChangedOnly,
+		MaxMutants:             opts.MaxMutants,
+		Exclusions:             append([]string(nil), opts.Exclusions...),
+		MaxDepth:               opts.MaxDepth,
+		MaxCandidates:          opts.MaxCandidates,
+		MaxReportBytes:         opts.MaxReportBytes,
+		CommandPolicy:          opts.CommandPolicy,
+		FailOnTimeout:          opts.FailOnTimeout,
+		AllowExternalArtifacts: opts.AllowExternalArtifacts,
+		PathMappings:           append([]TestPathMapping(nil), opts.PathMappings...),
+		Modules:                make([]ScannerMutationModuleOptions, 0, len(opts.Modules)),
+	}
+	if opts.MaxRuntime > 0 {
+		mutationOptions.MaxRuntime = opts.MaxRuntime.String()
+	}
+	if opts.MaxReportAge > 0 {
+		mutationOptions.MaxReportAge = opts.MaxReportAge.String()
+	}
+	for _, module := range opts.Modules {
+		moduleOptions := ScannerMutationModuleOptions{
+			Name:                   module.Name,
+			Root:                   module.Root,
+			Language:               module.Language,
+			ArchitectureRole:       module.ArchitectureRole,
+			Tool:                   module.Tool,
+			Command:                module.Command,
+			SuiteKind:              module.SuiteKind,
+			EvidenceConfidence:     module.EvidenceConfidence,
+			ArtifactRoot:           module.ArtifactRoot,
+			ReportRoot:             module.ReportRoot,
+			AllowExternalArtifacts: module.AllowExternalArtifacts,
+			ReportPaths:            append([]string(nil), module.ReportPaths...),
+			NativeReportPaths:      append([]string(nil), module.NativeReportPaths...),
+			PathMappings:           append([]TestPathMapping(nil), module.PathMappings...),
+			Threshold:              module.Threshold,
+			ChangedCodeThreshold:   module.ChangedCodeThreshold,
+			Owner:                  module.Owner,
+			Team:                   module.Team,
+			MutationPolicy:         module.MutationPolicy,
+			IgnoreReason:           module.IgnoreReason,
+			ChangedOnly:            module.ChangedOnly,
+			MaxMutants:             module.MaxMutants,
+			Exclusions:             append([]string(nil), module.Exclusions...),
+			FailOnTimeout:          module.FailOnTimeout,
+		}
+		if module.MaxRuntime > 0 {
+			moduleOptions.MaxRuntime = module.MaxRuntime.String()
+		}
+		mutationOptions.Modules = append(mutationOptions.Modules, moduleOptions)
+	}
+	return mutationOptions
 }
 
 func applyTestSignalMeasures(report *Report, testSignals *TestSignalReport) {
@@ -287,7 +411,12 @@ func applyTestSignalMeasures(report *Report, testSignals *TestSignalReport) {
 	report.Measures.MutantsKilled = testSignals.Summary.MutantsKilled
 	report.Measures.MutantsSurvived = testSignals.Summary.MutantsSurvived
 	report.Measures.MutantsTimeout = testSignals.Summary.MutantsTimeout
+	report.Measures.MutantsSkipped = testSignals.Summary.MutantsSkipped
 	report.Measures.MutantsError = testSignals.Summary.MutantsError
+	report.Measures.ChangedMutationScore = testSignals.Summary.ChangedMutationScore
+	report.Measures.ChangedMutantsTotal = testSignals.Summary.ChangedMutantsTotal
+	report.Measures.ChangedMutantsKilled = testSignals.Summary.ChangedMutantsKilled
+	report.Measures.ChangedMutantsSurvived = testSignals.Summary.ChangedMutantsSurvived
 }
 
 // PrintSummary writes a human-readable scan summary to stdout.

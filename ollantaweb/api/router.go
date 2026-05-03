@@ -57,8 +57,8 @@ func NewRouter(d *RouterDeps) http.Handler {
 	r.Use(middleware.Recoverer)
 	r.Use(telemetry.TraceIDMiddleware)
 	r.Use(RequestLogger(d.AppMetrics))
-	r.Use(CORS)
-	r.Use(MaxBody(10 << 20)) // 10 MB
+	r.Use(CORS(d.Config.CORSAllowedOrigins, d.Config.CORSAllowUnsafeWildcard))
+	r.Use(MaxBody(d.Config.HTTPMaxBodyBytes))
 
 	// ── Health (always public) ─────────────────────────────────────────────
 	r.Get("/healthz", Liveness)
@@ -88,17 +88,27 @@ func NewRouter(d *RouterDeps) http.Handler {
 
 	ph := &ProjectsHandler{repo: d.Projects}
 	jobService := ingest.NewScanJobService(d.ScanJobs)
-	sh := &ScansHandler{scans: d.Scans, projects: d.Projects, jobs: jobService}
+	sh := &ScansHandler{
+		scans:    d.Scans,
+		projects: d.Projects,
+		jobs:     jobService,
+		backpressure: ingest.ScanBackpressureConfig{
+			MaxAccepted:          d.Config.ScanQueueMaxAccepted,
+			MaxRunning:           d.Config.ScanQueueMaxRunning,
+			MaxOldestAcceptedAge: d.Config.ScanQueueMaxOldestAcceptedAge,
+			RetryAfter:           d.Config.ScanQueueRetryAfter,
+		},
+	}
 	sjh := &ScanJobsHandler{jobs: jobService}
 	ih := &IssuesHandler{issues: d.Issues, projects: d.Projects, scans: d.Scans, changelog: d.Changelog}
 	ibh := &IssueTrackingBackfillHandler{service: &issueTrackingBackfillService{projects: d.Projects, scans: d.Scans, issues: d.Issues}}
 	mh := &MeasuresHandler{measures: d.Measures, projects: d.Projects}
 	srh := &SearchHandler{searcher: d.Searcher}
 	oh := &OverviewHandler{projects: d.Projects, scans: d.Scans, issues: d.Issues, measures: d.Measures, scanJobs: d.ScanJobs, gates: d.Gates, periods: d.Periods}
-	ah := &ActivityHandler{scans: d.Scans, projects: d.Projects}
+	ah := &ActivityHandler{scans: d.Scans, projects: d.Projects, measures: d.Measures}
 	psh := &ProjectScopeHandler{projects: d.Projects, scans: d.Scans, snapshots: d.Snapshots, issues: d.Issues}
 	outboxH := &OutboxJobsHandler{indexJobs: d.IndexJobs, webhookJobs: d.WebhookJobs}
-	backgroundTasksH := &BackgroundTasksHandler{scanJobs: d.ScanJobs, indexJobs: d.IndexJobs, webhookJobs: d.WebhookJobs, metricsReg: d.MetricsReg}
+	backgroundTasksH := NewBackgroundTasksHandler(d.ScanJobs, d.IndexJobs, d.WebhookJobs, d.MetricsReg)
 
 	// ── API v1 ────────────────────────────────────────────────────────────
 	r.Route("/api/v1", func(r chi.Router) {

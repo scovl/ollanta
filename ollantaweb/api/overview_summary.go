@@ -25,6 +25,8 @@ var summaryNewCodeMetricKeys = []string{
 	"new_code_smells",
 	"new_coverage",
 	"new_duplications",
+	model.MetricChangedMutationScore,
+	model.MetricChangedMutantsSurvived,
 }
 
 type overviewSummary struct {

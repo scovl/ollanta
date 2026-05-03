@@ -40,6 +40,10 @@ func (w *ScanJobWorker) runOnce(ctx context.Context) bool {
 	startedAt := time.Now()
 	job, err := w.processor.ProcessNext(ctx)
 	if err != nil {
+		if w.metrics != nil && !errors.Is(err, context.Canceled) {
+			w.metrics.ScanJobsFailed.Inc()
+			w.metrics.ObserveIngestStep("process", "failure", time.Since(startedAt))
+		}
 		return w.handleProcessError(ctx, err)
 	}
 	if job == nil {
@@ -48,7 +52,9 @@ func (w *ScanJobWorker) runOnce(ctx context.Context) bool {
 
 	if w.metrics != nil {
 		w.metrics.ScansTotal.Inc()
+		w.metrics.ScanJobsProcessed.Inc()
 		w.metrics.IngestDuration.ObserveDuration(time.Since(startedAt))
+		w.metrics.ObserveIngestStep("process", "success", time.Since(startedAt))
 	}
 	w.refreshQueueMetrics(ctx)
 	return true

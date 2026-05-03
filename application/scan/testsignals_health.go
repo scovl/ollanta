@@ -110,10 +110,19 @@ func checkSuiteAvailability(module *TestModuleSignal, health *TestModuleHealth) 
 	if len(module.Suites) > 0 {
 		return
 	}
+	if hasMutationEvidence(module) {
+		module.Availability = EvidenceAvailabilityPartial
+		health.Partial = true
+		health.Confidence = EvidenceConfidenceMedium
+		health.Reasons = append(health.Reasons, "automated test suite report unavailable; mutation evidence collected")
+		health.Recommendations = append(health.Recommendations, fmt.Sprintf("Add JUnit or native test-suite evidence for module %s to increase confidence.", module.Name))
+		return
+	}
+	module.Availability = EvidenceAvailabilityUnavailable
 	health.Partial = true
-	health.Confidence = "medium"
+	health.Confidence = EvidenceConfidenceMedium
 	health.Score -= 10
-	health.Reasons = append(health.Reasons, "unit-test report unavailable")
+	health.Reasons = append(health.Reasons, "automated test suite report unavailable")
 	health.Recommendations = append(health.Recommendations, fmt.Sprintf("Add a JUnit or native test report for module %s.", module.Name))
 }
 
@@ -166,17 +175,38 @@ func checkMutationHealth(module *TestModuleSignal, health *TestModuleHealth, thr
 	if threshold <= 0 {
 		return
 	}
-	if module.Mutation == nil || module.Mutation.Score == nil {
+	if module.Mutation == nil || (module.Mutation.Score == nil && module.Mutation.ChangedCodeScore == nil) {
 		health.Partial = true
 		health.Score -= 5
 		health.Reasons = append(health.Reasons, "mutation report unavailable")
 		return
 	}
+	if module.Mutation.Stale || module.Mutation.Availability == EvidenceAvailabilityStale {
+		health.Partial = true
+		health.Confidence = EvidenceConfidenceLow
+		health.Reasons = append(health.Reasons, "mutation report is stale")
+	}
+	if module.Mutation.ChangedCodeScore != nil && module.ChangedMutationThreshold != nil && *module.Mutation.ChangedCodeScore < *module.ChangedMutationThreshold {
+		health.Score -= 20
+		health.Reasons = append(health.Reasons, fmt.Sprintf("changed-code mutation score %.1f is below %.1f threshold", *module.Mutation.ChangedCodeScore, *module.ChangedMutationThreshold))
+		health.Recommendations = append(health.Recommendations, fmt.Sprintf("Prioritize survived changed-code mutants in module %s.", module.Name))
+	}
+	if module.Mutation.Score == nil {
+		return
+	}
 	if *module.Mutation.Score >= threshold {
+		if module.Mutation.Survived > 0 {
+			health.Recommendations = append(health.Recommendations, fmt.Sprintf("Review %d survived mutants in module %s.", module.Mutation.Survived, module.Name))
+		}
 		return
 	}
 	health.Score -= 15
 	health.Reasons = append(health.Reasons, fmt.Sprintf("mutation score %.1f is below %.1f threshold", *module.Mutation.Score, threshold))
+	health.Recommendations = append(health.Recommendations, fmt.Sprintf("Review survived mutants in module %s and add targeted tests.", module.Name))
+}
+
+func hasMutationEvidence(module *TestModuleSignal) bool {
+	return module.Mutation != nil && (module.Mutation.Score != nil || module.Mutation.ChangedCodeScore != nil || module.Mutation.Testable > 0 || module.Mutation.Total > 0 || len(module.Mutation.Reports) > 0)
 }
 
 func checkStaleReportHealth(module *TestModuleSignal, health *TestModuleHealth) {
@@ -201,7 +231,7 @@ func moduleFailures(module *TestModuleSignal) (int, int) {
 
 func hasIntegrationSuite(module *TestModuleSignal) bool {
 	for _, suite := range module.Suites {
-		if suite.Kind == "integration" {
+		if suite.Kind == SuiteKindIntegration {
 			return true
 		}
 	}
@@ -237,7 +267,11 @@ func addModuleMeasures(summary *TestSignalSummary, module *TestModuleSignal) {
 		summary.MutantsKilled += module.Mutation.Killed
 		summary.MutantsSurvived += module.Mutation.Survived
 		summary.MutantsTimeout += module.Mutation.Timeout
+		summary.MutantsSkipped += module.Mutation.Skipped
 		summary.MutantsError += module.Mutation.Errors
+		summary.ChangedMutantsTotal += module.Mutation.ChangedTotal
+		summary.ChangedMutantsKilled += module.Mutation.ChangedKilled
+		summary.ChangedMutantsSurvived += module.Mutation.ChangedSurvived
 	}
 	if summary.LinesToCover > 0 {
 		coverage := float64(summary.CoveredLines) * 100 / float64(summary.LinesToCover)
@@ -247,8 +281,17 @@ func addModuleMeasures(summary *TestSignalSummary, module *TestModuleSignal) {
 		newCodeCoverage := float64(summary.NewCoveredLines) * 100 / float64(summary.NewLinesToCover)
 		summary.NewCodeCoverage = &newCodeCoverage
 	}
-	if summary.MutantsTotal > 0 {
-		mutationScore := float64(summary.MutantsKilled) * 100 / float64(summary.MutantsTotal)
+	mutationDenominator := 0
+	if summary.MutantsKilled+summary.MutantsSurvived > 0 {
+		mutationDenominator = summary.MutantsKilled + summary.MutantsSurvived
+	}
+	if mutationDenominator > 0 {
+		mutationScore := float64(summary.MutantsKilled) * 100 / float64(mutationDenominator)
 		summary.MutationScore = &mutationScore
+	}
+	changedDenominator := summary.ChangedMutantsKilled + summary.ChangedMutantsSurvived
+	if changedDenominator > 0 {
+		changedMutationScore := float64(summary.ChangedMutantsKilled) * 100 / float64(changedDenominator)
+		summary.ChangedMutationScore = &changedMutationScore
 	}
 }

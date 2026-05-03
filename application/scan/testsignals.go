@@ -15,16 +15,50 @@ const (
 	TestModeRun     = "run"
 	TestModeDoctor  = "doctor"
 
+	MutationModeCollect = "collect"
+	MutationModeRun     = "run"
+	MutationModeDoctor  = "doctor"
+
 	TestPolicyRequired = "required"
 	TestPolicyOptional = "optional"
 	TestPolicyIgnored  = "ignored"
 
+	MutationPolicyRequired = "required"
+	MutationPolicyOptional = "optional"
+	MutationPolicyIgnored  = "ignored"
+	MutationPolicyDisabled = "disabled"
+
 	TestSourceConfigured = "configured"
 	TestSourceDiscovered = "discovered"
+
+	SuiteKindUnit        = "unit"
+	SuiteKindIntegration = "integration"
+	SuiteKindContract    = "contract"
+	SuiteKindComponent   = "component"
+	SuiteKindFunctional  = "functional"
+	SuiteKindE2E         = "e2e"
+	SuiteKindUnknown     = "unknown"
+
+	EvidenceConfidenceHigh          = "high"
+	EvidenceConfidenceMedium        = "medium"
+	EvidenceConfidenceLow           = "low"
+	EvidenceConfidenceNotApplicable = "not_applicable"
+
+	EvidenceAvailabilityAvailable   = "available"
+	EvidenceAvailabilityUnavailable = "unavailable"
+	EvidenceAvailabilityPartial     = "partial"
+	EvidenceAvailabilityStale       = "stale"
+
+	CommandPolicyExplicit       = "explicit"
+	CommandPolicyNever          = "never"
+	CommandPolicyConfiguredOnly = "configured_only"
+	CommandPolicyDiscovered     = "discovered"
+	CommandPolicyTrustedShell   = "trusted_shell"
 
 	packageJSONFile      = "package.json"
 	junitReportFile      = "junit.xml"
 	nativeTestReportFile = "ollanta-tests.json"
+	nativeMutationFile   = "ollanta-mutations.json"
 )
 
 var defaultTestExcludedDirs = map[string]bool{
@@ -45,18 +79,42 @@ var defaultTestExcludedDirs = map[string]bool{
 
 // TestOptions controls optional test-signal discovery and collection.
 type TestOptions struct {
-	Enabled        bool
-	Mode           string
-	Discover       bool
-	Run            bool
-	MaxReportAge   time.Duration
-	Exclusions     []string
-	MaxDepth       int
-	MaxCandidates  int
-	MaxReportBytes int64
-	CommandPolicy  string
-	PathMappings   []TestPathMapping
-	Modules        []TestModuleConfig
+	Enabled                bool
+	Mode                   string
+	Discover               bool
+	Run                    bool
+	MaxRuntime             time.Duration
+	FailOnTimeout          bool
+	MaxReportAge           time.Duration
+	Exclusions             []string
+	MaxDepth               int
+	MaxCandidates          int
+	MaxReportBytes         int64
+	CommandPolicy          string
+	AllowExternalArtifacts bool
+	PathMappings           []TestPathMapping
+	Modules                []TestModuleConfig
+}
+
+// MutationOptions controls optional mutation-signal discovery and collection.
+type MutationOptions struct {
+	Enabled                bool
+	Mode                   string
+	Discover               bool
+	Run                    bool
+	ChangedOnly            bool
+	MaxRuntime             time.Duration
+	MaxMutants             int
+	Exclusions             []string
+	MaxReportAge           time.Duration
+	MaxDepth               int
+	MaxCandidates          int
+	MaxReportBytes         int64
+	CommandPolicy          string
+	FailOnTimeout          bool
+	AllowExternalArtifacts bool
+	PathMappings           []TestPathMapping
+	Modules                []MutationModuleConfig
 }
 
 // TestPathMapping maps paths found in reports back to the scanner workspace.
@@ -67,25 +125,57 @@ type TestPathMapping struct {
 
 // TestModuleConfig is an explicit module override from configuration.
 type TestModuleConfig struct {
-	Name                 string
-	Root                 string
-	Language             string
-	ArchitectureRole     string
-	TestPolicy           string
-	IgnoreReason         string
-	Command              string
-	ArtifactRoot         string
-	ReportRoot           string
-	CoverageReports      []string
-	TestReports          []string
-	MutationReports      []string
-	NativeReports        []string
-	CoverageThreshold    *float64
-	NewCoverageThreshold *float64
-	MutationThreshold    *float64
-	Owner                string
-	Team                 string
-	IntegrationRequired  bool
+	Name                   string
+	Root                   string
+	Language               string
+	ArchitectureRole       string
+	TestPolicy             string
+	IgnoreReason           string
+	SuiteKind              string
+	EvidenceConfidence     string
+	Command                string
+	ArtifactRoot           string
+	ReportRoot             string
+	AllowExternalArtifacts *bool
+	CoverageReports        []string
+	TestReports            []string
+	MutationReports        []string
+	NativeReports          []string
+	CoverageThreshold      *float64
+	NewCoverageThreshold   *float64
+	MutationThreshold      *float64
+	Owner                  string
+	Team                   string
+	IntegrationRequired    bool
+}
+
+// MutationModuleConfig is an explicit mutation module override from configuration.
+type MutationModuleConfig struct {
+	Name                   string
+	Root                   string
+	Language               string
+	ArchitectureRole       string
+	Tool                   string
+	Command                string
+	SuiteKind              string
+	EvidenceConfidence     string
+	ArtifactRoot           string
+	ReportRoot             string
+	AllowExternalArtifacts *bool
+	ReportPaths            []string
+	NativeReportPaths      []string
+	PathMappings           []TestPathMapping
+	Threshold              *float64
+	ChangedCodeThreshold   *float64
+	Owner                  string
+	Team                   string
+	MutationPolicy         string
+	IgnoreReason           string
+	ChangedOnly            *bool
+	MaxRuntime             time.Duration
+	MaxMutants             int
+	Exclusions             []string
+	FailOnTimeout          *bool
 }
 
 // TestSignalReport is the normalized optional test payload emitted by the scanner.
@@ -99,58 +189,71 @@ type TestSignalReport struct {
 
 // TestSignalSummary aggregates scanner-side test discovery state.
 type TestSignalSummary struct {
-	Enabled             bool     `json:"enabled"`
-	Modules             int      `json:"modules"`
-	IgnoredModules      int      `json:"ignored_modules,omitempty"`
-	ConfiguredModules   int      `json:"configured_modules,omitempty"`
-	DiscoveredModules   int      `json:"discovered_modules,omitempty"`
-	ReportCandidates    int      `json:"report_candidates,omitempty"`
-	StaleReports        int      `json:"stale_reports,omitempty"`
-	Tests               int      `json:"tests,omitempty"`
-	TestFailures        int      `json:"test_failures,omitempty"`
-	TestErrors          int      `json:"test_errors,omitempty"`
-	TestSkipped         int      `json:"test_skipped,omitempty"`
-	TestDurationMs      int64    `json:"test_duration_ms,omitempty"`
-	ModulesWithCoverage int      `json:"modules_with_coverage,omitempty"`
-	LinesToCover        int      `json:"lines_to_cover,omitempty"`
-	CoveredLines        int      `json:"covered_lines,omitempty"`
-	Coverage            *float64 `json:"coverage,omitempty"`
-	NewLinesToCover     int      `json:"new_lines_to_cover,omitempty"`
-	NewCoveredLines     int      `json:"new_covered_lines,omitempty"`
-	NewCodeCoverage     *float64 `json:"new_code_coverage,omitempty"`
-	MutantsTotal        int      `json:"mutants_total,omitempty"`
-	MutantsKilled       int      `json:"mutants_killed,omitempty"`
-	MutantsSurvived     int      `json:"mutants_survived,omitempty"`
-	MutantsTimeout      int      `json:"mutants_timeout,omitempty"`
-	MutantsError        int      `json:"mutants_error,omitempty"`
-	MutationScore       *float64 `json:"mutation_score,omitempty"`
+	Enabled                bool     `json:"enabled"`
+	Modules                int      `json:"modules"`
+	IgnoredModules         int      `json:"ignored_modules,omitempty"`
+	ConfiguredModules      int      `json:"configured_modules,omitempty"`
+	DiscoveredModules      int      `json:"discovered_modules,omitempty"`
+	ReportCandidates       int      `json:"report_candidates,omitempty"`
+	StaleReports           int      `json:"stale_reports,omitempty"`
+	Tests                  int      `json:"tests,omitempty"`
+	TestFailures           int      `json:"test_failures,omitempty"`
+	TestErrors             int      `json:"test_errors,omitempty"`
+	TestSkipped            int      `json:"test_skipped,omitempty"`
+	TestDurationMs         int64    `json:"test_duration_ms,omitempty"`
+	ModulesWithCoverage    int      `json:"modules_with_coverage,omitempty"`
+	LinesToCover           int      `json:"lines_to_cover,omitempty"`
+	CoveredLines           int      `json:"covered_lines,omitempty"`
+	Coverage               *float64 `json:"coverage,omitempty"`
+	NewLinesToCover        int      `json:"new_lines_to_cover,omitempty"`
+	NewCoveredLines        int      `json:"new_covered_lines,omitempty"`
+	NewCodeCoverage        *float64 `json:"new_code_coverage,omitempty"`
+	MutantsTotal           int      `json:"mutants_total,omitempty"`
+	MutantsKilled          int      `json:"mutants_killed,omitempty"`
+	MutantsSurvived        int      `json:"mutants_survived,omitempty"`
+	MutantsTimeout         int      `json:"mutants_timeout,omitempty"`
+	MutantsSkipped         int      `json:"mutants_skipped,omitempty"`
+	MutantsError           int      `json:"mutants_error,omitempty"`
+	MutationScore          *float64 `json:"mutation_score,omitempty"`
+	ChangedMutantsTotal    int      `json:"changed_mutants_total,omitempty"`
+	ChangedMutantsKilled   int      `json:"changed_mutants_killed,omitempty"`
+	ChangedMutantsSurvived int      `json:"changed_mutants_survived,omitempty"`
+	ChangedMutationScore   *float64 `json:"changed_mutation_score,omitempty"`
 }
 
 // TestModuleSignal describes one discovered or configured test module.
 type TestModuleSignal struct {
-	Name                 string                 `json:"name"`
-	Root                 string                 `json:"root"`
-	Language             string                 `json:"language,omitempty"`
-	ArchitectureRole     string                 `json:"architecture_role,omitempty"`
-	Source               string                 `json:"source"`
-	TestPolicy           string                 `json:"test_policy,omitempty"`
-	IgnoreReason         string                 `json:"ignore_reason,omitempty"`
-	Command              string                 `json:"command,omitempty"`
-	ArtifactRoot         string                 `json:"artifact_root,omitempty"`
-	ReportRoot           string                 `json:"report_root,omitempty"`
-	Reports              []TestReportProvenance `json:"reports,omitempty"`
-	Coverage             *TestCoverageSummary   `json:"coverage,omitempty"`
-	Files                []TestFileCoverage     `json:"files,omitempty"`
-	Suites               []TestSuiteSignal      `json:"suites,omitempty"`
-	Mutation             *TestMutationSummary   `json:"mutation,omitempty"`
-	Execution            *TestExecutionStatus   `json:"execution,omitempty"`
-	Health               *TestModuleHealth      `json:"health,omitempty"`
-	CoverageThreshold    *float64               `json:"coverage_threshold,omitempty"`
-	NewCoverageThreshold *float64               `json:"new_coverage_threshold,omitempty"`
-	MutationThreshold    *float64               `json:"mutation_threshold,omitempty"`
-	Owner                string                 `json:"owner,omitempty"`
-	Team                 string                 `json:"team,omitempty"`
-	IntegrationRequired  bool                   `json:"integration_required,omitempty"`
+	Name                     string                 `json:"name"`
+	Root                     string                 `json:"root"`
+	Language                 string                 `json:"language,omitempty"`
+	ArchitectureRole         string                 `json:"architecture_role,omitempty"`
+	Source                   string                 `json:"source"`
+	TestPolicy               string                 `json:"test_policy,omitempty"`
+	IgnoreReason             string                 `json:"ignore_reason,omitempty"`
+	SuiteKind                string                 `json:"suite_kind,omitempty"`
+	EvidenceConfidence       string                 `json:"evidence_confidence,omitempty"`
+	Availability             string                 `json:"availability,omitempty"`
+	PartialReason            string                 `json:"partial_reason,omitempty"`
+	StaleReason              string                 `json:"stale_reason,omitempty"`
+	Command                  string                 `json:"command,omitempty"`
+	ArtifactRoot             string                 `json:"artifact_root,omitempty"`
+	ReportRoot               string                 `json:"report_root,omitempty"`
+	AllowExternalArtifacts   bool                   `json:"allow_external_artifacts,omitempty"`
+	Reports                  []TestReportProvenance `json:"reports,omitempty"`
+	Coverage                 *TestCoverageSummary   `json:"coverage,omitempty"`
+	Files                    []TestFileCoverage     `json:"files,omitempty"`
+	Suites                   []TestSuiteSignal      `json:"suites,omitempty"`
+	Mutation                 *TestMutationSummary   `json:"mutation,omitempty"`
+	Execution                *TestExecutionStatus   `json:"execution,omitempty"`
+	MutationExecution        *TestExecutionStatus   `json:"mutation_execution,omitempty"`
+	Health                   *TestModuleHealth      `json:"health,omitempty"`
+	CoverageThreshold        *float64               `json:"coverage_threshold,omitempty"`
+	NewCoverageThreshold     *float64               `json:"new_coverage_threshold,omitempty"`
+	MutationThreshold        *float64               `json:"mutation_threshold,omitempty"`
+	ChangedMutationThreshold *float64               `json:"changed_mutation_threshold,omitempty"`
+	Owner                    string                 `json:"owner,omitempty"`
+	Team                     string                 `json:"team,omitempty"`
+	IntegrationRequired      bool                   `json:"integration_required,omitempty"`
 }
 
 // TestHealthSummary is the project-level architecture-aware test-health result.
@@ -199,16 +302,19 @@ type TestFileCoverage struct {
 
 // TestSuiteSignal preserves suite-level unit-test results.
 type TestSuiteSignal struct {
-	ID         string           `json:"id,omitempty"`
-	Name       string           `json:"name,omitempty"`
-	Kind       string           `json:"kind,omitempty"`
-	Tests      int              `json:"tests,omitempty"`
-	Passed     int              `json:"passed,omitempty"`
-	Failures   int              `json:"failures,omitempty"`
-	Errors     int              `json:"errors,omitempty"`
-	Skipped    int              `json:"skipped,omitempty"`
-	DurationMs int64            `json:"duration_ms,omitempty"`
-	Cases      []TestCaseSignal `json:"cases,omitempty"`
+	ID           string           `json:"id,omitempty"`
+	Name         string           `json:"name,omitempty"`
+	Kind         string           `json:"kind,omitempty"`
+	Confidence   string           `json:"confidence,omitempty"`
+	Source       string           `json:"source,omitempty"`
+	Availability string           `json:"availability,omitempty"`
+	Tests        int              `json:"tests,omitempty"`
+	Passed       int              `json:"passed,omitempty"`
+	Failures     int              `json:"failures,omitempty"`
+	Errors       int              `json:"errors,omitempty"`
+	Skipped      int              `json:"skipped,omitempty"`
+	DurationMs   int64            `json:"duration_ms,omitempty"`
+	Cases        []TestCaseSignal `json:"cases,omitempty"`
 }
 
 // TestCaseSignal is a normalized test-case result.
@@ -224,23 +330,95 @@ type TestCaseSignal struct {
 
 // TestMutationSummary is a normalized optional mutation-test aggregate.
 type TestMutationSummary struct {
-	Score    *float64 `json:"score,omitempty"`
-	Total    int      `json:"total,omitempty"`
-	Killed   int      `json:"killed,omitempty"`
-	Survived int      `json:"survived,omitempty"`
-	Timeout  int      `json:"timeout,omitempty"`
-	Errors   int      `json:"errors,omitempty"`
+	Tool                   string                 `json:"tool,omitempty"`
+	Status                 string                 `json:"status,omitempty"`
+	Confidence             string                 `json:"confidence,omitempty"`
+	SuiteKind              string                 `json:"suite_kind,omitempty"`
+	Availability           string                 `json:"availability,omitempty"`
+	UnavailableReason      string                 `json:"unavailable_reason,omitempty"`
+	PartialReason          string                 `json:"partial_reason,omitempty"`
+	StaleReason            string                 `json:"stale_reason,omitempty"`
+	Score                  *float64               `json:"score,omitempty"`
+	ChangedCodeScore       *float64               `json:"changed_code_score,omitempty"`
+	ChangedCodeThreshold   *float64               `json:"changed_code_threshold,omitempty"`
+	Total                  int                    `json:"total,omitempty"`
+	Testable               int                    `json:"testable,omitempty"`
+	Killed                 int                    `json:"killed,omitempty"`
+	Survived               int                    `json:"survived,omitempty"`
+	NoCoverage             int                    `json:"no_coverage,omitempty"`
+	Timeout                int                    `json:"timeout,omitempty"`
+	Skipped                int                    `json:"skipped,omitempty"`
+	Errors                 int                    `json:"errors,omitempty"`
+	NonViable              int                    `json:"non_viable,omitempty"`
+	RuntimeErrors          int                    `json:"runtime_errors,omitempty"`
+	ParserErrors           int                    `json:"parser_errors,omitempty"`
+	Equivalent             int                    `json:"equivalent,omitempty"`
+	Ignored                int                    `json:"ignored,omitempty"`
+	ChangedTotal           int                    `json:"changed_total,omitempty"`
+	ChangedTestable        int                    `json:"changed_testable,omitempty"`
+	ChangedKilled          int                    `json:"changed_killed,omitempty"`
+	ChangedSurvived        int                    `json:"changed_survived,omitempty"`
+	ChangedNoCoverage      int                    `json:"changed_no_coverage,omitempty"`
+	ChangedOnly            bool                   `json:"changed_only,omitempty"`
+	ChangedOnlyEnforcement string                 `json:"changed_only_enforcement,omitempty"`
+	Partial                bool                   `json:"partial,omitempty"`
+	Stale                  bool                   `json:"stale,omitempty"`
+	MaxRuntime             string                 `json:"max_runtime,omitempty"`
+	MaxMutants             int                    `json:"max_mutants,omitempty"`
+	MaxMutantsEnforcement  string                 `json:"max_mutants_enforcement,omitempty"`
+	StatusCounts           map[string]int         `json:"status_counts,omitempty"`
+	Reports                []TestReportProvenance `json:"reports,omitempty"`
+	Suites                 []TestMutationSuite    `json:"suites,omitempty"`
+	SurvivedMutants        []TestMutantSignal     `json:"survived_mutants,omitempty"`
+}
+
+// TestMutationSuite preserves report-level mutation suite/tool data.
+type TestMutationSuite struct {
+	ID       string `json:"id,omitempty"`
+	Name     string `json:"name,omitempty"`
+	Tool     string `json:"tool,omitempty"`
+	Report   string `json:"report,omitempty"`
+	Total    int    `json:"total,omitempty"`
+	Killed   int    `json:"killed,omitempty"`
+	Survived int    `json:"survived,omitempty"`
+	Timeout  int    `json:"timeout,omitempty"`
+	Skipped  int    `json:"skipped,omitempty"`
+	Errors   int    `json:"errors,omitempty"`
+	Partial  bool   `json:"partial,omitempty"`
+	Stale    bool   `json:"stale,omitempty"`
+}
+
+// TestMutantSignal describes an actionable normalized mutant.
+type TestMutantSignal struct {
+	ID          string `json:"id,omitempty"`
+	Status      string `json:"status,omitempty"`
+	Mutator     string `json:"mutator,omitempty"`
+	File        string `json:"file,omitempty"`
+	Line        int    `json:"line,omitempty"`
+	EndLine     int    `json:"end_line,omitempty"`
+	Original    string `json:"original,omitempty"`
+	Replacement string `json:"replacement,omitempty"`
+	Description string `json:"description,omitempty"`
+	ChangedCode bool   `json:"changed_code,omitempty"`
+	Confidence  string `json:"confidence,omitempty"`
 }
 
 // TestExecutionStatus records opt-in command execution state when commands run.
 type TestExecutionStatus struct {
-	Mode       string `json:"mode"`
-	Command    string `json:"command,omitempty"`
-	WorkingDir string `json:"working_dir,omitempty"`
-	ExitCode   int    `json:"exit_code,omitempty"`
-	DurationMs int64  `json:"duration_ms,omitempty"`
-	Stdout     string `json:"stdout,omitempty"`
-	Stderr     string `json:"stderr,omitempty"`
+	Mode            string `json:"mode"`
+	Command         string `json:"command,omitempty"`
+	CommandPolicy   string `json:"command_policy,omitempty"`
+	Shell           string `json:"shell,omitempty"`
+	WorkingDir      string `json:"working_dir,omitempty"`
+	MaxRuntime      string `json:"max_runtime,omitempty"`
+	ExitCode        int    `json:"exit_code,omitempty"`
+	DurationMs      int64  `json:"duration_ms,omitempty"`
+	Timeout         bool   `json:"timeout,omitempty"`
+	Partial         bool   `json:"partial,omitempty"`
+	Stdout          string `json:"stdout,omitempty"`
+	Stderr          string `json:"stderr,omitempty"`
+	StdoutTruncated bool   `json:"stdout_truncated,omitempty"`
+	StderrTruncated bool   `json:"stderr_truncated,omitempty"`
 }
 
 // TestReportProvenance records an existing report candidate and its freshness.
@@ -268,13 +446,18 @@ func CollectTestSignals(projectDir string, opts TestOptions, scanStarted time.Ti
 		return nil, nil
 	}
 	applyTestDefaults(&opts)
+	if err := ValidateTestOptions(opts); err != nil {
+		return nil, err
+	}
 
 	report := &TestSignalReport{
 		Summary:      TestSignalSummary{Enabled: true},
 		PathMappings: append([]TestPathMapping(nil), opts.PathMappings...),
 	}
 	modulesByRoot := map[string]int{}
-	addConfiguredTestModules(projectDir, opts, scanStarted, report, modulesByRoot)
+	if err := addConfiguredTestModules(projectDir, opts, scanStarted, report, modulesByRoot); err != nil {
+		return nil, err
+	}
 	if opts.Discover {
 		if err := addDiscoveredTestModules(projectDir, opts, scanStarted, report, modulesByRoot); err != nil {
 			return nil, err
@@ -286,29 +469,38 @@ func CollectTestSignals(projectDir string, opts TestOptions, scanStarted time.Ti
 	return report, nil
 }
 
-func addConfiguredTestModules(projectDir string, opts TestOptions, scanStarted time.Time, report *TestSignalReport, modulesByRoot map[string]int) {
+func addConfiguredTestModules(projectDir string, opts TestOptions, scanStarted time.Time, report *TestSignalReport, modulesByRoot map[string]int) error {
 	for _, moduleConfig := range opts.Modules {
 		module := moduleFromConfig(projectDir, moduleConfig)
-		module.Source = TestSourceConfigured
-		if module.TestPolicy == "" {
-			module.TestPolicy = TestPolicyRequired
+		if err := collectConfiguredTestModule(projectDir, opts, scanStarted, report, modulesByRoot, moduleConfig, module); err != nil {
+			return err
 		}
-		if module.TestPolicy == TestPolicyIgnored {
-			report.Diagnostics = append(report.Diagnostics, TestSignalDiagnostic{Level: "info", Code: "module_ignored", Message: "configured module ignored for test health", Module: module.Name, Path: module.Root})
-		}
-		if opts.Mode == TestModeDoctor {
-			appendDoctorDiagnostics(module, defaultReportPaths(module), &report.Diagnostics)
-		}
-		if module.Command != "" && (!opts.Run || opts.Mode == TestModeDoctor) {
-			report.Diagnostics = append(report.Diagnostics, TestSignalDiagnostic{Level: "info", Code: "command_not_executed", Message: "configured test command was not executed because test execution is not enabled", Module: module.Name, Path: module.Root})
-		}
-		if opts.Run && opts.Mode != TestModeDoctor && module.Command != "" {
-			module.Execution = executeTestCommand(projectDir, module, &report.Diagnostics)
-		}
-		module.Reports = collectConfiguredReports(projectDir, module, moduleConfig, opts, scanStarted, &report.Diagnostics)
-		normalizeModuleSignals(projectDir, &module, opts, &report.Diagnostics)
-		addModule(report, modulesByRoot, module)
 	}
+	return nil
+}
+
+func collectConfiguredTestModule(projectDir string, opts TestOptions, scanStarted time.Time, report *TestSignalReport, modulesByRoot map[string]int, moduleConfig TestModuleConfig, module TestModuleSignal) error {
+	module.Source = TestSourceConfigured
+	if module.TestPolicy == "" {
+		module.TestPolicy = TestPolicyRequired
+	}
+	if module.TestPolicy == TestPolicyIgnored {
+		report.Diagnostics = append(report.Diagnostics, TestSignalDiagnostic{Level: "info", Code: "module_ignored", Message: "configured module ignored for test health", Module: module.Name, Path: module.Root})
+	}
+	if opts.Mode == TestModeDoctor {
+		appendDoctorDiagnostics(module, defaultReportPaths(module), &report.Diagnostics)
+	}
+	if module.Command != "" && (!opts.Run || opts.Mode == TestModeDoctor) {
+		report.Diagnostics = append(report.Diagnostics, TestSignalDiagnostic{Level: "info", Code: "command_not_executed", Message: "configured test command was not executed because test execution is not enabled", Module: module.Name, Path: module.Root})
+	}
+	var executionErr error
+	if opts.Run && opts.Mode != TestModeDoctor && module.Command != "" {
+		module.Execution, executionErr = executeTestCommand(projectDir, module, opts, &report.Diagnostics)
+	}
+	module.Reports = collectConfiguredReports(projectDir, module, moduleConfig, opts, scanStarted, &report.Diagnostics)
+	normalizeModuleSignals(projectDir, &module, opts, &report.Diagnostics)
+	addModule(report, modulesByRoot, module)
+	return executionErr
 }
 
 func addDiscoveredTestModules(projectDir string, opts TestOptions, scanStarted time.Time, report *TestSignalReport, modulesByRoot map[string]int) error {
@@ -322,21 +514,27 @@ func addDiscoveredTestModules(projectDir string, opts TestOptions, scanStarted t
 			report.Diagnostics = append(report.Diagnostics, TestSignalDiagnostic{Level: "info", Code: "module_duplicate", Message: "discovered module skipped because configuration already defines the root", Module: report.Modules[existingIndex].Name, Path: module.Root})
 			continue
 		}
-		collectDiscoveredTestModule(projectDir, opts, scanStarted, report, modulesByRoot, module)
+		if err := collectDiscoveredTestModule(projectDir, opts, scanStarted, report, modulesByRoot, module); err != nil {
+			return err
+		}
 	}
 	return nil
 }
 
-func collectDiscoveredTestModule(projectDir string, opts TestOptions, scanStarted time.Time, report *TestSignalReport, modulesByRoot map[string]int, module TestModuleSignal) {
+func collectDiscoveredTestModule(projectDir string, opts TestOptions, scanStarted time.Time, report *TestSignalReport, modulesByRoot map[string]int, module TestModuleSignal) error {
 	if opts.Mode == TestModeDoctor {
 		appendDoctorDiagnostics(module, defaultReportPaths(module), &report.Diagnostics)
 	}
+	var executionErr error
 	if opts.Run && opts.Mode != TestModeDoctor && module.Command != "" {
-		module.Execution = executeTestCommand(projectDir, module, &report.Diagnostics)
+		execution, err := executeTestCommand(projectDir, module, opts, &report.Diagnostics)
+		executionErr = err
+		module.Execution = execution
 	}
 	module.Reports = collectDefaultReports(projectDir, module, opts, scanStarted, &report.Diagnostics)
 	normalizeModuleSignals(projectDir, &module, opts, &report.Diagnostics)
 	addModule(report, modulesByRoot, module)
+	return executionErr
 }
 
 func summarizeTestSignalReport(report *TestSignalReport) {
@@ -466,6 +664,9 @@ func applyTestDefaults(opts *TestOptions) {
 	if opts.Mode == TestModeRun {
 		opts.Run = true
 	}
+	if opts.MaxRuntime == 0 {
+		opts.MaxRuntime = 10 * time.Minute
+	}
 	if opts.MaxReportAge == 0 {
 		opts.MaxReportAge = 24 * time.Hour
 	}
@@ -479,7 +680,113 @@ func applyTestDefaults(opts *TestOptions) {
 		opts.MaxReportBytes = 20 * 1024 * 1024
 	}
 	if opts.CommandPolicy == "" {
-		opts.CommandPolicy = "explicit"
+		opts.CommandPolicy = CommandPolicyExplicit
+	}
+}
+
+// ValidateOptions checks scanner option values that affect execution or evidence semantics.
+func ValidateOptions(opts *ScanOptions) error {
+	if opts == nil {
+		return nil
+	}
+	if err := ValidateTestOptions(opts.Tests); err != nil {
+		return err
+	}
+	if err := ValidateMutationOptions(opts.Mutations); err != nil {
+		return err
+	}
+	return nil
+}
+
+func ValidateTestOptions(opts TestOptions) error {
+	applyTestDefaults(&opts)
+	if !validTestMode(opts.Mode) {
+		return fmt.Errorf("unknown tests.mode %q: expected collect, run, or doctor", opts.Mode)
+	}
+	if !validCommandPolicy(opts.CommandPolicy) {
+		return fmt.Errorf("unknown tests.command_policy %q: expected explicit, never, configured_only, discovered, or trusted_shell", opts.CommandPolicy)
+	}
+	for _, module := range opts.Modules {
+		if !validTestPolicy(module.TestPolicy) {
+			return fmt.Errorf("unknown tests.modules.test_policy %q for module %q: expected required, optional, or ignored", module.TestPolicy, module.Name)
+		}
+		if !validSuiteKind(module.SuiteKind) {
+			return fmt.Errorf("unknown tests.modules.suite_kind %q for module %q", module.SuiteKind, module.Name)
+		}
+	}
+	return nil
+}
+
+func ValidateMutationOptions(opts MutationOptions) error {
+	applyMutationDefaults(&opts)
+	if !validMutationMode(opts.Mode) {
+		return fmt.Errorf("unknown mutations.mode %q: expected collect, run, or doctor", opts.Mode)
+	}
+	if !validCommandPolicy(opts.CommandPolicy) {
+		return fmt.Errorf("unknown mutations.command_policy %q: expected explicit, never, configured_only, discovered, or trusted_shell", opts.CommandPolicy)
+	}
+	for _, module := range opts.Modules {
+		if !validMutationPolicy(module.MutationPolicy) {
+			return fmt.Errorf("unknown mutations.modules.mutation_policy %q for module %q: expected required, optional, ignored, or disabled", module.MutationPolicy, module.Name)
+		}
+		if !validSuiteKind(module.SuiteKind) {
+			return fmt.Errorf("unknown mutations.modules.suite_kind %q for module %q", module.SuiteKind, module.Name)
+		}
+	}
+	return nil
+}
+
+func validTestMode(mode string) bool {
+	switch mode {
+	case TestModeCollect, TestModeRun, TestModeDoctor:
+		return true
+	default:
+		return false
+	}
+}
+
+func validMutationMode(mode string) bool {
+	switch mode {
+	case MutationModeCollect, MutationModeRun, MutationModeDoctor:
+		return true
+	default:
+		return false
+	}
+}
+
+func validCommandPolicy(policy string) bool {
+	switch policy {
+	case "", CommandPolicyExplicit, CommandPolicyNever, CommandPolicyConfiguredOnly, CommandPolicyDiscovered, CommandPolicyTrustedShell:
+		return true
+	default:
+		return false
+	}
+}
+
+func validTestPolicy(policy string) bool {
+	switch policy {
+	case "", TestPolicyRequired, TestPolicyOptional, TestPolicyIgnored:
+		return true
+	default:
+		return false
+	}
+}
+
+func validMutationPolicy(policy string) bool {
+	switch policy {
+	case "", MutationPolicyRequired, MutationPolicyOptional, MutationPolicyIgnored, MutationPolicyDisabled:
+		return true
+	default:
+		return false
+	}
+}
+
+func validSuiteKind(kind string) bool {
+	switch kind {
+	case "", SuiteKindUnit, SuiteKindIntegration, SuiteKindContract, SuiteKindComponent, SuiteKindFunctional, SuiteKindE2E, SuiteKindUnknown:
+		return true
+	default:
+		return false
 	}
 }
 
@@ -494,34 +801,50 @@ func moduleFromConfig(projectDir string, cfg TestModuleConfig) TestModuleSignal 
 		name = moduleName(root)
 	}
 	return TestModuleSignal{
-		Name:                 name,
-		Root:                 root,
-		Language:             cfg.Language,
-		ArchitectureRole:     firstNonEmpty(cfg.ArchitectureRole, inferArchitectureRole(root)),
-		TestPolicy:           cfg.TestPolicy,
-		IgnoreReason:         cfg.IgnoreReason,
-		Command:              cfg.Command,
-		ArtifactRoot:         cfg.ArtifactRoot,
-		ReportRoot:           cfg.ReportRoot,
-		CoverageThreshold:    cfg.CoverageThreshold,
-		NewCoverageThreshold: cfg.NewCoverageThreshold,
-		MutationThreshold:    cfg.MutationThreshold,
-		Owner:                cfg.Owner,
-		Team:                 cfg.Team,
-		IntegrationRequired:  cfg.IntegrationRequired,
+		Name:                   name,
+		Root:                   root,
+		Language:               cfg.Language,
+		ArchitectureRole:       firstNonEmpty(cfg.ArchitectureRole, inferArchitectureRole(root)),
+		TestPolicy:             cfg.TestPolicy,
+		IgnoreReason:           cfg.IgnoreReason,
+		SuiteKind:              normalizedSuiteKind(cfg.SuiteKind),
+		EvidenceConfidence:     cfg.EvidenceConfidence,
+		Command:                cfg.Command,
+		ArtifactRoot:           cfg.ArtifactRoot,
+		ReportRoot:             cfg.ReportRoot,
+		AllowExternalArtifacts: boolValue(cfg.AllowExternalArtifacts),
+		CoverageThreshold:      cfg.CoverageThreshold,
+		NewCoverageThreshold:   cfg.NewCoverageThreshold,
+		MutationThreshold:      cfg.MutationThreshold,
+		Owner:                  cfg.Owner,
+		Team:                   cfg.Team,
+		IntegrationRequired:    cfg.IntegrationRequired,
 	}
 }
 
 func moduleFromRoot(projectDir, root, language, source string) TestModuleSignal {
 	root = cleanConfiguredRoot(projectDir, root)
 	return TestModuleSignal{
-		Name:       moduleName(root),
-		Root:       root,
-		Language:   language,
-		Source:     source,
-		TestPolicy: TestPolicyRequired,
-		Command:    candidateTestCommand(language),
+		Name:               moduleName(root),
+		Root:               root,
+		Language:           language,
+		Source:             source,
+		TestPolicy:         TestPolicyRequired,
+		SuiteKind:          SuiteKindUnknown,
+		EvidenceConfidence: EvidenceConfidenceLow,
+		Command:            candidateTestCommand(language),
 	}
+}
+
+func boolValue(value *bool) bool {
+	return value != nil && *value
+}
+
+func normalizedSuiteKind(kind string) string {
+	if kind == "" {
+		return SuiteKindUnknown
+	}
+	return kind
 }
 
 func addModule(report *TestSignalReport, modulesByRoot map[string]int, module TestModuleSignal) {
@@ -811,7 +1134,10 @@ func (collector testReportCollector) collectReportList(module TestModuleSignal, 
 		if len(reports) >= collector.opts.MaxCandidates {
 			break
 		}
-		fullPath := resolveModulePath(collector.projectDir, module, configuredPath)
+		fullPath, ok := resolveModulePath(collector.projectDir, module, configuredPath, collector.opts.AllowExternalArtifacts, collector.diagnostics)
+		if !ok {
+			continue
+		}
 		info, err := os.Stat(fullPath)
 		if err != nil || info.IsDir() {
 			continue
@@ -831,9 +1157,15 @@ func (collector testReportCollector) collectReportList(module TestModuleSignal, 
 	return reports
 }
 
-func resolveModulePath(projectDir string, module TestModuleSignal, reportPath string) string {
+func resolveModulePath(projectDir string, module TestModuleSignal, reportPath string, allowExternal bool, diagnostics *[]TestSignalDiagnostic) (string, bool) {
 	if filepath.IsAbs(reportPath) {
-		return reportPath
+		if allowExternal || module.AllowExternalArtifacts || pathWithinProject(projectDir, reportPath) {
+			return reportPath, true
+		}
+		if diagnostics != nil {
+			*diagnostics = append(*diagnostics, TestSignalDiagnostic{Level: "warn", Code: "external_artifact_denied", Message: "absolute report path outside the project requires allow_external_artifacts", Module: module.Name, Path: reportPath})
+		}
+		return "", false
 	}
 	root := module.ReportRoot
 	if root == "" {
@@ -842,10 +1174,19 @@ func resolveModulePath(projectDir string, module TestModuleSignal, reportPath st
 	if root == "" {
 		root = module.Root
 	}
+	var fullPath string
 	if root == "." {
-		return filepath.Join(projectDir, reportPath)
+		fullPath = filepath.Join(projectDir, reportPath)
+	} else {
+		fullPath = filepath.Join(projectDir, filepath.FromSlash(root), reportPath)
 	}
-	return filepath.Join(projectDir, filepath.FromSlash(root), reportPath)
+	if pathWithinProject(projectDir, fullPath) || allowExternal || module.AllowExternalArtifacts {
+		return fullPath, true
+	}
+	if diagnostics != nil {
+		*diagnostics = append(*diagnostics, TestSignalDiagnostic{Level: "warn", Code: "report_path_escape", Message: "configured report path escapes the project directory", Module: module.Name, Path: reportPath})
+	}
+	return "", false
 }
 
 func cleanConfiguredRoot(projectDir, root string) string {

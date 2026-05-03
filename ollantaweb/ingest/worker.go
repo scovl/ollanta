@@ -14,6 +14,7 @@ import (
 
 type indexJobStore interface {
 	Create(ctx context.Context, job *postgres.IndexJob) error
+	GetActiveByScanID(ctx context.Context, scanID int64) (*postgres.IndexJob, error)
 	ClaimNext(ctx context.Context, workerID string) (*postgres.IndexJob, error)
 	CountByStatus(ctx context.Context, status string) (int, error)
 	Reschedule(ctx context.Context, id int64, lastError string, nextAttemptAt time.Time) error
@@ -62,8 +63,19 @@ var _ IndexEnqueuer = (*Worker)(nil)
 
 // Enqueue persists a durable search index job.
 func (w *Worker) Enqueue(ctx context.Context, scanID, projectID int64, projectKey string) error {
+	return enqueueIndexJob(ctx, w.jobs, scanID, projectID, projectKey)
+}
+
+func enqueueIndexJob(ctx context.Context, jobs indexJobStore, scanID, projectID int64, projectKey string) error {
+	if existing, err := jobs.GetActiveByScanID(ctx, scanID); err == nil {
+		slog.DebugContext(ctx, "dedupe active index job", "scan_id", scanID, "job_id", existing.ID)
+		return nil
+	} else if !errors.Is(err, postgres.ErrNotFound) {
+		return err
+	}
+
 	traceParent, traceState := tracectx.Inject(ctx)
-	return w.jobs.Create(ctx, &postgres.IndexJob{
+	if err := jobs.Create(ctx, &postgres.IndexJob{
 		ScanID:        scanID,
 		ProjectID:     projectID,
 		ProjectKey:    projectKey,
@@ -71,7 +83,14 @@ func (w *Worker) Enqueue(ctx context.Context, scanID, projectID int64, projectKe
 		TraceParent:   traceParent,
 		TraceState:    traceState,
 		NextAttemptAt: time.Now().UTC(),
-	})
+	}); err != nil {
+		if existing, findErr := jobs.GetActiveByScanID(ctx, scanID); findErr == nil {
+			slog.DebugContext(ctx, "dedupe raced index job", "scan_id", scanID, "job_id", existing.ID)
+			return nil
+		}
+		return err
+	}
+	return nil
 }
 
 // Start begins polling and processing durable jobs until ctx is cancelled.

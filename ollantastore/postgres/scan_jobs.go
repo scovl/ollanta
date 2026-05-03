@@ -2,7 +2,10 @@ package postgres
 
 import (
 	"context"
+	"crypto/sha256"
+	"crypto/subtle"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
@@ -13,21 +16,41 @@ import (
 
 const statusWhereClause = " WHERE status = $1"
 
+const scanJobSelectColumns = `id, project_key, status, payload, idempotency_key, payload_hash,
+       trace_parent, trace_state, scan_id, worker_id, attempts, last_error,
+       created_at, updated_at, started_at, completed_at`
+
+// JobRecoveryResult summarizes stale job recovery outcomes.
+type JobRecoveryResult struct {
+	Requeued int64
+	Failed   int64
+}
+
+// ScanQueuePressure summarizes durable scan queue pressure for backpressure decisions.
+type ScanQueuePressure struct {
+	Accepted          int
+	Running           int
+	OldestAcceptedAge time.Duration
+}
+
 // ScanJob is the durable intake record stored in PostgreSQL.
 type ScanJob struct {
-	ID          int64      `json:"id"`
-	ProjectKey  string     `json:"project_key"`
-	Status      string     `json:"status"`
-	Payload     []byte     `json:"-"`
-	TraceParent string     `json:"-"`
-	TraceState  string     `json:"-"`
-	ScanID      *int64     `json:"scan_id,omitempty"`
-	WorkerID    string     `json:"worker_id,omitempty"`
-	LastError   string     `json:"last_error,omitempty"`
-	CreatedAt   time.Time  `json:"created_at"`
-	UpdatedAt   time.Time  `json:"updated_at"`
-	StartedAt   *time.Time `json:"started_at,omitempty"`
-	CompletedAt *time.Time `json:"completed_at,omitempty"`
+	ID             int64      `json:"id"`
+	ProjectKey     string     `json:"project_key"`
+	Status         string     `json:"status"`
+	Payload        []byte     `json:"-"`
+	IdempotencyKey string     `json:"-"`
+	PayloadHash    string     `json:"-"`
+	TraceParent    string     `json:"-"`
+	TraceState     string     `json:"-"`
+	ScanID         *int64     `json:"scan_id,omitempty"`
+	WorkerID       string     `json:"worker_id,omitempty"`
+	Attempts       int        `json:"attempts"`
+	LastError      string     `json:"last_error,omitempty"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
+	StartedAt      *time.Time `json:"started_at,omitempty"`
+	CompletedAt    *time.Time `json:"completed_at,omitempty"`
 }
 
 // ScanJobRepository provides durable intake operations for scan jobs.
@@ -43,10 +66,11 @@ func NewScanJobRepository(db *DB) *ScanJobRepository {
 // Create inserts a new accepted scan job.
 func (r *ScanJobRepository) Create(ctx context.Context, job *ScanJob) error {
 	row := r.db.Pool.QueryRow(ctx, `
-		INSERT INTO scan_jobs (project_key, status, payload, trace_parent, trace_state, worker_id, last_error)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		INSERT INTO scan_jobs (project_key, status, payload, idempotency_key, payload_hash, trace_parent, trace_state, worker_id, attempts, last_error)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		RETURNING id, created_at, updated_at`,
-		job.ProjectKey, job.Status, job.Payload, job.TraceParent, job.TraceState, job.WorkerID, job.LastError,
+		job.ProjectKey, job.Status, job.Payload, job.IdempotencyKey, job.PayloadHash,
+		job.TraceParent, job.TraceState, job.WorkerID, job.Attempts, job.LastError,
 	)
 	return row.Scan(&job.ID, &job.CreatedAt, &job.UpdatedAt)
 }
@@ -54,8 +78,7 @@ func (r *ScanJobRepository) Create(ctx context.Context, job *ScanJob) error {
 // GetByID retrieves a scan job by primary key.
 func (r *ScanJobRepository) GetByID(ctx context.Context, id int64) (*ScanJob, error) {
 	return scanJobFromRow(r.db.Pool.QueryRow(ctx, `
-		SELECT id, project_key, status, payload, trace_parent, trace_state, scan_id, worker_id, last_error,
-		       created_at, updated_at, started_at, completed_at
+		SELECT `+scanJobSelectColumns+`
 		FROM scan_jobs
 		WHERE id = $1`, id,
 	))
@@ -64,12 +87,24 @@ func (r *ScanJobRepository) GetByID(ctx context.Context, id int64) (*ScanJob, er
 // GetByScanID retrieves the completed scan job that produced a scan.
 func (r *ScanJobRepository) GetByScanID(ctx context.Context, scanID int64) (*ScanJob, error) {
 	return scanJobFromRow(r.db.Pool.QueryRow(ctx, `
-		SELECT id, project_key, status, payload, trace_parent, trace_state, scan_id, worker_id, last_error,
-		       created_at, updated_at, started_at, completed_at
+		SELECT `+scanJobSelectColumns+`
 		FROM scan_jobs
 		WHERE scan_id = $1
 		ORDER BY completed_at DESC NULLS LAST, updated_at DESC, id DESC
 		LIMIT 1`, scanID,
+	))
+}
+
+// FindByIdempotencyKey retrieves a scan job by project-scoped idempotency identity.
+func (r *ScanJobRepository) FindByIdempotencyKey(ctx context.Context, projectKey, idempotencyKey string) (*ScanJob, error) {
+	if projectKey == "" || idempotencyKey == "" {
+		return nil, ErrNotFound
+	}
+	return scanJobFromRow(r.db.Pool.QueryRow(ctx, `
+		SELECT `+scanJobSelectColumns+`
+		FROM scan_jobs
+		WHERE project_key = $1 AND idempotency_key = $2
+		LIMIT 1`, projectKey, idempotencyKey,
 	))
 }
 
@@ -87,6 +122,70 @@ func (r *ScanJobRepository) CountByStatus(ctx context.Context, status string) (i
 	return total, err
 }
 
+// QueuePressure returns accepted/running counts and oldest accepted age for durable backpressure.
+func (r *ScanJobRepository) QueuePressure(ctx context.Context, projectKey string, now time.Time) (ScanQueuePressure, error) {
+	query := `
+		SELECT
+			COUNT(*) FILTER (WHERE status = 'accepted'),
+			COUNT(*) FILTER (WHERE status = 'running'),
+			EXTRACT(EPOCH FROM ($2::timestamptz - MIN(created_at) FILTER (WHERE status = 'accepted')))
+		FROM scan_jobs
+		WHERE ($1 = '' OR project_key = $1)`
+
+	var pressure ScanQueuePressure
+	var oldestAgeSeconds sql.NullFloat64
+	if err := r.db.Pool.QueryRow(ctx, query, projectKey, now).Scan(&pressure.Accepted, &pressure.Running, &oldestAgeSeconds); err != nil {
+		return ScanQueuePressure{}, err
+	}
+	if oldestAgeSeconds.Valid && oldestAgeSeconds.Float64 > 0 {
+		pressure.OldestAcceptedAge = time.Duration(oldestAgeSeconds.Float64 * float64(time.Second))
+	}
+	return pressure, nil
+}
+
+// RecoverStale requeues or fails running scan jobs that have not updated recently.
+func (r *ScanJobRepository) RecoverStale(ctx context.Context, staleBefore time.Time, maxAttempts int, failureMessage string) (JobRecoveryResult, error) {
+	tx, err := r.db.Pool.Begin(ctx)
+	if err != nil {
+		return JobRecoveryResult{}, fmt.Errorf("begin scan job recovery tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	requeued, err := tx.Exec(ctx, `
+		UPDATE scan_jobs
+		SET status = 'accepted',
+		    worker_id = '',
+		    last_error = '',
+		    started_at = NULL,
+		    updated_at = now()
+		WHERE status = 'running'
+		  AND updated_at < $1
+		  AND attempts < $2`, staleBefore, maxAttempts,
+	)
+	if err != nil {
+		return JobRecoveryResult{}, err
+	}
+
+	failed, err := tx.Exec(ctx, `
+		UPDATE scan_jobs
+		SET status = 'failed',
+		    last_error = $3,
+		    completed_at = now(),
+		    updated_at = now()
+		WHERE status = 'running'
+		  AND updated_at < $1
+		  AND attempts >= $2`, staleBefore, maxAttempts, failureMessage,
+	)
+	if err != nil {
+		return JobRecoveryResult{}, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return JobRecoveryResult{}, fmt.Errorf("commit scan job recovery tx: %w", err)
+	}
+	return JobRecoveryResult{Requeued: requeued.RowsAffected(), Failed: failed.RowsAffected()}, nil
+}
+
 // List returns scan jobs matching the provided filter.
 func (r *ScanJobRepository) List(ctx context.Context, filter JobListFilter) ([]*ScanJob, int, error) {
 	filter.Limit = boundedJobLimit(filter.Limit)
@@ -98,8 +197,7 @@ func (r *ScanJobRepository) List(ctx context.Context, filter JobListFilter) ([]*
 	}
 
 	query := `
-		SELECT id, project_key, status, payload, trace_parent, trace_state, scan_id, worker_id, last_error,
-		       created_at, updated_at, started_at, completed_at
+		SELECT ` + scanJobSelectColumns + `
 		FROM scan_jobs` + where + " ORDER BY created_at DESC, id DESC"
 	args = append(args, filter.Limit, filter.Offset)
 	query += fmt.Sprintf(" LIMIT $%d OFFSET $%d", len(args)-1, len(args))
@@ -141,12 +239,14 @@ func (r *ScanJobRepository) ClaimNext(ctx context.Context, workerID string) (*Sc
 		UPDATE scan_jobs AS j
 		SET status = 'running',
 		    worker_id = $1,
+		    attempts = j.attempts + 1,
 		    last_error = '',
 		    started_at = COALESCE(j.started_at, now()),
 		    updated_at = now()
 		FROM next_job
 		WHERE j.id = next_job.id
-		RETURNING j.id, j.project_key, j.status, j.payload, j.trace_parent, j.trace_state, j.scan_id, j.worker_id, j.last_error,
+		RETURNING j.id, j.project_key, j.status, j.payload, j.idempotency_key, j.payload_hash,
+		          j.trace_parent, j.trace_state, j.scan_id, j.worker_id, j.attempts, j.last_error,
 		          j.created_at, j.updated_at, j.started_at, j.completed_at`, workerID,
 	))
 	if err != nil {
@@ -285,10 +385,13 @@ func scanJobFromRow(row pgx.Row) (*ScanJob, error) {
 		&job.ProjectKey,
 		&job.Status,
 		&job.Payload,
+		&job.IdempotencyKey,
+		&job.PayloadHash,
 		&traceParent,
 		&traceState,
 		&scanID,
 		&job.WorkerID,
+		&job.Attempts,
 		&job.LastError,
 		&job.CreatedAt,
 		&job.UpdatedAt,
@@ -320,4 +423,15 @@ func scanJobFromRow(row pgx.Row) (*ScanJob, error) {
 		job.CompletedAt = &value
 	}
 	return job, nil
+}
+
+// HashPayload returns the canonical SHA-256 hex hash used for idempotency checks.
+func HashPayload(payload []byte) string {
+	sum := sha256.Sum256(payload)
+	return hex.EncodeToString(sum[:])
+}
+
+// PayloadHashesEqual compares payload hashes without short-circuiting on content.
+func PayloadHashesEqual(left, right string) bool {
+	return subtle.ConstantTimeCompare([]byte(left), []byte(right)) == 1
 }

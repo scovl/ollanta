@@ -27,6 +27,11 @@ func (s *ScanJobService) Submit(ctx context.Context, req *IngestRequest) (*ScanJ
 	return s.inner.Submit(ctx, req)
 }
 
+// SubmitWithOptions stores a scan report with idempotency and durable backpressure controls.
+func (s *ScanJobService) SubmitWithOptions(ctx context.Context, req *IngestRequest, opts ScanJobSubmitOptions) (*ScanJobSubmitResult, error) {
+	return s.inner.SubmitWithOptions(ctx, req, opts)
+}
+
 // Get returns a stored scan job.
 func (s *ScanJobService) Get(ctx context.Context, id int64) (*ScanJob, error) {
 	return s.inner.Get(ctx, id)

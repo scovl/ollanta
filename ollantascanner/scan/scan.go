@@ -14,6 +14,9 @@ type ScanOptions = appscan.ScanOptions
 // Report is the scanner report returned by Run.
 type Report = appscan.Report
 
+// Metadata is the report metadata produced by scans.
+type Metadata = appscan.Metadata
+
 // ParseFlags parses args (typically os.Args[1:]) into ScanOptions.
 func ParseFlags(args []string) (*ScanOptions, error) {
 	return appscan.ParseFlags(args)

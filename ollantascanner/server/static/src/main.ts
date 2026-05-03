@@ -1,5 +1,5 @@
 import { esc } from "./html";
-import type { Report, Issue, Severity, GateResult, GateCondition, FileGroup, AIProviderListResponse, AIProviderOption, AIFixPreview, AIFixApplyResponse, TestFileCoverage } from "./types";
+import type { Report, Issue, Severity, GateResult, GateCondition, FileGroup, AIProviderListResponse, AIProviderOption, AIFixPreview, AIFixApplyResponse, TestFileCoverage, TestModuleSignal, TestMutationSummary, TestMutantSignal } from "./types";
 import { renderAIFixContent, renderDetailTabs } from "./detailView";
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -94,6 +94,7 @@ async function init(): Promise<void> {
     renderHotspotFiles();
     buildCoverageFiles();
     renderCoverageSummary();
+    renderMutationSummary();
     renderCoverageDetails();
     if (coverageFiles.length) {
       void selectCoverageFile(selectedCoveragePath || coverageFiles[0].path);
@@ -218,6 +219,72 @@ function colorCoverageCard(id: string, val: number | undefined): void {
   else if (val >= 80) addClass(id, "card-green");
   else if (val >= 60) addClass(id, "card-yellow");
   else addClass(id, "card-red");
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// Mutation testing summary
+// ══════════════════════════════════════════════════════════════════════════
+
+function renderMutationSummary(): void {
+  const container = el("mutation-summary");
+  const mutation = mutationOverview();
+  if (!mutation.hasSignal) {
+    container.innerHTML = `<div class="empty-state compact">No mutation report was collected for this scan. Add a supported report such as <span class="mono">ollanta-mutations.json</span>, Stryker JSON, or PIT XML to see mutation score and survived mutants.</div>`;
+    return;
+  }
+
+  container.innerHTML = `<div class="mutation-kpis">
+      <div><span class="mutation-kpi-value ${mutationScoreClass(mutation.score)}">${formatPercent(mutation.score)}</span><span class="mutation-kpi-label">mutation score</span></div>
+      <div><span class="mutation-kpi-value">${mutation.killed.toLocaleString()}/${mutation.total.toLocaleString()}</span><span class="mutation-kpi-label">killed mutants</span></div>
+      <div><span class="mutation-kpi-value ${mutation.survived > 0 ? 'mut-warning' : 'mut-success'}">${mutation.survived.toLocaleString()}</span><span class="mutation-kpi-label">survived mutants</span></div>
+    </div>
+    ${renderMutationModules(mutation.modules)}
+    ${renderSurvivedMutants(mutation.survivedMutants)}`;
+}
+
+function mutationOverview(): { hasSignal: boolean; score?: number; total: number; killed: number; survived: number; modules: TestModuleSignal[]; survivedMutants: TestMutantSignal[] } {
+  const summary = report.test_signals?.summary;
+  const modules = (report.test_signals?.modules ?? []).filter(module => module.mutation);
+  const total = summary?.changed_mutants_total || summary?.mutants_total || report.measures.changed_mutants_total || report.measures.mutants_total || 0;
+  const killed = summary?.changed_mutants_killed || summary?.mutants_killed || report.measures.changed_mutants_killed || report.measures.mutants_killed || 0;
+  const survived = summary?.changed_mutants_survived || summary?.mutants_survived || report.measures.changed_mutants_survived || report.measures.mutants_survived || 0;
+  const score = summary?.changed_mutation_score ?? summary?.mutation_score ?? report.measures.changed_mutation_score ?? report.measures.mutation_score;
+  const survivedMutants = modules.flatMap(module => module.mutation?.survived_mutants ?? []).slice(0, 8);
+  return { hasSignal: modules.length > 0 || total > 0 || score != null, score, total, killed, survived, modules, survivedMutants };
+}
+
+function renderMutationModules(modules: TestModuleSignal[]): string {
+  if (!modules.length) return "";
+  return `<div class="mutation-module-list">
+    ${modules.slice(0, 5).map(module => {
+      const mutation = module.mutation as TestMutationSummary;
+      const score = mutation.changed_code_score ?? mutation.score;
+      const survived = mutation.changed_survived ?? mutation.survived ?? 0;
+      const total = mutation.changed_total ?? mutation.total ?? 0;
+      return `<div class="mutation-module-row">
+        <span class="mutation-module-main"><span class="mutation-module-name">${esc(module.name || module.root)}</span><span class="mutation-module-meta">${esc(mutation.tool || 'mutation')} · ${total.toLocaleString()} mutants</span></span>
+        <span class="mutation-pill ${mutationScoreClass(score)}">${formatPercent(score)}</span>
+        <span class="mutation-survived ${survived > 0 ? 'mut-warning' : 'mut-success'}">${survived.toLocaleString()} survived</span>
+      </div>`;
+    }).join("")}
+  </div>`;
+}
+
+function renderSurvivedMutants(mutants: TestMutantSignal[]): string {
+  if (!mutants.length) return "";
+  return `<div class="mutation-survivors">
+    ${mutants.map(mutant => `<div class="mutation-survivor-row">
+      <span class="mutation-survivor-file">${esc(shortenPath(mutant.file || ''))}${mutant.line ? `:L${mutant.line}` : ''}</span>
+      <span class="mutation-survivor-meta">${esc(mutant.mutator || mutant.description || 'survived mutant')}</span>
+    </div>`).join("")}
+  </div>`;
+}
+
+function mutationScoreClass(score: number | undefined): string {
+  if (score == null) return "card-neutral";
+  if (score >= 80) return "card-green";
+  if (score >= 60) return "card-yellow";
+  return "card-red";
 }
 
 // ══════════════════════════════════════════════════════════════════════════

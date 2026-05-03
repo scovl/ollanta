@@ -50,7 +50,7 @@ function createHarness(options = {}) {
     body: { appendChild() {} },
   };
   globalThis.fetch = async (url, requestOptions) => {
-    const requestUrl = typeof url === 'string' ? url : url instanceof URL ? url.href : String(url);
+    const requestUrl = normalizeRequestUrl(url);
     requests.push(requestUrl);
     const response = options.fetchHandler ? await options.fetchHandler(requestUrl, requestOptions) : { body: {} };
     return {
@@ -70,6 +70,13 @@ function createHarness(options = {}) {
     historyCalls,
     elements,
   };
+}
+
+function normalizeRequestUrl(url) {
+  if (typeof url === 'string') return url;
+  if (url instanceof URL) return url.href;
+  if (url && typeof url === 'object' && typeof url.url === 'string') return url.url;
+  throw new TypeError('unsupported fetch URL type in test harness');
 }
 
 test('normalizeScope maps snake_case scope fields', () => {
@@ -538,6 +545,10 @@ test('renderOverviewTab keeps overview sections intact after helper extraction',
       code_smells: 3,
       coverage: 82.1,
       duplicated_lines_density: 2.5,
+      mutation_score: 72.5,
+      mutants_total: 40,
+      mutants_killed: 29,
+      mutants_survived: 11,
       ncloc: 200,
     },
     facets: {
@@ -552,6 +563,8 @@ test('renderOverviewTab keeps overview sections intact after helper extraction',
   assert.match(html, /Quality Gate/);
   assert.match(html, /New Code/);
   assert.match(html, /Hotspot Files/);
+  assert.match(html, /Mutation Testing/);
+  assert.match(html, /72\.5%/);
   assert.match(html, /src\/foo\/bar\.js/);
   assert.match(html, /Latest Scan/);
   assert.match(html, /1\.2s/);
@@ -585,6 +598,8 @@ test('renderOverviewTab prefers review summary when summary payload is available
           new_vulnerabilities: 1,
           new_code_smells: 3,
           new_coverage: 54,
+          changed_mutation_score: 66,
+          changed_mutants_survived: 2,
           new_duplications: 2,
           closed_issues: 1,
         },
@@ -612,6 +627,10 @@ test('renderOverviewTab prefers review summary when summary payload is available
           code_smells: 8,
           coverage: 71.2,
           duplicated_lines_density: 1.8,
+          changed_mutation_score: 66,
+          changed_mutants_total: 10,
+          changed_mutants_killed: 8,
+          changed_mutants_survived: 2,
           ncloc: 58240,
         },
       },
@@ -621,6 +640,8 @@ test('renderOverviewTab prefers review summary when summary payload is available
   const html = harnessApp.renderOverviewTab();
   assert.match(html, /Review Summary/);
   assert.match(html, /New Code Focus/);
+  assert.match(html, /Changed Mutation/);
+  assert.match(html, /Survived Mutants/);
   assert.match(html, /Must Fix Now/);
   assert.match(html, /Impacted Files/);
   assert.match(html, /Overall Snapshot/);

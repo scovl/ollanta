@@ -13,9 +13,17 @@ import (
 
 // healthDeps are satisfied by the dependencies available in main.
 type healthDeps struct {
-	db      *postgres.DB
-	indexer search.IIndexer
+	db      dbHealthChecker
+	indexer searchHealthChecker
 	queue   *ingest.IngestQueue
+}
+
+type dbHealthChecker interface {
+	Health(ctx context.Context) error
+}
+
+type searchHealthChecker interface {
+	Health(ctx context.Context) error
 }
 
 var deps *healthDeps

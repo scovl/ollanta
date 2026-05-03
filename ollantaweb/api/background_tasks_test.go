@@ -1,9 +1,14 @@
 package api
 
 import (
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
+	telemetry "github.com/scovl/ollanta/adapter/secondary/telemetry"
 	"github.com/scovl/ollanta/ollantastore/postgres"
 )
 
@@ -85,6 +90,36 @@ func TestSummarizeBackgroundTasks(t *testing.T) {
 	}
 }
 
+func TestObserveBackgroundSummaryPublishesMetrics(t *testing.T) {
+	reg := telemetry.NewRegistry()
+	handler := NewBackgroundTasksHandler(nil, nil, nil, reg)
+	age := int64(120)
+	handler.observeSummary(backgroundTaskSummary{ByType: map[string]backgroundTaskTypeHealth{
+		backgroundTaskTypeScan: {
+			QueueDepth:      2,
+			RunningCount:    1,
+			FailedCount:     3,
+			StaleCount:      4,
+			RetryCount:      5,
+			OldestQueuedAge: &age,
+		},
+	}})
+
+	body := readMetricsBody(t, reg)
+	for _, want := range []string{
+		"ollanta_background_tasks_scan_queued 2",
+		"ollanta_background_tasks_scan_running 1",
+		"ollanta_background_tasks_scan_failed 3",
+		"ollanta_background_tasks_scan_stale 4",
+		"ollanta_background_tasks_scan_retrying 5",
+		"ollanta_background_tasks_scan_oldest_queued_age_seconds 120",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("metrics body missing %q: %s", want, body)
+		}
+	}
+}
+
 func TestPaginateBounds(t *testing.T) {
 	start, end := paginateBounds(7, 3, 6)
 	if start != 6 || end != 7 {
@@ -128,6 +163,17 @@ func TestScannerParametersFromPayload(t *testing.T) {
 	if !ok || scope["branch"] != "main" {
 		t.Fatalf("analysis_scope = %#v", params["analysis_scope"])
 	}
+}
+
+func readMetricsBody(t *testing.T, reg *telemetry.Registry) string {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	reg.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	body, err := io.ReadAll(rec.Body)
+	if err != nil {
+		t.Fatalf("io.ReadAll() error = %v", err)
+	}
+	return string(body)
 }
 
 func int64Ptr(value int64) *int64 {

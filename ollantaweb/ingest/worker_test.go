@@ -92,8 +92,23 @@ func TestWorkerRefreshQueueMetricsSetsGauge(t *testing.T) {
 	}
 }
 
+func TestIndexJobEnqueuerReturnsExistingActiveJob(t *testing.T) {
+	t.Parallel()
+
+	jobs := &fakeIndexJobStore{active: &postgres.IndexJob{ID: 42, ScanID: 99, Status: "accepted"}}
+	enqueuer := &IndexJobEnqueuer{jobs: jobs}
+
+	if err := enqueuer.Enqueue(context.Background(), 99, 7, "demo"); err != nil {
+		t.Fatalf("Enqueue() error = %v", err)
+	}
+	if jobs.created != nil {
+		t.Fatalf("created job = %+v, want no duplicate create", jobs.created)
+	}
+}
+
 type fakeIndexJobStore struct {
 	created        *postgres.IndexJob
+	active         *postgres.IndexJob
 	next           *postgres.IndexJob
 	counts         map[string]int
 	rescheduledID  int64
@@ -105,6 +120,13 @@ type fakeIndexJobStore struct {
 func (s *fakeIndexJobStore) Create(_ context.Context, job *postgres.IndexJob) error {
 	s.created = job
 	return nil
+}
+
+func (s *fakeIndexJobStore) GetActiveByScanID(_ context.Context, _ int64) (*postgres.IndexJob, error) {
+	if s.active == nil {
+		return nil, postgres.ErrNotFound
+	}
+	return s.active, nil
 }
 
 func (s *fakeIndexJobStore) ClaimNext(_ context.Context, _ string) (*postgres.IndexJob, error) {

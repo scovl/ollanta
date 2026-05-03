@@ -14,9 +14,13 @@ import (
 
 const commandOutputLimit = 16 * 1024
 
-func executeTestCommand(projectDir string, module TestModuleSignal, diagnostics *[]TestSignalDiagnostic) *TestExecutionStatus {
+func executeTestCommand(projectDir string, module TestModuleSignal, opts TestOptions, diagnostics *[]TestSignalDiagnostic) (*TestExecutionStatus, error) {
 	if module.Command == "" {
-		return nil
+		return nil, nil
+	}
+	if !commandAllowed(opts.CommandPolicy, module.Source) {
+		*diagnostics = append(*diagnostics, TestSignalDiagnostic{Level: "warn", Code: "command_policy_denied", Message: "test command was not executed because command_policy denied this command source", Module: module.Name, Path: module.Root})
+		return &TestExecutionStatus{Mode: TestModeRun, Command: module.Command, CommandPolicy: opts.CommandPolicy, Shell: commandShell(), Partial: true}, nil
 	}
 	started := time.Now()
 	workingDir := filepath.Join(projectDir, filepath.FromSlash(module.Root))
@@ -24,7 +28,7 @@ func executeTestCommand(projectDir string, module TestModuleSignal, diagnostics 
 		workingDir = projectDir
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), opts.MaxRuntime)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, commandShell(), commandShellArg(), module.Command)
 	cmd.Dir = workingDir
@@ -33,25 +37,44 @@ func executeTestCommand(projectDir string, module TestModuleSignal, diagnostics 
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	err := cmd.Run()
+	stdoutValue, stdoutTruncated := limitOutput(stdout.String())
+	stderrValue, stderrTruncated := limitOutput(stderr.String())
 
 	status := &TestExecutionStatus{
-		Mode:       TestModeRun,
-		Command:    module.Command,
-		WorkingDir: cleanRel(projectDir, workingDir),
-		DurationMs: time.Since(started).Milliseconds(),
-		Stdout:     limitOutput(stdout.String()),
-		Stderr:     limitOutput(stderr.String()),
+		Mode:            TestModeRun,
+		Command:         module.Command,
+		CommandPolicy:   opts.CommandPolicy,
+		Shell:           commandShell(),
+		WorkingDir:      cleanRel(projectDir, workingDir),
+		MaxRuntime:      opts.MaxRuntime.String(),
+		DurationMs:      time.Since(started).Milliseconds(),
+		Stdout:          stdoutValue,
+		Stderr:          stderrValue,
+		StdoutTruncated: stdoutTruncated,
+		StderrTruncated: stderrTruncated,
+	}
+	appendOutputTruncationDiagnostics(module, status, diagnostics, "command_output_truncated")
+	if ctx.Err() == context.DeadlineExceeded {
+		status.ExitCode = 124
+		status.Timeout = true
+		status.Partial = true
+		*diagnostics = append(*diagnostics, TestSignalDiagnostic{Level: "warn", Code: "command_timeout", Message: "test command timed out; readable reports will still be collected when present", Module: module.Name, Path: module.Root})
+		if opts.FailOnTimeout {
+			return status, fmt.Errorf("test command timed out for module %s", module.Name)
+		}
+		return status, nil
 	}
 	if err != nil {
 		status.ExitCode = 1
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			status.ExitCode = exitErr.ExitCode()
 		}
+		status.Partial = true
 		*diagnostics = append(*diagnostics, TestSignalDiagnostic{Level: "warn", Code: "command_failed", Message: fmt.Sprintf("test command exited with status %d", status.ExitCode), Module: module.Name, Path: module.Root})
-		return status
+		return status, nil
 	}
 	*diagnostics = append(*diagnostics, TestSignalDiagnostic{Level: "info", Code: "command_executed", Message: "configured test command executed", Module: module.Name, Path: module.Root})
-	return status
+	return status, nil
 }
 
 func commandShell() string {
@@ -68,15 +91,40 @@ func commandShellArg() string {
 	return "-c"
 }
 
-func limitOutput(value string) string {
+func limitOutput(value string) (string, bool) {
 	if len(value) <= commandOutputLimit {
-		return value
+		return value, false
 	}
-	return value[:commandOutputLimit]
+	return value[:commandOutputLimit], true
+}
+
+func appendOutputTruncationDiagnostics(module TestModuleSignal, status *TestExecutionStatus, diagnostics *[]TestSignalDiagnostic, code string) {
+	if status == nil {
+		return
+	}
+	if status.StdoutTruncated {
+		*diagnostics = append(*diagnostics, TestSignalDiagnostic{Level: "warn", Code: code, Message: "command stdout exceeded output limit and was truncated", Module: module.Name, Path: module.Root})
+	}
+	if status.StderrTruncated {
+		*diagnostics = append(*diagnostics, TestSignalDiagnostic{Level: "warn", Code: code, Message: "command stderr exceeded output limit and was truncated", Module: module.Name, Path: module.Root})
+	}
+}
+
+func commandAllowed(policy, source string) bool {
+	switch policy {
+	case CommandPolicyNever:
+		return false
+	case CommandPolicyDiscovered, CommandPolicyTrustedShell:
+		return true
+	case CommandPolicyConfiguredOnly, CommandPolicyExplicit, "":
+		return source == TestSourceConfigured
+	default:
+		return false
+	}
 }
 
 func boundedFallbackReports(projectDir string, module TestModuleSignal, opts TestOptions, scanStarted time.Time, diagnostics *[]TestSignalDiagnostic) []TestReportProvenance {
-	candidates := collectFallbackCandidates(projectDir, fallbackRoot(projectDir, module), opts)
+	candidates := collectFallbackCandidates(projectDir, fallbackRoot(projectDir, module), module, opts, diagnostics)
 	if len(candidates) > opts.MaxCandidates {
 		candidates = candidates[:opts.MaxCandidates]
 		*diagnostics = append(*diagnostics, TestSignalDiagnostic{Level: "warn", Code: "report_candidate_limit", Message: "bounded fallback report search reached max_candidates", Module: module.Name, Path: module.Root})
@@ -95,10 +143,11 @@ func fallbackRoot(projectDir string, module TestModuleSignal) string {
 	return filepath.Join(projectDir, filepath.FromSlash(module.Root))
 }
 
-func collectFallbackCandidates(projectDir, root string, opts TestOptions) []string {
+func collectFallbackCandidates(projectDir, root string, module TestModuleSignal, opts TestOptions, diagnostics *[]TestSignalDiagnostic) []string {
 	var candidates []string
 	_ = filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
 		if err != nil {
+			*diagnostics = append(*diagnostics, TestSignalDiagnostic{Level: "warn", Code: "fallback_walk_error", Message: "bounded fallback report search hit an inaccessible path", Module: module.Name, Path: cleanRel(projectDir, path)})
 			return nil
 		}
 		relRoot := cleanRel(root, path)

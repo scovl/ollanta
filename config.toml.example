@@ -23,7 +23,10 @@ exclusions = ["node_modules/**", "vendor/**", "dist/**", "build/**", ".git/**"]
 max_depth = 8
 max_candidates = 200
 max_report_bytes = 20971520
+max_runtime = "10m"
 command_policy = "explicit"
+fail_on_timeout = false
+allow_external_artifacts = false
 
 [[tests.path_mapping]]
 from = "/workspace/project"
@@ -40,6 +43,9 @@ coverage_reports = ["coverage.out"]
 test_reports = ["junit.xml"]
 coverage_threshold = 85.0
 new_coverage_threshold = 90.0
+suite_kind = "unit"
+evidence_confidence = "high"
+allow_external_artifacts = false
 owner = "platform"
 team = "quality"
 
@@ -49,10 +55,84 @@ root = "testdata/generated"
 test_policy = "ignored"
 ignore_reason = "Generated fixture code is not part of product test health."
 
+# Optional mutation-signal discovery. Like test signals, collection is report-only
+# by default. Use doctor mode to preview discovered tools/reports before enabling
+# explicit mutation execution in CI.
+[mutations]
+enabled = false
+mode = "collect" # collect existing reports; use "doctor" to preview, "run" only with opt-in
+discover = true
+run = false
+changed_only = true
+max_runtime = "10m"
+max_mutants = 500
+max_report_age = "24h"
+exclusions = ["node_modules/**", "vendor/**", "dist/**", "build/**", ".git/**"]
+max_depth = 8
+max_candidates = 200
+max_report_bytes = 20971520
+command_policy = "explicit"
+fail_on_timeout = false
+allow_external_artifacts = false
+
+[[mutations.path_mapping]]
+from = "/workspace/project"
+to = "."
+
+[[mutations.modules]]
+name = "domain mutation"
+root = "domain"
+language = "go"
+architecture_role = "domain"
+tool = "native"
+command = "go test ./... && go-mutesting ./..."
+native_report_paths = ["ollanta-mutations.json"]
+report_paths = ["reports/mutation.json"]
+threshold = 75.0
+changed_code_threshold = 85.0
+suite_kind = "contract"
+evidence_confidence = "medium"
+owner = "platform"
+team = "quality"
+mutation_policy = "required"
+changed_only = true
+max_runtime = "5m"
+max_mutants = 200
+allow_external_artifacts = false
+
+[[mutations.modules]]
+name = "generated mutation fixtures"
+root = "testdata/generated"
+mutation_policy = "ignored"
+ignore_reason = "Generated fixture code is not mutation tested."
+
 [server]
 addr = ":8080"
 admin_addr = ":9090"
 log_level = "info"
+jwt_secret = "ollanta-dev-jwt-secret-change-me"
+# Development-only escape hatch when no JWT secret is configured. Do not enable
+# this in multi-replica or production deployments because tokens will not survive
+# restarts or work across replicas.
+allow_random_jwt_secret = false
+cors_allowed_origins = ["http://localhost:8080"]
+# Development-only opt-in required before using cors_allowed_origins = ["*"].
+cors_allow_unsafe_wildcard = false
+http_max_body_bytes = 10485760
+auto_migrate = true
+scan_queue_max_accepted = 0 # 0 disables this local-development limit
+scan_queue_max_running = 0 # 0 disables this local-development limit
+scan_queue_max_oldest_accepted_age = "0s" # 0s disables this limit
+scan_queue_retry_after = "30s"
+scan_job_stale_after = "15m"
+scan_job_max_attempts = 3
+scan_job_recovery_interval = "1m"
+index_job_stale_after = "15m"
+index_job_max_attempts = 3
+index_job_recovery_interval = "1m"
+webhook_job_stale_after = "15m"
+webhook_job_max_attempts = 3
+webhook_job_recovery_interval = "1m"
 scanner_token = "ollanta-dev-scanner-token"
 
 # Optional links shown in the web UI admin navigation. Leave unset when your
@@ -76,6 +156,10 @@ name = "ollanta"
 user = "ollanta"
 password = "ollanta_dev"
 sslmode = "disable"
+pool_max_conns = 25
+pool_min_conns = 5
+pool_max_conn_lifetime = "1h"
+pool_max_conn_idle_time = "30m"
 # Optional override when you prefer to provide a full connection string:
 # url = "postgres://ollanta:ollanta_dev@localhost:5432/ollanta?sslmode=disable"
 

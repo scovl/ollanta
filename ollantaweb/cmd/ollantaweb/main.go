@@ -18,12 +18,14 @@ import (
 	"github.com/scovl/ollanta/ollantastore/search"
 	"github.com/scovl/ollanta/ollantaweb/api"
 	"github.com/scovl/ollanta/ollantaweb/config"
+	appruntime "github.com/scovl/ollanta/ollantaweb/internal/runtime"
 	"github.com/scovl/ollanta/ollantaweb/webhook"
 )
 
 func main() {
 	cfg := config.MustLoad()
 	slog.SetDefault(telemetry.SetupLogger(cfg.LogLevel, "service", "ollantaweb", "role", "api"))
+	cfg.LogStartupWarnings()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -39,18 +41,18 @@ func main() {
 	}()
 
 	// ── PostgreSQL ─────────────────────────────────────────────────────────
-	db, err := postgres.New(ctx, cfg.DatabaseURL)
+	db, err := postgres.New(ctx, cfg.DatabaseURL, cfg.PostgresPool)
 	if err != nil {
 		slog.Error("connect postgres", "error", err)
 		os.Exit(1)
 	}
 	defer db.Close()
 
-	if err := db.Migrate(ctx); err != nil {
-		slog.Error("migrate database", "error", err)
+	if err := appruntime.PrepareDatabase(ctx, db, cfg.AutoMigrate); err != nil {
+		slog.Error("prepare database", "auto_migrate", cfg.AutoMigrate, "error", err)
 		os.Exit(1)
 	}
-	slog.Info("database migrations applied")
+	slog.Info("database ready", "auto_migrate", cfg.AutoMigrate)
 
 	// ── Repositories ───────────────────────────────────────────────────────
 	projectRepo := postgres.NewProjectRepository(db)
@@ -94,6 +96,8 @@ func main() {
 	metricsReg := telemetry.NewRegistry()
 	appMetrics := telemetry.NewMetrics(metricsReg)
 	webhookDispatcher := webhook.NewDispatcher(webhookRepo, webhookJobRepo, "ollantaweb", appMetrics)
+	appruntime.StartDatabaseMetricsLoop(ctx, db, metricsReg, 30*time.Second)
+	api.StartBackgroundTaskMetricsLoop(ctx, api.NewBackgroundTasksHandler(scanJobRepo, indexJobRepo, webhookJobRepo, metricsReg), 30*time.Second)
 
 	// ── HTTP server ────────────────────────────────────────────────────────
 	router := api.NewRouter(&api.RouterDeps{

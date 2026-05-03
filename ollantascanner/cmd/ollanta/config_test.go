@@ -150,7 +150,10 @@ exclusions = ["fixtures/**"]
 max_depth = 4
 max_candidates = 25
 max_report_bytes = 4096
+max_runtime = "90s"
 command_policy = "explicit"
+fail_on_timeout = true
+allow_external_artifacts = true
 
 [[tests.path_mapping]]
 from = "/workspace/app"
@@ -172,6 +175,9 @@ mutation_threshold = 70.0
 owner = "platform"
 team = "quality"
 integration_required = true
+suite_kind = "contract"
+evidence_confidence = "medium"
+allow_external_artifacts = false
 `)
 	writeConfigFile(t, configPath, config)
 
@@ -179,33 +185,51 @@ integration_required = true
 	if err != nil {
 		t.Fatalf(parseError, err)
 	}
-	if !opts.Tests.Enabled {
-		t.Fatal("Tests.Enabled = false, want true")
+	assertTestsConfigValues(t, opts.Tests)
+	assertTestsModuleValues(t, opts.Tests.Modules)
+}
+
+func assertTestsConfigValues(t *testing.T, opts appscan.TestOptions) {
+	t.Helper()
+	if !opts.Enabled || opts.Mode != appscan.TestModeCollect || opts.Run {
+		t.Fatalf("Tests = %+v, want enabled collect without run", opts)
 	}
-	if opts.Tests.Mode != appscan.TestModeCollect {
-		t.Fatalf("Tests.Mode = %q, want collect", opts.Tests.Mode)
+	if opts.MaxReportAge != 2*time.Hour {
+		t.Fatalf("Tests.MaxReportAge = %s, want 2h", opts.MaxReportAge)
 	}
-	if opts.Tests.Run {
-		t.Fatal("Tests.Run = true, want false")
+	if opts.MaxRuntime != 90*time.Second || !opts.FailOnTimeout || !opts.AllowExternalArtifacts {
+		t.Fatalf("Tests timeout/artifact options = %+v, want configured values", opts)
 	}
-	if opts.Tests.MaxReportAge != 2*time.Hour {
-		t.Fatalf("Tests.MaxReportAge = %s, want 2h", opts.Tests.MaxReportAge)
+	if len(opts.PathMappings) != 1 || opts.PathMappings[0].From != "/workspace/app" {
+		t.Fatalf("Tests.PathMappings = %#v, want configured mapping", opts.PathMappings)
 	}
-	if len(opts.Tests.PathMappings) != 1 || opts.Tests.PathMappings[0].From != "/workspace/app" {
-		t.Fatalf("Tests.PathMappings = %#v, want configured mapping", opts.Tests.PathMappings)
+}
+
+func assertTestsModuleValues(t *testing.T, modules []appscan.TestModuleConfig) {
+	t.Helper()
+	if len(modules) != 1 {
+		t.Fatalf("Tests.Modules length = %d, want 1", len(modules))
 	}
-	if len(opts.Tests.Modules) != 1 {
-		t.Fatalf("Tests.Modules length = %d, want 1", len(opts.Tests.Modules))
-	}
-	module := opts.Tests.Modules[0]
-	if module.Name != "core-domain" || module.Root != "domain" || module.ArchitectureRole != "domain" {
-		t.Fatalf("Tests.Modules[0] = %+v, want configured module", module)
-	}
+	module := modules[0]
+	assertTestsModuleIdentity(t, module)
 	if module.CoverageThreshold == nil || *module.CoverageThreshold != 85.5 {
 		t.Fatalf("CoverageThreshold = %v, want 85.5", module.CoverageThreshold)
 	}
 	if !module.IntegrationRequired {
 		t.Fatal("IntegrationRequired = false, want true")
+	}
+	if module.AllowExternalArtifacts == nil || *module.AllowExternalArtifacts {
+		t.Fatalf("AllowExternalArtifacts = %v, want false module override", module.AllowExternalArtifacts)
+	}
+}
+
+func assertTestsModuleIdentity(t *testing.T, module appscan.TestModuleConfig) {
+	t.Helper()
+	if module.Name != "core-domain" || module.Root != "domain" || module.ArchitectureRole != "domain" {
+		t.Fatalf("Tests.Modules[0] = %+v, want configured module", module)
+	}
+	if module.SuiteKind != appscan.SuiteKindContract || module.EvidenceConfidence != appscan.EvidenceConfidenceMedium {
+		t.Fatalf("suite evidence = %q/%q, want contract/medium", module.SuiteKind, module.EvidenceConfidence)
 	}
 }
 
@@ -213,9 +237,9 @@ func TestParseOptionsTestsFlagsOverrideConfigFile(t *testing.T) {
 	dir := t.TempDir()
 	enterDir(t, dir)
 	configPath := filepath.Join(dir, "config.toml")
-	writeConfigFile(t, configPath, []byte("[tests]\nenabled = true\nmode = \"collect\"\nrun = false\n"))
+	writeConfigFile(t, configPath, []byte("[tests]\nenabled = true\nmode = \"collect\"\nrun = false\ncommand_policy = \"explicit\"\n"))
 
-	opts, err := parseOptions([]string{"-with-tests=false", "-tests-mode=run", "-tests-run=true"})
+	opts, err := parseOptions([]string{"-with-tests=false", "-tests-mode=run", "-tests-run=true", "-tests-command-policy=never", "-tests-max-runtime=10s", "-tests-fail-on-timeout=true", "-tests-allow-external-artifacts=true"})
 	if err != nil {
 		t.Fatalf(parseError, err)
 	}
@@ -227,6 +251,149 @@ func TestParseOptionsTestsFlagsOverrideConfigFile(t *testing.T) {
 	}
 	if !opts.Tests.Run {
 		t.Fatal("Tests.Run = false, want true from flag override")
+	}
+	if opts.Tests.CommandPolicy != appscan.CommandPolicyNever || opts.Tests.MaxRuntime != 10*time.Second || !opts.Tests.FailOnTimeout || !opts.Tests.AllowExternalArtifacts {
+		t.Fatalf("Tests flags = %+v, want command policy, runtime, timeout, and artifact overrides", opts.Tests)
+	}
+}
+
+func TestParseOptionsRejectsInvalidTestEvidenceConfig(t *testing.T) {
+	dir := t.TempDir()
+	enterDir(t, dir)
+	configPath := filepath.Join(dir, "config.toml")
+	writeConfigFile(t, configPath, []byte("[tests]\nenabled = true\nmode = \"mystery\"\n"))
+
+	if _, err := parseOptions(nil); err == nil {
+		t.Fatal("parseOptions() error = nil, want invalid test mode error")
+	}
+}
+
+func TestParseOptionsAppliesMutationsConfigFile(t *testing.T) {
+	dir := t.TempDir()
+	enterDir(t, dir)
+	configPath := filepath.Join(dir, "config.toml")
+	config := []byte(`[mutations]
+enabled = true
+mode = "collect"
+discover = true
+run = false
+changed_only = true
+max_runtime = "8m"
+max_mutants = 250
+max_report_age = "12h"
+exclusions = ["generated/**"]
+max_depth = 5
+max_candidates = 30
+max_report_bytes = 8192
+command_policy = "explicit"
+fail_on_timeout = false
+allow_external_artifacts = true
+
+[[mutations.path_mapping]]
+from = "/workspace/app"
+to = "."
+
+[[mutations.modules]]
+name = "domain"
+root = "domain"
+language = "go"
+architecture_role = "domain"
+tool = "native"
+command = "go test ./... && go-mutesting ./..."
+report_paths = ["reports/mutation.json"]
+native_report_paths = ["ollanta-mutations.json"]
+threshold = 75.0
+changed_code_threshold = 85.0
+owner = "platform"
+team = "quality"
+mutation_policy = "required"
+suite_kind = "component"
+evidence_confidence = "medium"
+allow_external_artifacts = false
+changed_only = false
+max_runtime = "3m"
+max_mutants = 50
+exclusions = ["fixtures/**"]
+fail_on_timeout = true
+`)
+	writeConfigFile(t, configPath, config)
+
+	opts, err := parseOptions(nil)
+	if err != nil {
+		t.Fatalf(parseError, err)
+	}
+	assertMutationsConfigValues(t, opts.Mutations)
+	assertMutationsModuleValues(t, opts.Mutations.Modules)
+}
+
+func assertMutationsConfigValues(t *testing.T, opts appscan.MutationOptions) {
+	t.Helper()
+	if !opts.Enabled || opts.Mode != appscan.MutationModeCollect || opts.Run {
+		t.Fatalf("Mutations = %+v, want enabled collect without run", opts)
+	}
+	if opts.MaxRuntime != 8*time.Minute || opts.MaxReportAge != 12*time.Hour || opts.MaxMutants != 250 {
+		t.Fatalf("Mutations limits = %+v, want configured durations and mutant limit", opts)
+	}
+	if !opts.AllowExternalArtifacts {
+		t.Fatalf("AllowExternalArtifacts = false, want configured true")
+	}
+	if len(opts.PathMappings) != 1 || opts.PathMappings[0].From != "/workspace/app" {
+		t.Fatalf("Mutations.PathMappings = %#v, want configured mapping", opts.PathMappings)
+	}
+}
+
+func assertMutationsModuleValues(t *testing.T, modules []appscan.MutationModuleConfig) {
+	t.Helper()
+	if len(modules) != 1 {
+		t.Fatalf("Mutations.Modules length = %d, want 1", len(modules))
+	}
+	module := modules[0]
+	if module.Name != "domain" || module.Tool != "native" || module.MaxRuntime != 3*time.Minute || module.MaxMutants != 50 {
+		t.Fatalf("Mutations.Modules[0] = %+v, want configured module", module)
+	}
+	if module.SuiteKind != appscan.SuiteKindComponent || module.EvidenceConfidence != appscan.EvidenceConfidenceMedium {
+		t.Fatalf("suite evidence = %q/%q, want component/medium", module.SuiteKind, module.EvidenceConfidence)
+	}
+	if module.AllowExternalArtifacts == nil || *module.AllowExternalArtifacts {
+		t.Fatalf("AllowExternalArtifacts = %v, want false module override", module.AllowExternalArtifacts)
+	}
+	if module.ChangedOnly == nil || *module.ChangedOnly {
+		t.Fatalf("ChangedOnly = %v, want false override", module.ChangedOnly)
+	}
+	if module.FailOnTimeout == nil || !*module.FailOnTimeout {
+		t.Fatalf("FailOnTimeout = %v, want true override", module.FailOnTimeout)
+	}
+}
+
+func TestParseOptionsMutationsFlagsOverrideConfigFile(t *testing.T) {
+	dir := t.TempDir()
+	enterDir(t, dir)
+	configPath := filepath.Join(dir, "config.toml")
+	writeConfigFile(t, configPath, []byte("[mutations]\nenabled = true\nmode = \"collect\"\nrun = false\ncommand_policy = \"explicit\"\n"))
+
+	opts, err := parseOptions([]string{"-with-mutations=false", "-mutations-mode=run", "-mutations-run=true", "-mutations-command-policy=never", "-mutations-allow-external-artifacts=true"})
+	if err != nil {
+		t.Fatalf(parseError, err)
+	}
+	if opts.Mutations.Enabled {
+		t.Fatal("Mutations.Enabled = true, want false from flag override")
+	}
+	if opts.Mutations.Mode != appscan.MutationModeRun || !opts.Mutations.Run {
+		t.Fatalf("Mutations = %+v, want run mode and run flag override", opts.Mutations)
+	}
+	if opts.Mutations.CommandPolicy != appscan.CommandPolicyNever || !opts.Mutations.AllowExternalArtifacts {
+		t.Fatalf("Mutations flags = %+v, want command policy and artifact overrides", opts.Mutations)
+	}
+}
+
+func TestParseOptionsRejectsInvalidMutationEvidenceConfig(t *testing.T) {
+	dir := t.TempDir()
+	enterDir(t, dir)
+	configPath := filepath.Join(dir, "config.toml")
+	writeConfigFile(t, configPath, []byte("[mutations]\nenabled = true\ncommand_policy = \"surprise\"\n"))
+
+	if _, err := parseOptions(nil); err == nil {
+		t.Fatal("parseOptions() error = nil, want invalid mutation command policy error")
 	}
 }
 

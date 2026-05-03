@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -10,17 +11,27 @@ import (
 	"github.com/scovl/ollanta/ollantaweb/ingest"
 )
 
+type scanJobSubmitter interface {
+	SubmitWithOptions(ctx context.Context, req *ingest.IngestRequest, opts ingest.ScanJobSubmitOptions) (*ingest.ScanJobSubmitResult, error)
+}
+
 // ScansHandler handles scan-related endpoints.
 type ScansHandler struct {
-	scans    *postgres.ScanRepository
-	projects *postgres.ProjectRepository
-	jobs     *ingest.ScanJobService
+	scans        *postgres.ScanRepository
+	projects     *postgres.ProjectRepository
+	jobs         scanJobSubmitter
+	backpressure ingest.ScanBackpressureConfig
 }
 
 // Ingest handles POST /api/v1/scans — receives a report.json payload and enqueues durable processing.
 func (h *ScansHandler) Ingest(w http.ResponseWriter, r *http.Request) {
 	var req ingest.IngestRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			jsonError(w, http.StatusRequestEntityTooLarge, "scan report exceeds configured request body limit")
+			return
+		}
 		jsonError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
 		return
 	}
@@ -29,12 +40,31 @@ func (h *ScansHandler) Ingest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := h.jobs.Submit(r.Context(), &req)
+	result, err := h.jobs.SubmitWithOptions(r.Context(), &req, ingest.ScanJobSubmitOptions{
+		IdempotencyKey: r.Header.Get("Idempotency-Key"),
+		Backpressure:   h.backpressure,
+	})
+	if errors.Is(err, ingest.ErrScanJobIdempotencyConflict) {
+		jsonError(w, http.StatusConflict, err.Error())
+		return
+	}
+	var backpressureErr *ingest.ScanJobBackpressureError
+	if errors.As(err, &backpressureErr) {
+		if backpressureErr.RetryAfter > 0 {
+			w.Header().Set("Retry-After", strconv.Itoa(int(backpressureErr.RetryAfter.Seconds())))
+		}
+		jsonError(w, http.StatusTooManyRequests, backpressureErr.Error())
+		return
+	}
 	if err != nil {
 		jsonError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	jsonOK(w, http.StatusAccepted, result)
+	status := http.StatusAccepted
+	if result.Duplicate {
+		status = http.StatusOK
+	}
+	jsonOK(w, status, result.Job)
 }
 
 // Get handles GET /api/v1/scans/{id}.

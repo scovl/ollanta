@@ -19,7 +19,7 @@ Ollanta processes scan intake, search indexing, and webhook delivery asynchronou
 - `completed`: the task finished successfully.
 - `cancelled`: an administrator cancelled a queued task before a worker claimed it.
 
-Stale state is derived for visibility. It does not mutate the persisted job status unless an admin explicitly requeues or retries the task.
+Stale state is derived for visibility in the admin API. Worker roles also run automatic stale recovery loops: stale jobs below the configured max-attempt count are requeued, while jobs at or above the max-attempt count are failed with a recovery error. Manual admin actions remain useful when an operator wants to intervene immediately.
 
 ## Admin Actions
 
@@ -52,6 +52,16 @@ Default derived stale thresholds are:
 
 Long-running tasks that exceed these thresholds should be inspected before requeueing. A stale task often means a worker crashed, lost database connectivity, or is blocked on an external dependency.
 
+Automatic recovery is controlled per role:
+
+| Job type | Stale threshold | Max attempts | Recovery interval |
+|----------|-----------------|--------------|-------------------|
+| scan | `OLLANTA_SCAN_JOB_STALE_AFTER` | `OLLANTA_SCAN_JOB_MAX_ATTEMPTS` | `OLLANTA_SCAN_JOB_RECOVERY_INTERVAL` |
+| index | `OLLANTA_INDEX_JOB_STALE_AFTER` | `OLLANTA_INDEX_JOB_MAX_ATTEMPTS` | `OLLANTA_INDEX_JOB_RECOVERY_INTERVAL` |
+| webhook | `OLLANTA_WEBHOOK_JOB_STALE_AFTER` | `OLLANTA_WEBHOOK_JOB_MAX_ATTEMPTS` | `OLLANTA_WEBHOOK_JOB_RECOVERY_INTERVAL` |
+
+Set a max-attempt value high enough for transient database/search/webhook outages, but low enough that permanently broken jobs become visible as failed.
+
 ## Retention
 
 Completed, failed, and cancelled job rows are retained in PostgreSQL until regular database maintenance removes or archives them. Large installations should define retention jobs based on operational needs:
@@ -62,7 +72,7 @@ Completed, failed, and cancelled job rows are retained in PostgreSQL until regul
 
 ## Metrics And Troubleshooting
 
-The summary endpoint updates Prometheus-compatible gauges under names such as `ollanta_background_tasks_scan_queued`, `ollanta_background_tasks_index_failed`, and `ollanta_background_tasks_webhook_stale`.
+Prometheus-compatible gauges are refreshed on a timer, independently of the summary endpoint, under names such as `ollanta_background_tasks_scan_queued`, `ollanta_background_tasks_index_failed`, and `ollanta_background_tasks_webhook_stale`. Recovery outcome counters are emitted as `ollanta_scan_jobs_recovered_total`, `ollanta_index_jobs_failed_by_recovery_total`, and equivalent webhook counters.
 
 When project processing is delayed:
 
@@ -71,3 +81,26 @@ When project processing is delayed:
 3. Check `webhook` failed/retrying tasks when integrations do not receive events.
 4. Inspect worker ids and last errors in task details.
 5. Retry failed tasks only after the underlying error is fixed.
+
+## Runbooks
+
+### Stale Jobs
+
+1. Check the role readiness endpoint (`/readyz`) for the affected job type.
+2. Inspect the job detail for `worker_id`, `attempts`, `last_error`, and timestamps.
+3. If recovery counters are increasing, wait one recovery interval before manual action.
+4. If the dependency is healthy and the job is still stale, use `requeue` for stale/retrying jobs.
+5. If the job repeatedly fails after requeueing, treat the payload or external dependency as the incident source.
+
+### Search Rebuild
+
+1. Confirm PostgreSQL is healthy; it is the source of truth.
+2. Confirm the search backend readiness and credentials.
+3. Trigger the admin reindex operation.
+4. Watch `index` queued/running/stale/failed metrics until the queue drains.
+
+### Webhook Delivery Backlog
+
+1. Check destination availability and network policy.
+2. Inspect failed webhook task details and response codes.
+3. Retry only after the downstream system is accepting requests.

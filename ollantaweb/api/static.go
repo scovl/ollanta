@@ -6,6 +6,8 @@ import (
 	"net/http"
 )
 
+const staticCacheControlHeader = "Cache-Control"
+
 //go:embed static
 var staticFiles embed.FS
 
@@ -19,6 +21,8 @@ func staticHandler() http.Handler {
 	fileServer := http.FileServer(http.FS(sub))
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set(staticCacheControlHeader, "no-store")
+
 		// Try to open the requested file; fall back to index.html for the SPA.
 		f, openErr := sub.Open(r.URL.Path[1:]) // strip leading /
 		if openErr == nil {

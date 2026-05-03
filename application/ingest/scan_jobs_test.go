@@ -3,6 +3,7 @@ package ingest
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
@@ -36,6 +37,12 @@ func TestScanJobServiceSubmitPersistsAcceptedJob(t *testing.T) {
 	if len(repo.created.Payload) == 0 {
 		t.Fatal("expected payload to be stored")
 	}
+	if repo.created.IdempotencyKey == "" {
+		t.Fatal("expected server-computed idempotency key to be stored")
+	}
+	if repo.created.PayloadHash == "" {
+		t.Fatal("expected payload hash to be stored")
+	}
 	if repo.created.TraceParent == "" {
 		t.Fatal("expected traceparent to be stored with accepted job")
 	}
@@ -56,6 +63,83 @@ func TestScanJobServiceSubmitPersistsAcceptedJob(t *testing.T) {
 	}
 	if _, err := svc.Get(context.Background(), job.ID+999); err == nil {
 		t.Fatal("expected missing job to return an error")
+	}
+}
+
+func TestScanJobServiceSubmitWithOptionsReturnsDuplicateForMatchingPayload(t *testing.T) {
+	t.Parallel()
+
+	req := &IngestRequest{Metadata: IngestMetadata{ProjectKey: "demo"}}
+	payload, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	existing := &model.ScanJob{
+		ID:             42,
+		ProjectKey:     "demo",
+		Status:         model.ScanJobStatusAccepted,
+		IdempotencyKey: "ci-run-1",
+		PayloadHash:    hashScanPayload(payload),
+	}
+	repo := &fakeScanJobRepo{jobsByIdempotency: map[string]*model.ScanJob{idempotencyLookupKey("demo", "ci-run-1"): existing}}
+	svc := NewScanJobService(repo)
+
+	result, err := svc.SubmitWithOptions(context.Background(), req, ScanJobSubmitOptions{IdempotencyKey: "ci-run-1"})
+	if err != nil {
+		t.Fatalf("SubmitWithOptions() error = %v", err)
+	}
+	if !result.Duplicate {
+		t.Fatal("Duplicate = false, want true")
+	}
+	if result.Job.ID != existing.ID {
+		t.Fatalf("Job.ID = %d, want existing id %d", result.Job.ID, existing.ID)
+	}
+	if repo.created != nil {
+		t.Fatal("expected duplicate submission not to create a job")
+	}
+}
+
+func TestScanJobServiceSubmitWithOptionsRejectsIdempotencyConflict(t *testing.T) {
+	t.Parallel()
+
+	repo := &fakeScanJobRepo{jobsByIdempotency: map[string]*model.ScanJob{
+		idempotencyLookupKey("demo", "ci-run-1"): {
+			ID:             42,
+			ProjectKey:     "demo",
+			Status:         model.ScanJobStatusAccepted,
+			IdempotencyKey: "ci-run-1",
+			PayloadHash:    hashScanPayload([]byte(`{"different":true}`)),
+		},
+	}}
+	svc := NewScanJobService(repo)
+
+	_, err := svc.SubmitWithOptions(context.Background(), &IngestRequest{Metadata: IngestMetadata{ProjectKey: "demo"}}, ScanJobSubmitOptions{IdempotencyKey: "ci-run-1"})
+	if !errors.Is(err, ErrScanJobIdempotencyConflict) {
+		t.Fatalf("SubmitWithOptions() error = %v, want ErrScanJobIdempotencyConflict", err)
+	}
+	if repo.created != nil {
+		t.Fatal("expected conflicting submission not to create a job")
+	}
+}
+
+func TestScanJobServiceSubmitWithOptionsRejectsBackpressure(t *testing.T) {
+	t.Parallel()
+
+	repo := &fakeScanJobRepo{pressure: model.ScanQueuePressure{Accepted: 3}}
+	svc := NewScanJobService(repo)
+
+	_, err := svc.SubmitWithOptions(context.Background(), &IngestRequest{Metadata: IngestMetadata{ProjectKey: "demo"}}, ScanJobSubmitOptions{
+		Backpressure: ScanBackpressureConfig{MaxAccepted: 3, RetryAfter: 15 * time.Second},
+	})
+	var backpressureErr *ScanJobBackpressureError
+	if !errors.As(err, &backpressureErr) {
+		t.Fatalf("SubmitWithOptions() error = %v, want ScanJobBackpressureError", err)
+	}
+	if backpressureErr.RetryAfter != 15*time.Second {
+		t.Fatalf("RetryAfter = %s, want 15s", backpressureErr.RetryAfter)
+	}
+	if repo.created != nil {
+		t.Fatal("expected saturated intake not to create a job")
 	}
 }
 
@@ -145,14 +229,16 @@ func TestScanJobProcessorProcessNextMarksFailedOnInvalidPayload(t *testing.T) {
 }
 
 type fakeScanJobRepo struct {
-	created      *model.ScanJob
-	next         *model.ScanJob
-	completedID  int64
-	completedRef int64
-	failedID     int64
-	failedErr    string
-	jobs         map[int64]*model.ScanJob
-	nextID       int64
+	created           *model.ScanJob
+	next              *model.ScanJob
+	completedID       int64
+	completedRef      int64
+	failedID          int64
+	failedErr         string
+	jobs              map[int64]*model.ScanJob
+	jobsByIdempotency map[string]*model.ScanJob
+	pressure          model.ScanQueuePressure
+	nextID            int64
 }
 
 func (r *fakeScanJobRepo) Create(_ context.Context, job *model.ScanJob) error {
@@ -166,6 +252,12 @@ func (r *fakeScanJobRepo) Create(_ context.Context, job *model.ScanJob) error {
 		r.jobs = map[int64]*model.ScanJob{}
 	}
 	r.jobs[job.ID] = cloneScanJob(job)
+	if job.IdempotencyKey != "" {
+		if r.jobsByIdempotency == nil {
+			r.jobsByIdempotency = map[string]*model.ScanJob{}
+		}
+		r.jobsByIdempotency[idempotencyLookupKey(job.ProjectKey, job.IdempotencyKey)] = cloneScanJob(job)
+	}
 	return nil
 }
 
@@ -174,6 +266,21 @@ func (r *fakeScanJobRepo) GetByID(_ context.Context, id int64) (*model.ScanJob, 
 		return cloneScanJob(job), nil
 	}
 	return nil, model.ErrNotFound
+}
+
+func (r *fakeScanJobRepo) FindByIdempotencyKey(_ context.Context, projectKey, idempotencyKey string) (*model.ScanJob, error) {
+	if r.jobsByIdempotency == nil {
+		return nil, model.ErrNotFound
+	}
+	job, ok := r.jobsByIdempotency[idempotencyLookupKey(projectKey, idempotencyKey)]
+	if !ok {
+		return nil, model.ErrNotFound
+	}
+	return cloneScanJob(job), nil
+}
+
+func (r *fakeScanJobRepo) QueuePressure(_ context.Context, _ string, _ time.Time) (model.ScanQueuePressure, error) {
+	return r.pressure, nil
 }
 
 func (r *fakeScanJobRepo) ClaimNext(_ context.Context, workerID string) (*model.ScanJob, error) {
@@ -353,6 +460,10 @@ func cloneScanJob(job *model.ScanJob) *model.ScanJob {
 		clone.Payload = append([]byte(nil), job.Payload...)
 	}
 	return &clone
+}
+
+func idempotencyLookupKey(projectKey, idempotencyKey string) string {
+	return projectKey + "\x00" + idempotencyKey
 }
 
 func tracedContext() (context.Context, string) {

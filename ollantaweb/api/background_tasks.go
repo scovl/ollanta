@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"sort"
@@ -48,6 +49,41 @@ type BackgroundTasksHandler struct {
 	indexJobs   *postgres.IndexJobRepository
 	webhookJobs *postgres.WebhookJobRepository
 	metricsReg  *telemetry.Registry
+}
+
+// NewBackgroundTasksHandler creates the durable background-task admin handler.
+func NewBackgroundTasksHandler(scanJobs *postgres.ScanJobRepository, indexJobs *postgres.IndexJobRepository, webhookJobs *postgres.WebhookJobRepository, metricsReg *telemetry.Registry) *BackgroundTasksHandler {
+	return &BackgroundTasksHandler{scanJobs: scanJobs, indexJobs: indexJobs, webhookJobs: webhookJobs, metricsReg: metricsReg}
+}
+
+// StartBackgroundTaskMetricsLoop refreshes durable job metrics without relying on admin endpoint traffic.
+func StartBackgroundTaskMetricsLoop(ctx context.Context, handler *BackgroundTasksHandler, interval time.Duration) {
+	if handler == nil || interval <= 0 {
+		return
+	}
+	go func() {
+		handler.refreshMetrics(ctx)
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				handler.refreshMetrics(ctx)
+			}
+		}
+	}()
+}
+
+func (h *BackgroundTasksHandler) refreshMetrics(ctx context.Context) {
+	filter := backgroundTaskFilter{Limit: 500, Offset: 0}
+	tasks, err := h.loadBackgroundTasks(ctx, filter)
+	if err != nil {
+		slog.WarnContext(ctx, "refresh background task metrics", "error", err)
+		return
+	}
+	h.observeSummary(summarizeBackgroundTasks(tasks, time.Now().UTC()))
 }
 
 type backgroundTaskDTO struct {

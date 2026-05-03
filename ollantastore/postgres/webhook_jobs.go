@@ -18,6 +18,7 @@ type WebhookJob struct {
 	ProjectID        *int64     `json:"project_id,omitempty"`
 	Event            string     `json:"event"`
 	Payload          []byte     `json:"-"`
+	PayloadHash      string     `json:"-"`
 	Status           string     `json:"status"`
 	TraceParent      string     `json:"-"`
 	TraceState       string     `json:"-"`
@@ -50,12 +51,12 @@ func (r *WebhookJobRepository) Create(ctx context.Context, job *WebhookJob) erro
 	}
 	row := r.db.Pool.QueryRow(ctx, `
 		INSERT INTO webhook_jobs (
-			webhook_id, project_id, event, payload, status, trace_parent, trace_state,
+			webhook_id, project_id, event, payload, payload_hash, status, trace_parent, trace_state,
 			worker_id, attempts, last_error, last_response_code, last_response_body, next_attempt_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 		RETURNING id, created_at, updated_at`,
-		job.WebhookID, job.ProjectID, job.Event, job.Payload, job.Status, job.TraceParent, job.TraceState,
+		job.WebhookID, job.ProjectID, job.Event, job.Payload, job.PayloadHash, job.Status, job.TraceParent, job.TraceState,
 		job.WorkerID, job.Attempts, job.LastError, job.LastResponseCode, job.LastResponseBody, job.NextAttemptAt,
 	)
 	return row.Scan(&job.ID, &job.CreatedAt, &job.UpdatedAt)
@@ -64,10 +65,26 @@ func (r *WebhookJobRepository) Create(ctx context.Context, job *WebhookJob) erro
 // GetByID returns a webhook job by id.
 func (r *WebhookJobRepository) GetByID(ctx context.Context, id int64) (*WebhookJob, error) {
 	return scanWebhookJobRow(r.db.Pool.QueryRow(ctx, `
-		SELECT id, webhook_id, project_id, event, payload, status, trace_parent, trace_state, worker_id, attempts,
+		SELECT id, webhook_id, project_id, event, payload, payload_hash, status, trace_parent, trace_state, worker_id, attempts,
 		       last_error, last_response_code, last_response_body, next_attempt_at,
 		       created_at, updated_at, started_at, completed_at
 		FROM webhook_jobs WHERE id = $1`, id,
+	))
+}
+
+// GetActiveByIdentity returns an accepted or running webhook job for the same destination/event/payload.
+func (r *WebhookJobRepository) GetActiveByIdentity(ctx context.Context, webhookID int64, event, payloadHash string) (*WebhookJob, error) {
+	if webhookID == 0 || event == "" || payloadHash == "" {
+		return nil, ErrNotFound
+	}
+	return scanWebhookJobRow(r.db.Pool.QueryRow(ctx, `
+		SELECT id, webhook_id, project_id, event, payload, payload_hash, status, trace_parent, trace_state, worker_id, attempts,
+		       last_error, last_response_code, last_response_body, next_attempt_at,
+		       created_at, updated_at, started_at, completed_at
+		FROM webhook_jobs
+		WHERE webhook_id = $1 AND event = $2 AND payload_hash = $3 AND status IN ('accepted', 'running')
+		ORDER BY created_at ASC, id ASC
+		LIMIT 1`, webhookID, event, payloadHash,
 	))
 }
 
@@ -83,6 +100,50 @@ func (r *WebhookJobRepository) CountByStatus(ctx context.Context, status string)
 	var total int
 	err := r.db.Pool.QueryRow(ctx, query, args...).Scan(&total)
 	return total, err
+}
+
+// RecoverStale requeues or fails running webhook jobs that have not updated recently.
+func (r *WebhookJobRepository) RecoverStale(ctx context.Context, staleBefore time.Time, maxAttempts int, failureMessage string) (JobRecoveryResult, error) {
+	tx, err := r.db.Pool.Begin(ctx)
+	if err != nil {
+		return JobRecoveryResult{}, fmt.Errorf("begin webhook job recovery tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	requeued, err := tx.Exec(ctx, `
+		UPDATE webhook_jobs
+		SET status = 'accepted',
+		    worker_id = '',
+		    last_error = '',
+		    next_attempt_at = now(),
+		    started_at = NULL,
+		    updated_at = now()
+		WHERE status = 'running'
+		  AND updated_at < $1
+		  AND attempts < $2`, staleBefore, maxAttempts,
+	)
+	if err != nil {
+		return JobRecoveryResult{}, err
+	}
+
+	failed, err := tx.Exec(ctx, `
+		UPDATE webhook_jobs
+		SET status = 'failed',
+		    last_error = $3,
+		    completed_at = now(),
+		    updated_at = now()
+		WHERE status = 'running'
+		  AND updated_at < $1
+		  AND attempts >= $2`, staleBefore, maxAttempts, failureMessage,
+	)
+	if err != nil {
+		return JobRecoveryResult{}, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return JobRecoveryResult{}, fmt.Errorf("commit webhook job recovery tx: %w", err)
+	}
+	return JobRecoveryResult{Requeued: requeued.RowsAffected(), Failed: failed.RowsAffected()}, nil
 }
 
 // List returns webhook jobs filtered by status.
@@ -101,7 +162,7 @@ func (r *WebhookJobRepository) ListFiltered(ctx context.Context, filter JobListF
 	}
 
 	listQuery := `
-		SELECT id, webhook_id, project_id, event, payload, status, trace_parent, trace_state, worker_id, attempts,
+		SELECT id, webhook_id, project_id, event, payload, payload_hash, status, trace_parent, trace_state, worker_id, attempts,
 		       last_error, last_response_code, last_response_body, next_attempt_at,
 		       created_at, updated_at, started_at, completed_at
 		FROM webhook_jobs` + where + " ORDER BY created_at DESC, id DESC"
@@ -151,7 +212,7 @@ func (r *WebhookJobRepository) ClaimNext(ctx context.Context, workerID string) (
 		    updated_at = now()
 		FROM next_job
 		WHERE j.id = next_job.id
-			RETURNING j.id, j.webhook_id, j.project_id, j.event, j.payload, j.status, j.trace_parent, j.trace_state, j.worker_id,
+			RETURNING j.id, j.webhook_id, j.project_id, j.event, j.payload, j.payload_hash, j.status, j.trace_parent, j.trace_state, j.worker_id,
 		          j.attempts, j.last_error, j.last_response_code, j.last_response_body,
 		          j.next_attempt_at, j.created_at, j.updated_at, j.started_at, j.completed_at`, workerID,
 	))
@@ -320,6 +381,7 @@ func scanWebhookJobRow(row pgx.Row) (*WebhookJob, error) {
 		&projectID,
 		&job.Event,
 		&job.Payload,
+		&job.PayloadHash,
 		&job.Status,
 		&traceParent,
 		&traceState,

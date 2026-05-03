@@ -13,12 +13,14 @@ import (
 	"github.com/scovl/ollanta/ollantastore/postgres"
 	"github.com/scovl/ollanta/ollantaweb/config"
 	"github.com/scovl/ollanta/ollantaweb/ingest"
+	appruntime "github.com/scovl/ollanta/ollantaweb/internal/runtime"
 	"github.com/scovl/ollanta/ollantaweb/webhook"
 )
 
 func main() {
 	cfg := config.MustLoad()
 	slog.SetDefault(telemetry.SetupLogger(cfg.LogLevel, "service", "ollantaworker", "role", "worker"))
+	cfg.LogStartupWarnings()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -33,15 +35,15 @@ func main() {
 		}
 	}()
 
-	db, err := postgres.New(ctx, cfg.DatabaseURL)
+	db, err := postgres.New(ctx, cfg.DatabaseURL, cfg.PostgresPool)
 	if err != nil {
 		slog.Error("connect postgres", "error", err)
 		os.Exit(1)
 	}
 	defer db.Close()
 
-	if err := db.Migrate(ctx); err != nil {
-		slog.Error("migrate database", "error", err)
+	if err := appruntime.PrepareDatabase(ctx, db, cfg.AutoMigrate); err != nil {
+		slog.Error("prepare database", "auto_migrate", cfg.AutoMigrate, "error", err)
 		os.Exit(1)
 	}
 
@@ -62,10 +64,14 @@ func main() {
 	workerID := fmt.Sprintf("%s-%d", hostname, os.Getpid())
 	metricsReg := telemetry.NewRegistry()
 	appMetrics := telemetry.NewMetrics(metricsReg)
-	telemetry.StartAdminServer(ctx, cfg.AdminAddr, metricsReg, nil)
+	appruntime.StartDatabaseMetricsLoop(ctx, db, metricsReg, 30*time.Second)
+	telemetry.StartAdminServer(ctx, cfg.AdminAddr, metricsReg, appruntime.ReadyCheck(
+		appruntime.NamedHealthCheck{Name: "postgres", Check: db},
+	))
 
 	indexEnqueuer := ingest.NewIndexJobEnqueuer(indexJobRepo)
 	webhookDispatcher := webhook.NewDispatcher(webhookRepo, webhookJobRepo, workerID, appMetrics)
+	ingest.StartJobRecoveryLoop(ctx, "scan", scanJobRepo, cfg.ScanJobRecovery, appMetrics)
 
 	processor := ingest.NewScanJobProcessor(
 		workerID,

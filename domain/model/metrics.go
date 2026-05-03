@@ -48,7 +48,12 @@ var builtinMetrics = []MetricDef{
 	{Key: MetricMutantsKilled, Name: "Killed Mutants", Type: "int", Domain: "Testability", Levels: []string{"project"}},
 	{Key: MetricMutantsSurvived, Name: "Survived Mutants", Type: "int", Domain: "Testability", Levels: []string{"project"}},
 	{Key: MetricMutantsTimeout, Name: "Timed Out Mutants", Type: "int", Domain: "Testability", Levels: []string{"project"}},
+	{Key: MetricMutantsSkipped, Name: "Skipped Mutants", Type: "int", Domain: "Testability", Levels: []string{"project"}},
 	{Key: MetricMutantsError, Name: "Errored Mutants", Type: "int", Domain: "Testability", Levels: []string{"project"}},
+	{Key: MetricChangedMutationScore, Name: "Changed Code Mutation Score", Type: "percent", Domain: "Testability", Levels: []string{"project"}},
+	{Key: MetricChangedMutantsTotal, Name: "Changed Code Mutants", Type: "int", Domain: "Testability", Levels: []string{"project"}},
+	{Key: MetricChangedMutantsKilled, Name: "Changed Code Killed Mutants", Type: "int", Domain: "Testability", Levels: []string{"project"}},
+	{Key: MetricChangedMutantsSurvived, Name: "Changed Code Survived Mutants", Type: "int", Domain: "Testability", Levels: []string{"project"}},
 }
 
 // AllMetrics returns a copy of all built-in MetricDefs.

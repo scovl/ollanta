@@ -18,6 +18,10 @@ func normalizeModuleSignals(projectDir string, module *TestModuleSignal, opts Te
 		switch report.Kind {
 		case "native":
 			mergeNativeReport(fullPath, module, diagnostics)
+		case "native_mutation":
+			mergeNativeMutationReport(projectDir, module, fullPath, opts, diagnostics)
+		case "mutation":
+			mergeMutationReport(projectDir, module, fullPath, opts, diagnostics)
 		case "test":
 			mergeJUnitReport(fullPath, module, diagnostics)
 		case "coverage", "candidate":
@@ -28,6 +32,7 @@ func normalizeModuleSignals(projectDir string, module *TestModuleSignal, opts Te
 		}
 	}
 	mergeSuites(module)
+	classifyModuleSuites(module)
 	summarizeModuleSignals(module)
 }
 
@@ -67,6 +72,8 @@ func mergeCoverageReport(projectDir, path string, module *TestModuleSignal, opts
 		mergeGoCoverReport(projectDir, path, module, opts, diagnostics)
 	case strings.HasSuffix(lower, ".xml"):
 		mergeCoberturaLikeReport(projectDir, path, module, opts, diagnostics)
+	default:
+		*diagnostics = append(*diagnostics, TestSignalDiagnostic{Level: "warn", Code: "report_format_unsupported", Message: "test report candidate format is not supported", Module: module.Name, Path: path})
 	}
 }
 
@@ -82,35 +89,55 @@ func mergeGoCoverReport(projectDir, path string, module *TestModuleSignal, opts 
 	unmappedPaths := map[string]bool{}
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "mode:") {
-			continue
-		}
-		fields := strings.Fields(line)
-		if len(fields) < 3 {
-			continue
-		}
-		count, _ := strconv.Atoi(fields[2])
-		fileRange := fields[0]
-		colon := strings.LastIndex(fileRange, ":")
-		comma := strings.Index(fileRange, ",")
-		if colon < 0 || comma < colon {
-			continue
-		}
-		reportPath := fileRange[:colon]
-		startLine := parseLineNumber(fileRange[colon+1 : comma])
-		endLine := parseLineNumber(fileRange[comma+1:])
-		normalized, ok := normalizeCachedReportPath(projectDir, module, reportPath, opts, diagnostics, normalizedPaths, unmappedPaths)
+		segment, ok := parseGoCoverLine(scanner.Text())
 		if !ok {
 			continue
 		}
-		if count > 0 {
-			addLineRange(covered, normalized, startLine, endLine, true)
+		normalized, ok := normalizeCachedReportPath(projectDir, module, segment.Path, opts, diagnostics, normalizedPaths, unmappedPaths)
+		if !ok {
+			continue
+		}
+		if segment.Count > 0 {
+			addLineRange(covered, normalized, segment.StartLine, segment.EndLine, true)
 		} else {
-			addLineRange(uncovered, normalized, startLine, endLine, true)
+			addLineRange(uncovered, normalized, segment.StartLine, segment.EndLine, true)
 		}
 	}
+	if err := scanner.Err(); err != nil {
+		*diagnostics = append(*diagnostics, TestSignalDiagnostic{Level: "warn", Code: "coverage_report_read_error", Message: "coverage report scanning stopped before EOF", Module: module.Name, Path: cleanRel(projectDir, path)})
+	}
 	appendCoverageFiles(module, covered, uncovered)
+}
+
+type goCoverSegment struct {
+	Path      string
+	StartLine int
+	EndLine   int
+	Count     int
+}
+
+func parseGoCoverLine(raw string) (goCoverSegment, bool) {
+	line := strings.TrimSpace(raw)
+	if line == "" || strings.HasPrefix(line, "mode:") {
+		return goCoverSegment{}, false
+	}
+	fields := strings.Fields(line)
+	if len(fields) < 3 {
+		return goCoverSegment{}, false
+	}
+	count, _ := strconv.Atoi(fields[2])
+	fileRange := fields[0]
+	colon := strings.LastIndex(fileRange, ":")
+	comma := strings.Index(fileRange, ",")
+	if colon < 0 || comma < colon {
+		return goCoverSegment{}, false
+	}
+	return goCoverSegment{
+		Path:      fileRange[:colon],
+		StartLine: parseLineNumber(fileRange[colon+1 : comma]),
+		EndLine:   parseLineNumber(fileRange[comma+1:]),
+		Count:     count,
+	}, true
 }
 
 func normalizeCachedReportPath(projectDir string, module *TestModuleSignal, reportPath string, opts TestOptions, diagnostics *[]TestSignalDiagnostic, normalizedPaths map[string]string, unmappedPaths map[string]bool) (string, bool) {
@@ -170,6 +197,7 @@ func mergeLCOVReport(projectDir, path string, module *TestModuleSignal, opts Tes
 func mergeCoberturaLikeReport(projectDir, path string, module *TestModuleSignal, opts TestOptions, diagnostics *[]TestSignalDiagnostic) {
 	data, err := os.ReadFile(path)
 	if err != nil {
+		*diagnostics = append(*diagnostics, TestSignalDiagnostic{Level: "warn", Code: "coverage_report_read_error", Message: "coverage report could not be read", Module: module.Name, Path: cleanRel(projectDir, path)})
 		return
 	}
 	var doc struct {
@@ -184,15 +212,21 @@ func mergeCoberturaLikeReport(projectDir, path string, module *TestModuleSignal,
 		} `xml:"packages>package"`
 	}
 	if err := xml.Unmarshal(data, &doc); err != nil {
+		*diagnostics = append(*diagnostics, TestSignalDiagnostic{Level: "warn", Code: "coverage_report_invalid", Message: "coverage XML report could not be decoded", Module: module.Name, Path: cleanRel(projectDir, path)})
 		return
 	}
 	covered := map[string]map[int]bool{}
 	uncovered := map[string]map[int]bool{}
 	state := coberturaMergeState{projectDir: projectDir, module: module, opts: opts, diagnostics: diagnostics, covered: covered, uncovered: uncovered}
+	parsedClasses := 0
 	for _, pkg := range doc.Packages {
 		for _, class := range pkg.Classes {
+			parsedClasses++
 			state.mergeClass(class.Filename, class.Lines)
 		}
+	}
+	if parsedClasses == 0 {
+		*diagnostics = append(*diagnostics, TestSignalDiagnostic{Level: "warn", Code: "report_format_unsupported", Message: "coverage XML candidate is not a supported Cobertura-style report", Module: module.Name, Path: cleanRel(projectDir, path)})
 	}
 	appendCoverageFiles(module, covered, uncovered)
 }
@@ -268,7 +302,7 @@ type junitTestCase struct {
 }
 
 func (s junitSuite) toSignal() TestSuiteSignal {
-	signal := TestSuiteSignal{Name: s.Name, Kind: "unit", Tests: s.Tests, Failures: s.Failures, Errors: s.Errors, Skipped: s.Skipped, DurationMs: secondsStringToMs(s.Time)}
+	signal := TestSuiteSignal{Name: s.Name, Tests: s.Tests, Failures: s.Failures, Errors: s.Errors, Skipped: s.Skipped, DurationMs: secondsStringToMs(s.Time), Source: "junit", Availability: EvidenceAvailabilityAvailable}
 	for _, testCase := range s.TestCases {
 		status := "passed"
 		message := ""
@@ -292,6 +326,70 @@ func (s junitSuite) toSignal() TestSuiteSignal {
 		signal.Passed = 0
 	}
 	return signal
+}
+
+func classifyModuleSuites(module *TestModuleSignal) {
+	if module == nil {
+		return
+	}
+	module.SuiteKind = normalizedSuiteKind(module.SuiteKind)
+	if module.EvidenceConfidence == "" {
+		module.EvidenceConfidence = confidenceForSuiteKind(module.SuiteKind)
+	}
+	for index := range module.Suites {
+		suite := &module.Suites[index]
+		suite.Kind = classifySuiteKind(firstNonEmpty(suite.Kind, module.SuiteKind), suite.Name)
+		if suite.Confidence == "" {
+			suite.Confidence = confidenceForSuiteKind(suite.Kind)
+		}
+		if suite.Source == "" {
+			suite.Source = "report"
+		}
+		if suite.Availability == "" {
+			suite.Availability = EvidenceAvailabilityAvailable
+		}
+	}
+	if len(module.Suites) > 0 {
+		module.Availability = EvidenceAvailabilityAvailable
+		return
+	}
+	if module.Availability == "" {
+		module.Availability = EvidenceAvailabilityUnavailable
+	}
+}
+
+func classifySuiteKind(configuredKind, suiteName string) string {
+	if configuredKind != "" && configuredKind != SuiteKindUnknown {
+		return configuredKind
+	}
+	name := strings.ToLower(suiteName)
+	switch {
+	case strings.Contains(name, "integration") || strings.Contains(name, "it."):
+		return SuiteKindIntegration
+	case strings.Contains(name, "contract"):
+		return SuiteKindContract
+	case strings.Contains(name, "component"):
+		return SuiteKindComponent
+	case strings.Contains(name, "functional"):
+		return SuiteKindFunctional
+	case strings.Contains(name, "e2e") || strings.Contains(name, "end-to-end"):
+		return SuiteKindE2E
+	default:
+		return SuiteKindUnknown
+	}
+}
+
+func confidenceForSuiteKind(kind string) string {
+	switch kind {
+	case SuiteKindUnit, SuiteKindIntegration, SuiteKindContract, SuiteKindComponent:
+		return EvidenceConfidenceHigh
+	case SuiteKindFunctional, SuiteKindE2E:
+		return EvidenceConfidenceMedium
+	case SuiteKindUnknown:
+		return EvidenceConfidenceLow
+	default:
+		return EvidenceConfidenceLow
+	}
 }
 
 func parseLineNumber(value string) int {
@@ -469,22 +567,50 @@ func recountSuiteCases(suite *TestSuiteSignal) {
 
 func normalizeReportPath(projectDir string, module *TestModuleSignal, reportPath string, opts TestOptions, diagnostics *[]TestSignalDiagnostic) (string, bool) {
 	path := filepath.Clean(reportPath)
-	for _, mapping := range opts.PathMappings {
-		from := filepath.Clean(mapping.From)
-		if strings.HasPrefix(path, from) {
-			mapped := filepath.Join(projectDir, filepath.FromSlash(mapping.To), strings.TrimPrefix(path, from))
-			return cleanRel(projectDir, mapped), true
-		}
+	if normalized, ok, handled := normalizeMappedReportPath(projectDir, module, path, reportPath, opts, diagnostics); handled {
+		return normalized, ok
 	}
 	if filepath.IsAbs(path) {
-		if rel, err := filepath.Rel(projectDir, path); err == nil && !strings.HasPrefix(rel, "..") {
-			return filepath.ToSlash(filepath.Clean(rel)), true
-		}
-		return suffixMatchPath(projectDir, module, path, diagnostics)
+		return normalizeAbsoluteReportPath(projectDir, module, path, opts, diagnostics)
 	}
+	return normalizeRelativeReportPath(projectDir, module, path, reportPath, diagnostics)
+}
+
+func normalizeMappedReportPath(projectDir string, module *TestModuleSignal, path string, originalPath string, opts TestOptions, diagnostics *[]TestSignalDiagnostic) (string, bool, bool) {
+	for _, mapping := range opts.PathMappings {
+		from := filepath.Clean(mapping.From)
+		if pathHasBoundaryPrefix(path, from) {
+			mapped := filepath.Join(projectDir, filepath.FromSlash(mapping.To), strings.TrimPrefix(path, from))
+			if !pathWithinProject(projectDir, mapped) {
+				*diagnostics = append(*diagnostics, TestSignalDiagnostic{Level: "warn", Code: "path_mapping_escape", Message: "path mapping resolved outside the project directory", Module: module.Name, Path: originalPath})
+				return "", false, true
+			}
+			return cleanRel(projectDir, mapped), true, true
+		}
+	}
+	return "", false, false
+}
+
+func normalizeAbsoluteReportPath(projectDir string, module *TestModuleSignal, path string, opts TestOptions, diagnostics *[]TestSignalDiagnostic) (string, bool) {
+	if rel, err := filepath.Rel(projectDir, path); err == nil && !strings.HasPrefix(rel, "..") {
+		return filepath.ToSlash(filepath.Clean(rel)), true
+	}
+	if opts.AllowExternalArtifacts || module.AllowExternalArtifacts {
+		*diagnostics = append(*diagnostics, TestSignalDiagnostic{Level: "info", Code: "external_artifact_path", Message: "external artifact path was allowed explicitly", Module: module.Name, Path: path})
+		return filepath.ToSlash(filepath.Clean(path)), true
+	}
+	*diagnostics = append(*diagnostics, TestSignalDiagnostic{Level: "warn", Code: "external_artifact_denied", Message: "absolute report path outside the project requires allow_external_artifacts", Module: module.Name, Path: path})
+	return suffixMatchPath(projectDir, module, path, diagnostics)
+}
+
+func normalizeRelativeReportPath(projectDir string, module *TestModuleSignal, path string, originalPath string, diagnostics *[]TestSignalDiagnostic) (string, bool) {
 	candidate := filepath.Join(projectDir, filepath.FromSlash(module.Root), path)
 	if module.Root == "." {
 		candidate = filepath.Join(projectDir, path)
+	}
+	if !pathWithinProject(projectDir, candidate) {
+		*diagnostics = append(*diagnostics, TestSignalDiagnostic{Level: "warn", Code: "report_path_escape", Message: "relative report path escapes the project directory", Module: module.Name, Path: originalPath})
+		return "", false
 	}
 	if _, err := os.Stat(candidate); err == nil {
 		return cleanRel(projectDir, candidate), true
@@ -519,6 +645,7 @@ func suffixMatchPath(projectDir string, module *TestModuleSignal, reportPath str
 	var matches []string
 	_ = filepath.WalkDir(projectDir, func(path string, entry os.DirEntry, err error) error {
 		if err != nil {
+			*diagnostics = append(*diagnostics, TestSignalDiagnostic{Level: "warn", Code: "path_walk_error", Message: "project file walk hit an inaccessible path", Module: module.Name, Path: path})
 			return nil
 		}
 		rel := cleanRel(projectDir, path)
@@ -545,6 +672,24 @@ func suffixMatchPath(projectDir string, module *TestModuleSignal, reportPath str
 	}
 	*diagnostics = append(*diagnostics, TestSignalDiagnostic{Level: "warn", Code: "path_out_of_project", Message: "report path could not be mapped to a project file", Module: module.Name, Path: reportPath})
 	return "", false
+}
+
+func pathHasBoundaryPrefix(path, prefix string) bool {
+	path = filepath.Clean(path)
+	prefix = filepath.Clean(prefix)
+	if path == prefix {
+		return true
+	}
+	return strings.HasPrefix(path, prefix+string(os.PathSeparator)) || strings.HasPrefix(filepath.ToSlash(path), filepath.ToSlash(prefix)+"/")
+}
+
+func pathWithinProject(projectDir, path string) bool {
+	rel, err := filepath.Rel(projectDir, filepath.Clean(path))
+	if err != nil {
+		return false
+	}
+	rel = filepath.Clean(rel)
+	return rel == "." || (!strings.HasPrefix(rel, "..") && !filepath.IsAbs(rel))
 }
 
 func isOutOfProjectOrGenerated(path string) bool {

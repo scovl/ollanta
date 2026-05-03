@@ -246,8 +246,62 @@ main {
 }
 .tab.active .tab-badge { background: var(--accent-dim); color: var(--accent); }
 
+.mono { font-family: var(--font-mono); }
+
 /* ── Panel common ──────────────────────────────────────────────────────── */
 .panel { margin-top: 20px; }
+
+.mutation-summary { display: grid; gap: 12px; }
+.mutation-kpis {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.mutation-kpis > div {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 10px 12px;
+  display: grid;
+  gap: 2px;
+}
+.mutation-kpi-value { font-size: 20px; font-weight: 800; line-height: 1.1; }
+.mutation-kpi-label { color: var(--text-muted); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+.mutation-module-list,
+.mutation-survivors { display: grid; gap: 8px; }
+.mutation-module-row,
+.mutation-survivor-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 9px 11px;
+  min-width: 0;
+}
+.mutation-module-main { min-width: 0; flex: 1; display: grid; gap: 1px; }
+.mutation-module-name,
+.mutation-survivor-file { color: var(--text); font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mutation-module-meta,
+.mutation-survivor-meta { color: var(--text-muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mutation-pill { border-radius: 999px; padding: 2px 8px; font-size: 12px; font-weight: 700; border: 1px solid var(--border); }
+.mutation-survived { font-size: 12px; white-space: nowrap; }
+.mutation-kpi-value.card-green,
+.mutation-pill.card-green,
+.mut-success { color: var(--gate-passed); }
+.mutation-kpi-value.card-yellow,
+.mutation-pill.card-yellow,
+.mut-warning { color: #eab308; }
+.mutation-kpi-value.card-red,
+.mutation-pill.card-red { color: var(--gate-failed); }
+.mutation-kpi-value.card-neutral,
+.mutation-pill.card-neutral { color: var(--text-muted); }
+
+@media (max-width: 640px) {
+  .mutation-kpis { grid-template-columns: 1fr; }
+  .mutation-module-row { align-items: flex-start; flex-direction: column; }
+}
 
 /* ── Overview composition ─────────────────────────────────────────────── */
 .overview-layout {

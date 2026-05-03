@@ -1,11 +1,43 @@
 # Database Schema
 
-Ollanta uses **PostgreSQL 17** as its primary data store. The schema is managed by 19 sequential migrations in `ollantastore/postgres/migrations/`.
+Ollanta uses **PostgreSQL 17** as its primary data store. The schema is managed by 26 sequential migrations in `ollantastore/postgres/migrations/`.
 
 Key design choices:
 - **Partitioned `issues` table** — range-partitioned by `created_at` for fast queries on recent scans
 - **COPY protocol** for bulk insert of issues and measures (up to 50× faster than INSERT)
-- **pgx/v5 connection pool** — max 25 connections, 5 min idle timeout
+- **pgx/v5 connection pool** — configurable per process so API and workers can be sized independently
+
+## Migrations
+
+Schema migrations are embedded in `ollantastore/postgres/migrations/` and are applied under a PostgreSQL advisory lock, so multiple replicas cannot apply the same migration concurrently.
+
+Local development keeps `auto_migrate = true` by default. Production deployments can set `OLLANTA_AUTO_MIGRATE=false` on API and worker roles, then run the dedicated migrator as a deploy job:
+
+```bash
+docker compose --profile migrate run --rm ollantamigrate
+```
+
+When auto-migration is disabled, API and worker startup verifies that the latest embedded migration is already present in `schema_migrations` and fails fast if the schema is stale.
+
+### PostgreSQL Pool Sizing
+
+Each API or worker pod owns its own `pgxpool`. Size the cluster-wide connection budget by multiplying per-pod pool limits by the maximum replica count of every role:
+
+```text
+total_connections = sum(max_replicas(role) * OLLANTA_POSTGRES_MAX_CONNS(role)) + reserved_admin_connections
+```
+
+Start conservatively. API pods usually need more concurrent connections than indexer or webhook workers, while scan workers need enough connections for bulk ingest. The runtime supports these settings:
+
+| Variable | Purpose |
+|----------|---------|
+| `OLLANTA_POSTGRES_MAX_CONNS` | Maximum open connections per process |
+| `OLLANTA_POSTGRES_MIN_CONNS` | Warm idle floor per process |
+| `OLLANTA_POSTGRES_MAX_CONN_LIFETIME` | Maximum connection age before rotation |
+| `OLLANTA_POSTGRES_MAX_CONN_IDLE_TIME` | Maximum idle time before closing a connection |
+| `OLLANTA_POSTGRES_HEALTH_CHECK_PERIOD` | Pool health check cadence |
+
+Prometheus metrics expose `ollanta_db_pool_acquired_conns`, `ollanta_db_pool_idle_conns`, `ollanta_db_pool_total_conns`, and `ollanta_db_health` from each role. Alert when acquired connections stay close to max for several minutes or when health drops to `0`.
 
 ## Entity Relationship Diagram
 
@@ -413,6 +445,8 @@ Defines how "new code" is determined for quality gate evaluation.
 | 022 | `add_branch_aware_analysis` | Branch and pull request metadata on scans/code snapshots |
 | 023 | `add_job_trace_context` | Trace context on durable jobs |
 | 024 | `add_issue_tracking_state` | `tracking_state` on issues |
+| 025 | `allow_cancelled_jobs` | Cancelled durable job status support |
+| 026 | `add_job_idempotency_and_dedupe` | Scan idempotency fields, payload hashes, attempts, and active job dedupe indexes |
 
 ## ETL Recommendations
 

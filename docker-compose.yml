@@ -20,6 +20,7 @@
 # Server usage:
 #
 #   # Start PostgreSQL + ZincSearch + ollantaweb API + workers
+#   # Set PG_PASSWORD in your shell or .env before starting the server profile.
 #   docker compose --profile server up -d
 #
 #   # Start the local observability stack alongside the server profile
@@ -61,6 +62,7 @@ services:
       - -project-dir=/project
       - -project-key=${PROJECT_KEY:-project}
       - -format=all
+      - -with-mutations
       - -local-ui
       - -bind=0.0.0.0
       - -port=7777
@@ -81,6 +83,7 @@ services:
       - -project-dir=/project
       - -project-key=${PROJECT_KEY:-project}
       - -format=all
+      - -with-mutations
     restart: "no"
     profiles: ["scanner"]
 
@@ -98,6 +101,7 @@ services:
       - -project-dir=/project
       - -project-key=${PROJECT_KEY:-project}
       - -format=all
+      - -with-mutations
       - -server=${OLLANTA_SERVER:-http://ollantaweb:8080}
       - -server-token=${OLLANTA_TOKEN:-ollanta-dev-scanner-token}
       - -server-wait=${OLLANTA_SERVER_WAIT:-false}
@@ -157,11 +161,19 @@ services:
         condition: service_started
     environment:
       OLLANTA_ADDR: ":8080"
-      OLLANTA_DATABASE_URL: "postgres://ollanta:${PG_PASSWORD:-ollanta_dev}@postgres:5432/ollanta?sslmode=disable"
+      OLLANTA_DATABASE_URL: "postgres://ollanta:${PG_PASSWORD-}@postgres:5432/ollanta?sslmode=disable"
       OLLANTA_ZINCSEARCH_URL: "http://zincsearch:4080"
       OLLANTA_ZINCSEARCH_USER: "${ZINC_USER:-admin}"
       OLLANTA_ZINCSEARCH_PASSWORD: "${ZINC_PASSWORD:-ollanta_dev}"
       OLLANTA_LOG_LEVEL: "info"
+      OLLANTA_JWT_SECRET: "${OLLANTA_JWT_SECRET:-ollanta-dev-jwt-secret-change-me}"
+      OLLANTA_AUTO_MIGRATE: "${OLLANTA_AUTO_MIGRATE:-true}"
+      OLLANTA_CORS_ALLOWED_ORIGINS: "${OLLANTA_CORS_ALLOWED_ORIGINS:-http://localhost:8080}"
+      OLLANTA_HTTP_MAX_BODY_BYTES: "${OLLANTA_HTTP_MAX_BODY_BYTES:-10485760}"
+      OLLANTA_SCAN_QUEUE_MAX_ACCEPTED: "${OLLANTA_SCAN_QUEUE_MAX_ACCEPTED:-0}"
+      OLLANTA_SCAN_QUEUE_MAX_RUNNING: "${OLLANTA_SCAN_QUEUE_MAX_RUNNING:-0}"
+      OLLANTA_SCAN_QUEUE_MAX_OLDEST_ACCEPTED_AGE: "${OLLANTA_SCAN_QUEUE_MAX_OLDEST_ACCEPTED_AGE:-0s}"
+      OLLANTA_SCAN_QUEUE_RETRY_AFTER: "${OLLANTA_SCAN_QUEUE_RETRY_AFTER:-30s}"
       OTEL_EXPORTER_OTLP_ENDPOINT: "${OTEL_EXPORTER_OTLP_ENDPOINT:-http://jaeger:4318}"
       OLLANTA_SCANNER_TOKEN: "${OLLANTA_SCANNER_TOKEN:-ollanta-dev-scanner-token}"
       OLLANTA_OBSERVABILITY_LINKS: "${OLLANTA_OBSERVABILITY_LINKS:-}"
@@ -184,8 +196,13 @@ services:
         condition: service_started
     environment:
       OLLANTA_ADMIN_ADDR: ":9090"
-      OLLANTA_DATABASE_URL: "postgres://ollanta:${PG_PASSWORD:-ollanta_dev}@postgres:5432/ollanta?sslmode=disable"
+      OLLANTA_DATABASE_URL: "postgres://ollanta:${PG_PASSWORD-}@postgres:5432/ollanta?sslmode=disable"
       OLLANTA_LOG_LEVEL: "info"
+      OLLANTA_JWT_SECRET: "${OLLANTA_JWT_SECRET:-ollanta-dev-jwt-secret-change-me}"
+      OLLANTA_AUTO_MIGRATE: "${OLLANTA_AUTO_MIGRATE:-true}"
+      OLLANTA_SCAN_JOB_STALE_AFTER: "${OLLANTA_SCAN_JOB_STALE_AFTER:-15m}"
+      OLLANTA_SCAN_JOB_MAX_ATTEMPTS: "${OLLANTA_SCAN_JOB_MAX_ATTEMPTS:-3}"
+      OLLANTA_SCAN_JOB_RECOVERY_INTERVAL: "${OLLANTA_SCAN_JOB_RECOVERY_INTERVAL:-1m}"
       OTEL_EXPORTER_OTLP_ENDPOINT: "${OTEL_EXPORTER_OTLP_ENDPOINT:-http://jaeger:4318}"
     restart: unless-stopped
     profiles: ["server"]
@@ -204,11 +221,16 @@ services:
         condition: service_started
     environment:
       OLLANTA_ADMIN_ADDR: ":9090"
-      OLLANTA_DATABASE_URL: "postgres://ollanta:${PG_PASSWORD:-ollanta_dev}@postgres:5432/ollanta?sslmode=disable"
+      OLLANTA_DATABASE_URL: "postgres://ollanta:${PG_PASSWORD-}@postgres:5432/ollanta?sslmode=disable"
       OLLANTA_ZINCSEARCH_URL: "http://zincsearch:4080"
       OLLANTA_ZINCSEARCH_USER: "${ZINC_USER:-admin}"
       OLLANTA_ZINCSEARCH_PASSWORD: "${ZINC_PASSWORD:-ollanta_dev}"
       OLLANTA_LOG_LEVEL: "info"
+      OLLANTA_JWT_SECRET: "${OLLANTA_JWT_SECRET:-ollanta-dev-jwt-secret-change-me}"
+      OLLANTA_AUTO_MIGRATE: "${OLLANTA_AUTO_MIGRATE:-true}"
+      OLLANTA_INDEX_JOB_STALE_AFTER: "${OLLANTA_INDEX_JOB_STALE_AFTER:-15m}"
+      OLLANTA_INDEX_JOB_MAX_ATTEMPTS: "${OLLANTA_INDEX_JOB_MAX_ATTEMPTS:-3}"
+      OLLANTA_INDEX_JOB_RECOVERY_INTERVAL: "${OLLANTA_INDEX_JOB_RECOVERY_INTERVAL:-1m}"
       OTEL_EXPORTER_OTLP_ENDPOINT: "${OTEL_EXPORTER_OTLP_ENDPOINT:-http://jaeger:4318}"
     restart: unless-stopped
     profiles: ["server"]
@@ -225,11 +247,33 @@ services:
         condition: service_healthy
     environment:
       OLLANTA_ADMIN_ADDR: ":9090"
-      OLLANTA_DATABASE_URL: "postgres://ollanta:${PG_PASSWORD:-ollanta_dev}@postgres:5432/ollanta?sslmode=disable"
+      OLLANTA_DATABASE_URL: "postgres://ollanta:${PG_PASSWORD-}@postgres:5432/ollanta?sslmode=disable"
       OLLANTA_LOG_LEVEL: "info"
+      OLLANTA_JWT_SECRET: "${OLLANTA_JWT_SECRET:-ollanta-dev-jwt-secret-change-me}"
+      OLLANTA_AUTO_MIGRATE: "${OLLANTA_AUTO_MIGRATE:-true}"
+      OLLANTA_WEBHOOK_JOB_STALE_AFTER: "${OLLANTA_WEBHOOK_JOB_STALE_AFTER:-15m}"
+      OLLANTA_WEBHOOK_JOB_MAX_ATTEMPTS: "${OLLANTA_WEBHOOK_JOB_MAX_ATTEMPTS:-3}"
+      OLLANTA_WEBHOOK_JOB_RECOVERY_INTERVAL: "${OLLANTA_WEBHOOK_JOB_RECOVERY_INTERVAL:-1m}"
       OTEL_EXPORTER_OTLP_ENDPOINT: "${OTEL_EXPORTER_OTLP_ENDPOINT:-http://jaeger:4318}"
     restart: unless-stopped
     profiles: ["server"]
+
+  # ollantamigrate: one-shot schema migration operation for deploy jobs
+  ollantamigrate:
+    image: ollanta-server:latest
+    build:
+      context: .
+      dockerfile: ollantaweb/Dockerfile
+    entrypoint: ["/ollantamigrate"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      OLLANTA_DATABASE_URL: "postgres://ollanta:${PG_PASSWORD-}@postgres:5432/ollanta?sslmode=disable"
+      OLLANTA_LOG_LEVEL: "info"
+      OLLANTA_JWT_SECRET: "${OLLANTA_JWT_SECRET:-ollanta-dev-jwt-secret-change-me}"
+    restart: "no"
+    profiles: ["migrate"]
 
   # â”€â”€ prometheus: metrics scraping and local query UI â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   prometheus:

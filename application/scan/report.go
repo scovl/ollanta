@@ -14,9 +14,10 @@ import (
 	"time"
 
 	"github.com/scovl/ollanta/domain/model"
+	"github.com/scovl/ollanta/ollantacore/constants"
 )
 
-const Version = "0.1.0"
+const Version = constants.Version
 
 const (
 	DefaultCodeSnapshotMaxFileBytes  = 128 * 1024
@@ -25,26 +26,31 @@ const (
 
 // Measures holds basic size metrics and issue type counts aggregated across all scanned files.
 type Measures struct {
-	Files           int            `json:"files"`
-	Lines           int            `json:"lines"`
-	Ncloc           int            `json:"ncloc"`
-	Comments        int            `json:"comments"`
-	Bugs            int            `json:"bugs"`
-	CodeSmells      int            `json:"code_smells"`
-	Vulnerabilities int            `json:"vulnerabilities"`
-	Coverage        *float64       `json:"coverage,omitempty"`
-	Tests           int            `json:"tests,omitempty"`
-	TestFailures    int            `json:"test_failures,omitempty"`
-	TestErrors      int            `json:"test_errors,omitempty"`
-	TestSkipped     int            `json:"test_skipped,omitempty"`
-	TestDurationMs  int64          `json:"test_duration_ms,omitempty"`
-	MutationScore   *float64       `json:"mutation_score,omitempty"`
-	MutantsTotal    int            `json:"mutants_total,omitempty"`
-	MutantsKilled   int            `json:"mutants_killed,omitempty"`
-	MutantsSurvived int            `json:"mutants_survived,omitempty"`
-	MutantsTimeout  int            `json:"mutants_timeout,omitempty"`
-	MutantsError    int            `json:"mutants_error,omitempty"`
-	ByLang          map[string]int `json:"by_language"` // file count per language
+	Files                  int            `json:"files"`
+	Lines                  int            `json:"lines"`
+	Ncloc                  int            `json:"ncloc"`
+	Comments               int            `json:"comments"`
+	Bugs                   int            `json:"bugs"`
+	CodeSmells             int            `json:"code_smells"`
+	Vulnerabilities        int            `json:"vulnerabilities"`
+	Coverage               *float64       `json:"coverage,omitempty"`
+	Tests                  int            `json:"tests,omitempty"`
+	TestFailures           int            `json:"test_failures,omitempty"`
+	TestErrors             int            `json:"test_errors,omitempty"`
+	TestSkipped            int            `json:"test_skipped,omitempty"`
+	TestDurationMs         int64          `json:"test_duration_ms,omitempty"`
+	MutationScore          *float64       `json:"mutation_score,omitempty"`
+	MutantsTotal           int            `json:"mutants_total,omitempty"`
+	MutantsKilled          int            `json:"mutants_killed,omitempty"`
+	MutantsSurvived        int            `json:"mutants_survived,omitempty"`
+	MutantsTimeout         int            `json:"mutants_timeout,omitempty"`
+	MutantsSkipped         int            `json:"mutants_skipped,omitempty"`
+	MutantsError           int            `json:"mutants_error,omitempty"`
+	ChangedMutationScore   *float64       `json:"changed_mutation_score,omitempty"`
+	ChangedMutantsTotal    int            `json:"changed_mutants_total,omitempty"`
+	ChangedMutantsKilled   int            `json:"changed_mutants_killed,omitempty"`
+	ChangedMutantsSurvived int            `json:"changed_mutants_survived,omitempty"`
+	ByLang                 map[string]int `json:"by_language"` // file count per language
 }
 
 // Metadata describes the scan run context.
@@ -62,65 +68,122 @@ type Metadata struct {
 
 // ScannerOptions describes the scanner parameters used to produce a report.
 type ScannerOptions struct {
-	ConfigPath        string             `json:"config_path,omitempty"`
-	ProjectDir        string             `json:"project_dir,omitempty"`
-	Sources           []string           `json:"sources,omitempty"`
-	Exclusions        []string           `json:"exclusions,omitempty"`
-	ProjectKey        string             `json:"project_key,omitempty"`
-	Branch            string             `json:"branch,omitempty"`
-	CommitSHA         string             `json:"commit_sha,omitempty"`
-	PullRequestKey    string             `json:"pull_request_key,omitempty"`
-	PullRequestBranch string             `json:"pull_request_branch,omitempty"`
-	PullRequestBase   string             `json:"pull_request_base,omitempty"`
-	Format            string             `json:"format,omitempty"`
-	Debug             bool               `json:"debug,omitempty"`
-	LocalUI           bool               `json:"local_ui,omitempty"`
-	Port              int                `json:"port,omitempty"`
-	Bind              string             `json:"bind,omitempty"`
-	Server            string             `json:"server,omitempty"`
-	ServerWait        bool               `json:"server_wait,omitempty"`
-	WaitTimeout       string             `json:"server_wait_timeout,omitempty"`
-	WaitPoll          string             `json:"server_wait_poll,omitempty"`
-	Tests             ScannerTestOptions `json:"tests,omitempty"`
+	ConfigPath        string                 `json:"config_path,omitempty"`
+	ProjectDir        string                 `json:"project_dir,omitempty"`
+	Sources           []string               `json:"sources,omitempty"`
+	Exclusions        []string               `json:"exclusions,omitempty"`
+	ProjectKey        string                 `json:"project_key,omitempty"`
+	Branch            string                 `json:"branch,omitempty"`
+	CommitSHA         string                 `json:"commit_sha,omitempty"`
+	PullRequestKey    string                 `json:"pull_request_key,omitempty"`
+	PullRequestBranch string                 `json:"pull_request_branch,omitempty"`
+	PullRequestBase   string                 `json:"pull_request_base,omitempty"`
+	Format            string                 `json:"format,omitempty"`
+	Debug             bool                   `json:"debug,omitempty"`
+	LocalUI           bool                   `json:"local_ui,omitempty"`
+	Port              int                    `json:"port,omitempty"`
+	Bind              string                 `json:"bind,omitempty"`
+	Server            string                 `json:"server,omitempty"`
+	ServerWait        bool                   `json:"server_wait,omitempty"`
+	WaitTimeout       string                 `json:"server_wait_timeout,omitempty"`
+	WaitPoll          string                 `json:"server_wait_poll,omitempty"`
+	Tests             ScannerTestOptions     `json:"tests,omitempty"`
+	Mutations         ScannerMutationOptions `json:"mutations,omitempty"`
 }
 
 // ScannerTestOptions describes test-signal scanner parameters without secrets.
 type ScannerTestOptions struct {
-	Enabled        bool                       `json:"enabled,omitempty"`
-	Mode           string                     `json:"mode,omitempty"`
-	Discover       bool                       `json:"discover,omitempty"`
-	Run            bool                       `json:"run,omitempty"`
-	MaxReportAge   string                     `json:"max_report_age,omitempty"`
-	Exclusions     []string                   `json:"exclusions,omitempty"`
-	MaxDepth       int                        `json:"max_depth,omitempty"`
-	MaxCandidates  int                        `json:"max_candidates,omitempty"`
-	MaxReportBytes int64                      `json:"max_report_bytes,omitempty"`
-	CommandPolicy  string                     `json:"command_policy,omitempty"`
-	PathMappings   []TestPathMapping          `json:"path_mappings,omitempty"`
-	Modules        []ScannerTestModuleOptions `json:"modules,omitempty"`
+	Enabled                bool                       `json:"enabled,omitempty"`
+	Mode                   string                     `json:"mode,omitempty"`
+	Discover               bool                       `json:"discover,omitempty"`
+	Run                    bool                       `json:"run,omitempty"`
+	MaxRuntime             string                     `json:"max_runtime,omitempty"`
+	FailOnTimeout          bool                       `json:"fail_on_timeout,omitempty"`
+	MaxReportAge           string                     `json:"max_report_age,omitempty"`
+	Exclusions             []string                   `json:"exclusions,omitempty"`
+	MaxDepth               int                        `json:"max_depth,omitempty"`
+	MaxCandidates          int                        `json:"max_candidates,omitempty"`
+	MaxReportBytes         int64                      `json:"max_report_bytes,omitempty"`
+	CommandPolicy          string                     `json:"command_policy,omitempty"`
+	AllowExternalArtifacts bool                       `json:"allow_external_artifacts,omitempty"`
+	PathMappings           []TestPathMapping          `json:"path_mappings,omitempty"`
+	Modules                []ScannerTestModuleOptions `json:"modules,omitempty"`
 }
 
 // ScannerTestModuleOptions describes one configured test module.
 type ScannerTestModuleOptions struct {
-	Name                 string   `json:"name,omitempty"`
-	Root                 string   `json:"root,omitempty"`
-	Language             string   `json:"language,omitempty"`
-	ArchitectureRole     string   `json:"architecture_role,omitempty"`
-	TestPolicy           string   `json:"test_policy,omitempty"`
-	IgnoreReason         string   `json:"ignore_reason,omitempty"`
-	Command              string   `json:"command,omitempty"`
-	ArtifactRoot         string   `json:"artifact_root,omitempty"`
-	ReportRoot           string   `json:"report_root,omitempty"`
-	CoverageReports      []string `json:"coverage_reports,omitempty"`
-	TestReports          []string `json:"test_reports,omitempty"`
-	MutationReports      []string `json:"mutation_reports,omitempty"`
-	NativeReports        []string `json:"native_reports,omitempty"`
-	CoverageThreshold    *float64 `json:"coverage_threshold,omitempty"`
-	NewCoverageThreshold *float64 `json:"new_coverage_threshold,omitempty"`
-	MutationThreshold    *float64 `json:"mutation_threshold,omitempty"`
-	Owner                string   `json:"owner,omitempty"`
-	Team                 string   `json:"team,omitempty"`
-	IntegrationRequired  bool     `json:"integration_required,omitempty"`
+	Name                   string   `json:"name,omitempty"`
+	Root                   string   `json:"root,omitempty"`
+	Language               string   `json:"language,omitempty"`
+	ArchitectureRole       string   `json:"architecture_role,omitempty"`
+	TestPolicy             string   `json:"test_policy,omitempty"`
+	IgnoreReason           string   `json:"ignore_reason,omitempty"`
+	SuiteKind              string   `json:"suite_kind,omitempty"`
+	EvidenceConfidence     string   `json:"evidence_confidence,omitempty"`
+	Command                string   `json:"command,omitempty"`
+	ArtifactRoot           string   `json:"artifact_root,omitempty"`
+	ReportRoot             string   `json:"report_root,omitempty"`
+	AllowExternalArtifacts *bool    `json:"allow_external_artifacts,omitempty"`
+	CoverageReports        []string `json:"coverage_reports,omitempty"`
+	TestReports            []string `json:"test_reports,omitempty"`
+	MutationReports        []string `json:"mutation_reports,omitempty"`
+	NativeReports          []string `json:"native_reports,omitempty"`
+	CoverageThreshold      *float64 `json:"coverage_threshold,omitempty"`
+	NewCoverageThreshold   *float64 `json:"new_coverage_threshold,omitempty"`
+	MutationThreshold      *float64 `json:"mutation_threshold,omitempty"`
+	Owner                  string   `json:"owner,omitempty"`
+	Team                   string   `json:"team,omitempty"`
+	IntegrationRequired    bool     `json:"integration_required,omitempty"`
+}
+
+// ScannerMutationOptions describes mutation-signal scanner parameters without secrets.
+type ScannerMutationOptions struct {
+	Enabled                bool                           `json:"enabled,omitempty"`
+	Mode                   string                         `json:"mode,omitempty"`
+	Discover               bool                           `json:"discover,omitempty"`
+	Run                    bool                           `json:"run,omitempty"`
+	ChangedOnly            bool                           `json:"changed_only,omitempty"`
+	MaxRuntime             string                         `json:"max_runtime,omitempty"`
+	MaxMutants             int                            `json:"max_mutants,omitempty"`
+	Exclusions             []string                       `json:"exclusions,omitempty"`
+	MaxReportAge           string                         `json:"max_report_age,omitempty"`
+	MaxDepth               int                            `json:"max_depth,omitempty"`
+	MaxCandidates          int                            `json:"max_candidates,omitempty"`
+	MaxReportBytes         int64                          `json:"max_report_bytes,omitempty"`
+	CommandPolicy          string                         `json:"command_policy,omitempty"`
+	FailOnTimeout          bool                           `json:"fail_on_timeout,omitempty"`
+	AllowExternalArtifacts bool                           `json:"allow_external_artifacts,omitempty"`
+	PathMappings           []TestPathMapping              `json:"path_mappings,omitempty"`
+	Modules                []ScannerMutationModuleOptions `json:"modules,omitempty"`
+}
+
+// ScannerMutationModuleOptions describes one configured mutation module.
+type ScannerMutationModuleOptions struct {
+	Name                   string            `json:"name,omitempty"`
+	Root                   string            `json:"root,omitempty"`
+	Language               string            `json:"language,omitempty"`
+	ArchitectureRole       string            `json:"architecture_role,omitempty"`
+	Tool                   string            `json:"tool,omitempty"`
+	Command                string            `json:"command,omitempty"`
+	SuiteKind              string            `json:"suite_kind,omitempty"`
+	EvidenceConfidence     string            `json:"evidence_confidence,omitempty"`
+	ArtifactRoot           string            `json:"artifact_root,omitempty"`
+	ReportRoot             string            `json:"report_root,omitempty"`
+	AllowExternalArtifacts *bool             `json:"allow_external_artifacts,omitempty"`
+	ReportPaths            []string          `json:"report_paths,omitempty"`
+	NativeReportPaths      []string          `json:"native_report_paths,omitempty"`
+	PathMappings           []TestPathMapping `json:"path_mappings,omitempty"`
+	Threshold              *float64          `json:"threshold,omitempty"`
+	ChangedCodeThreshold   *float64          `json:"changed_code_threshold,omitempty"`
+	Owner                  string            `json:"owner,omitempty"`
+	Team                   string            `json:"team,omitempty"`
+	MutationPolicy         string            `json:"mutation_policy,omitempty"`
+	IgnoreReason           string            `json:"ignore_reason,omitempty"`
+	ChangedOnly            *bool             `json:"changed_only,omitempty"`
+	MaxRuntime             string            `json:"max_runtime,omitempty"`
+	MaxMutants             int               `json:"max_mutants,omitempty"`
+	Exclusions             []string          `json:"exclusions,omitempty"`
+	FailOnTimeout          *bool             `json:"fail_on_timeout,omitempty"`
 }
 
 // Report is the complete output of a scan run.

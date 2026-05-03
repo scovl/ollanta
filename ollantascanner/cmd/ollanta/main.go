@@ -4,6 +4,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -196,6 +198,9 @@ func pushReport(serverURL, token string, r interface{}) (map[string]interface{},
 		return nil, fmt.Errorf("build request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if idempotencyKey := reportIdempotencyKey(r); idempotencyKey != "" {
+		req.Header.Set("Idempotency-Key", idempotencyKey)
+	}
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
@@ -215,6 +220,39 @@ func pushReport(serverURL, token string, r interface{}) (map[string]interface{},
 		return nil, fmt.Errorf("decode response: %w", err)
 	}
 	return result, nil
+}
+
+func reportIdempotencyKey(report any) string {
+	metadata, ok := reportMetadata(report)
+	if !ok || metadata.ProjectKey == "" || metadata.AnalysisDate == "" {
+		return ""
+	}
+	parts := []string{
+		"ollanta-scan",
+		metadata.ProjectKey,
+		metadata.ScopeType,
+		metadata.Branch,
+		metadata.PullRequestKey,
+		metadata.PullRequestBase,
+		metadata.CommitSHA,
+		metadata.AnalysisDate,
+	}
+	sum := sha256.Sum256([]byte(strings.Join(parts, "\x00")))
+	return "scanner:" + hex.EncodeToString(sum[:])
+}
+
+func reportMetadata(report any) (scan.Metadata, bool) {
+	switch typed := report.(type) {
+	case *scan.Report:
+		if typed == nil {
+			return scan.Metadata{}, false
+		}
+		return typed.Metadata, true
+	case scan.Report:
+		return typed.Metadata, true
+	default:
+		return scan.Metadata{}, false
+	}
 }
 
 func waitForServerJob(serverURL, token string, jobID int64, timeout, poll time.Duration) (*serverScanResult, error) {

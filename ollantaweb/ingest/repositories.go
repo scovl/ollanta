@@ -188,6 +188,26 @@ func (a *scanJobRepoAdapter) GetByID(ctx context.Context, id int64) (*model.Scan
 	return toDomainScanJob(job), nil
 }
 
+func (a *scanJobRepoAdapter) FindByIdempotencyKey(ctx context.Context, projectKey, idempotencyKey string) (*model.ScanJob, error) {
+	job, err := a.inner.FindByIdempotencyKey(ctx, projectKey, idempotencyKey)
+	if err != nil {
+		return nil, mapStoreErr(err)
+	}
+	return toDomainScanJob(job), nil
+}
+
+func (a *scanJobRepoAdapter) QueuePressure(ctx context.Context, projectKey string, now time.Time) (model.ScanQueuePressure, error) {
+	pressure, err := a.inner.QueuePressure(ctx, projectKey, now)
+	if err != nil {
+		return model.ScanQueuePressure{}, mapStoreErr(err)
+	}
+	return model.ScanQueuePressure{
+		Accepted:          pressure.Accepted,
+		Running:           pressure.Running,
+		OldestAcceptedAge: pressure.OldestAcceptedAge,
+	}, nil
+}
+
 func (a *scanJobRepoAdapter) ClaimNext(ctx context.Context, workerID string) (*model.ScanJob, error) {
 	job, err := a.inner.ClaimNext(ctx, workerID)
 	if err != nil {
@@ -424,19 +444,22 @@ func toDomainScanJob(job *postgres.ScanJob) *model.ScanJob {
 		return nil
 	}
 	return &model.ScanJob{
-		ID:          job.ID,
-		ProjectKey:  job.ProjectKey,
-		Status:      model.ScanJobStatus(job.Status),
-		Payload:     job.Payload,
-		TraceParent: job.TraceParent,
-		TraceState:  job.TraceState,
-		ScanID:      job.ScanID,
-		WorkerID:    job.WorkerID,
-		LastError:   job.LastError,
-		CreatedAt:   job.CreatedAt,
-		UpdatedAt:   job.UpdatedAt,
-		StartedAt:   job.StartedAt,
-		CompletedAt: job.CompletedAt,
+		ID:             job.ID,
+		ProjectKey:     job.ProjectKey,
+		Status:         model.ScanJobStatus(job.Status),
+		Payload:        job.Payload,
+		IdempotencyKey: job.IdempotencyKey,
+		PayloadHash:    job.PayloadHash,
+		TraceParent:    job.TraceParent,
+		TraceState:     job.TraceState,
+		ScanID:         job.ScanID,
+		WorkerID:       job.WorkerID,
+		Attempts:       job.Attempts,
+		LastError:      job.LastError,
+		CreatedAt:      job.CreatedAt,
+		UpdatedAt:      job.UpdatedAt,
+		StartedAt:      job.StartedAt,
+		CompletedAt:    job.CompletedAt,
 	}
 }
 
@@ -445,19 +468,22 @@ func toStoreScanJob(job *model.ScanJob) *postgres.ScanJob {
 		return nil
 	}
 	return &postgres.ScanJob{
-		ID:          job.ID,
-		ProjectKey:  job.ProjectKey,
-		Status:      string(job.Status),
-		Payload:     job.Payload,
-		TraceParent: job.TraceParent,
-		TraceState:  job.TraceState,
-		ScanID:      job.ScanID,
-		WorkerID:    job.WorkerID,
-		LastError:   job.LastError,
-		CreatedAt:   job.CreatedAt,
-		UpdatedAt:   job.UpdatedAt,
-		StartedAt:   job.StartedAt,
-		CompletedAt: job.CompletedAt,
+		ID:             job.ID,
+		ProjectKey:     job.ProjectKey,
+		Status:         string(job.Status),
+		Payload:        job.Payload,
+		IdempotencyKey: job.IdempotencyKey,
+		PayloadHash:    job.PayloadHash,
+		TraceParent:    job.TraceParent,
+		TraceState:     job.TraceState,
+		ScanID:         job.ScanID,
+		WorkerID:       job.WorkerID,
+		Attempts:       job.Attempts,
+		LastError:      job.LastError,
+		CreatedAt:      job.CreatedAt,
+		UpdatedAt:      job.UpdatedAt,
+		StartedAt:      job.StartedAt,
+		CompletedAt:    job.CompletedAt,
 	}
 }
 
@@ -469,10 +495,13 @@ func copyScanJobFromStore(dst *model.ScanJob, src *postgres.ScanJob) {
 	dst.ProjectKey = src.ProjectKey
 	dst.Status = model.ScanJobStatus(src.Status)
 	dst.Payload = src.Payload
+	dst.IdempotencyKey = src.IdempotencyKey
+	dst.PayloadHash = src.PayloadHash
 	dst.TraceParent = src.TraceParent
 	dst.TraceState = src.TraceState
 	dst.ScanID = src.ScanID
 	dst.WorkerID = src.WorkerID
+	dst.Attempts = src.Attempts
 	dst.LastError = src.LastError
 	dst.CreatedAt = src.CreatedAt
 	dst.UpdatedAt = src.UpdatedAt

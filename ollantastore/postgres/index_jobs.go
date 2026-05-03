@@ -63,6 +63,18 @@ func (r *IndexJobRepository) GetByID(ctx context.Context, id int64) (*IndexJob, 
 	))
 }
 
+// GetActiveByScanID returns an accepted or running index job for a scan when one exists.
+func (r *IndexJobRepository) GetActiveByScanID(ctx context.Context, scanID int64) (*IndexJob, error) {
+	return scanIndexJobRow(r.db.Pool.QueryRow(ctx, `
+		SELECT id, scan_id, project_id, project_key, status, trace_parent, trace_state, worker_id, attempts, last_error,
+		       next_attempt_at, created_at, updated_at, started_at, completed_at
+		FROM index_jobs
+		WHERE scan_id = $1 AND status IN ('accepted', 'running')
+		ORDER BY created_at ASC, id ASC
+		LIMIT 1`, scanID,
+	))
+}
+
 // CountByStatus returns the number of durable index jobs in the given state.
 func (r *IndexJobRepository) CountByStatus(ctx context.Context, status string) (int, error) {
 	query := "SELECT COUNT(*) FROM index_jobs"
@@ -75,6 +87,50 @@ func (r *IndexJobRepository) CountByStatus(ctx context.Context, status string) (
 	var total int
 	err := r.db.Pool.QueryRow(ctx, query, args...).Scan(&total)
 	return total, err
+}
+
+// RecoverStale requeues or fails running index jobs that have not updated recently.
+func (r *IndexJobRepository) RecoverStale(ctx context.Context, staleBefore time.Time, maxAttempts int, failureMessage string) (JobRecoveryResult, error) {
+	tx, err := r.db.Pool.Begin(ctx)
+	if err != nil {
+		return JobRecoveryResult{}, fmt.Errorf("begin index job recovery tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	requeued, err := tx.Exec(ctx, `
+		UPDATE index_jobs
+		SET status = 'accepted',
+		    worker_id = '',
+		    last_error = '',
+		    next_attempt_at = now(),
+		    started_at = NULL,
+		    updated_at = now()
+		WHERE status = 'running'
+		  AND updated_at < $1
+		  AND attempts < $2`, staleBefore, maxAttempts,
+	)
+	if err != nil {
+		return JobRecoveryResult{}, err
+	}
+
+	failed, err := tx.Exec(ctx, `
+		UPDATE index_jobs
+		SET status = 'failed',
+		    last_error = $3,
+		    completed_at = now(),
+		    updated_at = now()
+		WHERE status = 'running'
+		  AND updated_at < $1
+		  AND attempts >= $2`, staleBefore, maxAttempts, failureMessage,
+	)
+	if err != nil {
+		return JobRecoveryResult{}, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return JobRecoveryResult{}, fmt.Errorf("commit index job recovery tx: %w", err)
+	}
+	return JobRecoveryResult{Requeued: requeued.RowsAffected(), Failed: failed.RowsAffected()}, nil
 }
 
 // List returns index jobs filtered by status.

@@ -72,6 +72,43 @@ function metricSignalK(label, value, statusCls) {
   </div>`;
 }
 
+function hasMutationMetrics(metrics = {}) {
+  return metrics.mutation_score != null || metrics.changed_mutation_score != null || metrics.mutants_total > 0 || metrics.changed_mutants_total > 0;
+}
+
+function mutationCardClass(score) {
+  if (score == null) return 'card-neutral';
+  if (score >= 80) return 'card-green';
+  if (score >= 60) return 'card-yellow';
+  return 'card-red';
+}
+
+function renderMutationSignals(metrics = {}) {
+  if (!hasMutationMetrics(metrics)) {
+    return `<section class="overview-panel summary-section">
+      <p class="section-title">Mutation Testing</p>
+      <div class="empty-state compact">No mutation report collected for this scan.</div>
+    </section>`;
+  }
+  const score = metrics.changed_mutation_score ?? metrics.mutation_score;
+  const total = metrics.changed_mutants_total ?? metrics.mutants_total ?? 0;
+  const killed = metrics.changed_mutants_killed ?? metrics.mutants_killed ?? 0;
+  const survived = metrics.changed_mutants_survived ?? metrics.mutants_survived ?? 0;
+  const scopeLabel = metrics.changed_mutation_score != null || metrics.changed_mutants_total > 0 ? 'Changed Code Mutation' : 'Mutation Testing';
+
+  return `<section class="overview-panel summary-section">
+    <p class="section-title">${scopeLabel}</p>
+    <div class="metric-signals compact">
+      ${metricSignalPct('Mutation Score', score, mutationCardClass(score))}
+      ${metricSignal('Mutants', total, 'muted', 'card-neutral')}
+      ${metricSignal('Killed', killed, 'success', killed > 0 ? 'card-green' : 'card-neutral')}
+      ${metricSignal('Survived', survived, survived > 0 ? 'warning' : 'success', survived > 0 ? 'card-yellow' : 'card-green')}
+      ${metricSignal('Skipped', metrics.mutants_skipped || 0, 'muted', (metrics.mutants_skipped || 0) > 0 ? 'card-yellow' : 'card-neutral')}
+      ${metricSignal('Errors', metrics.mutants_error || 0, (metrics.mutants_error || 0) > 0 ? 'danger' : 'success', (metrics.mutants_error || 0) > 0 ? 'card-red' : 'card-green')}
+    </div>
+  </section>`;
+}
+
 function renderDistribution(title, order, labels, colors, data) {
   const total = order.reduce((sum, key) => sum + (data[key] || 0), 0);
   if (total === 0) return '';
@@ -368,6 +405,8 @@ function renderSummaryNewCode(newCode) {
       ${metricSignal('New Vulnerabilities', metrics.new_vulnerabilities || 0, (metrics.new_vulnerabilities || 0) > 0 ? 'warning' : 'success', (metrics.new_vulnerabilities || 0) > 0 ? 'card-yellow' : 'card-green', 'vulnerability')}
       ${metricSignal('New Code Smells', metrics.new_code_smells || 0, 'muted', (metrics.new_code_smells || 0) > 0 ? 'card-yellow' : 'card-green', 'code_smell')}
       ${metricSignalPct('New Coverage', metrics.new_coverage, coverageCardClass(metrics.new_coverage), 'coverage')}
+      ${metricSignalPct('Changed Mutation', metrics.changed_mutation_score, mutationCardClass(metrics.changed_mutation_score))}
+      ${metricSignal('Survived Mutants', metrics.changed_mutants_survived || 0, (metrics.changed_mutants_survived || 0) > 0 ? 'warning' : 'success', (metrics.changed_mutants_survived || 0) > 0 ? 'card-yellow' : 'card-green')}
       ${metricSignalPct('New Duplication', metrics.new_duplications, duplicationCardClass(metrics.new_duplications))}
       ${metricSignal('Closed Issues', metrics.closed_issues || 0, 'success', (metrics.closed_issues || 0) > 0 ? 'card-green' : 'card-neutral', null, 'closed-issues')}
     </div>
@@ -456,6 +495,7 @@ function renderReviewSummaryTab(overview) {
     <div class="overview-primary">
       ${renderSummaryHero(summary.review)}
       ${renderSummaryNewCode(summary.new_code)}
+      ${renderMutationSignals(summary.overall_code?.metrics || {})}
       <div class="overview-workbench">
         ${renderSummaryMustFixNow(summary.must_fix_now || [])}
         ${renderSummaryImpactedFiles(summary.impacted_files || [])}
@@ -488,6 +528,7 @@ export function renderOverviewTab() {
       ${renderGateHero(overview.quality_gate || {}, measures)}
       ${renderOverviewNewCode(overview.new_code || {})}
       <section class="overview-panel">${renderOverviewMetrics(measures)}</section>
+      ${renderMutationSignals(measures)}
       <div class="overview-workbench">
         <section class="overview-panel">${renderDistribution('Severity', SEV_ORDER, SEV_LABEL, SEV_COLOR, severityDist)}</section>
         <section class="overview-panel">${renderDistribution('Type', ['bug', 'code_smell', 'vulnerability'], TYPE_LABEL, TYPE_COLOR, typeDist)}</section>

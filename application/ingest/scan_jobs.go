@@ -2,15 +2,57 @@ package ingest
 
 import (
 	"context"
+	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
+	"time"
 
 	"github.com/scovl/ollanta/domain/model"
 	"github.com/scovl/ollanta/domain/port"
 	"github.com/scovl/ollanta/ollantacore/tracectx"
 	"go.opentelemetry.io/otel"
 )
+
+// ErrScanJobIdempotencyConflict is returned when a key is reused with a different payload.
+var ErrScanJobIdempotencyConflict = errors.New("idempotency key reused with different scan payload")
+
+// ScanJobBackpressureError is returned when durable queue pressure rejects intake.
+type ScanJobBackpressureError struct {
+	Reason     string
+	RetryAfter time.Duration
+}
+
+func (e *ScanJobBackpressureError) Error() string {
+	if e == nil || e.Reason == "" {
+		return "scan intake backpressure limit exceeded"
+	}
+	return "scan intake backpressure limit exceeded: " + e.Reason
+}
+
+// ScanBackpressureConfig defines durable queue limits for accepting new scans.
+type ScanBackpressureConfig struct {
+	MaxAccepted          int
+	MaxRunning           int
+	MaxOldestAcceptedAge time.Duration
+	RetryAfter           time.Duration
+}
+
+// ScanJobSubmitOptions controls idempotency and backpressure behavior during scan intake.
+type ScanJobSubmitOptions struct {
+	IdempotencyKey string
+	Backpressure   ScanBackpressureConfig
+	Now            time.Time
+}
+
+// ScanJobSubmitResult describes whether intake created a new job or returned an existing one.
+type ScanJobSubmitResult struct {
+	Job       *model.ScanJob
+	Duplicate bool
+}
 
 // ScanJobService persists accepted scan submissions before background processing begins.
 type ScanJobService struct {
@@ -24,6 +66,15 @@ func NewScanJobService(jobs port.IScanJobRepo) *ScanJobService {
 
 // Submit validates and persists a scan submission as an accepted job.
 func (s *ScanJobService) Submit(ctx context.Context, req *IngestRequest) (*model.ScanJob, error) {
+	result, err := s.SubmitWithOptions(ctx, req, ScanJobSubmitOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return result.Job, nil
+}
+
+// SubmitWithOptions validates and persists a scan submission with idempotency and backpressure controls.
+func (s *ScanJobService) SubmitWithOptions(ctx context.Context, req *IngestRequest, opts ScanJobSubmitOptions) (*ScanJobSubmitResult, error) {
 	if req == nil {
 		return nil, fmt.Errorf("request is required")
 	}
@@ -35,17 +86,78 @@ func (s *ScanJobService) Submit(ctx context.Context, req *IngestRequest) (*model
 	if err != nil {
 		return nil, fmt.Errorf("marshal job payload: %w", err)
 	}
+	payloadHash := hashScanPayload(payload)
+	idempotencyKey := scanIdempotencyKey(opts.IdempotencyKey, payloadHash)
+
+	existing, err := s.jobs.FindByIdempotencyKey(ctx, req.Metadata.ProjectKey, idempotencyKey)
+	if err == nil {
+		if !payloadHashesEqual(existing.PayloadHash, payloadHash) {
+			return nil, ErrScanJobIdempotencyConflict
+		}
+		return &ScanJobSubmitResult{Job: existing, Duplicate: true}, nil
+	}
+	if err != nil && !errors.Is(err, model.ErrNotFound) {
+		return nil, fmt.Errorf("find scan job by idempotency key: %w", err)
+	}
+
+	if err := s.checkBackpressure(ctx, req.Metadata.ProjectKey, opts); err != nil {
+		return nil, err
+	}
 
 	job := &model.ScanJob{
-		ProjectKey: req.Metadata.ProjectKey,
-		Status:     model.ScanJobStatusAccepted,
-		Payload:    payload,
+		ProjectKey:     req.Metadata.ProjectKey,
+		Status:         model.ScanJobStatusAccepted,
+		Payload:        payload,
+		IdempotencyKey: idempotencyKey,
+		PayloadHash:    payloadHash,
 	}
 	job.TraceParent, job.TraceState = tracectx.Inject(ctx)
 	if err := s.jobs.Create(ctx, job); err != nil {
 		return nil, fmt.Errorf("create scan job: %w", err)
 	}
-	return job, nil
+	return &ScanJobSubmitResult{Job: job}, nil
+}
+
+func (s *ScanJobService) checkBackpressure(ctx context.Context, projectKey string, opts ScanJobSubmitOptions) error {
+	limits := opts.Backpressure
+	if limits.MaxAccepted <= 0 && limits.MaxRunning <= 0 && limits.MaxOldestAcceptedAge <= 0 {
+		return nil
+	}
+	now := opts.Now
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	pressure, err := s.jobs.QueuePressure(ctx, projectKey, now)
+	if err != nil {
+		return fmt.Errorf("read scan queue pressure: %w", err)
+	}
+	if limits.MaxAccepted > 0 && pressure.Accepted >= limits.MaxAccepted {
+		return &ScanJobBackpressureError{Reason: "accepted scan job limit reached", RetryAfter: limits.RetryAfter}
+	}
+	if limits.MaxRunning > 0 && pressure.Running >= limits.MaxRunning {
+		return &ScanJobBackpressureError{Reason: "running scan job limit reached", RetryAfter: limits.RetryAfter}
+	}
+	if limits.MaxOldestAcceptedAge > 0 && pressure.OldestAcceptedAge >= limits.MaxOldestAcceptedAge {
+		return &ScanJobBackpressureError{Reason: "oldest accepted scan job age limit reached", RetryAfter: limits.RetryAfter}
+	}
+	return nil
+}
+
+func scanIdempotencyKey(clientKey, payloadHash string) string {
+	clientKey = strings.TrimSpace(clientKey)
+	if clientKey != "" {
+		return clientKey
+	}
+	return "payload:" + payloadHash
+}
+
+func hashScanPayload(payload []byte) string {
+	sum := sha256.Sum256(payload)
+	return hex.EncodeToString(sum[:])
+}
+
+func payloadHashesEqual(left, right string) bool {
+	return subtle.ConstantTimeCompare([]byte(left), []byte(right)) == 1
 }
 
 // Get returns a durable scan job by id.

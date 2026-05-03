@@ -389,20 +389,26 @@ func TestIngestPersistsTestAndMutationMetrics(t *testing.T) {
 		nil,
 	)
 	mutationScore := 83.5
+	changedMutationScore := 75.0
 	coverage := 91.2
 	_, err := uc.Ingest(context.Background(), &IngestRequest{
 		Metadata: IngestMetadata{ProjectKey: "shop", AnalysisDate: time.Now().UTC().Format(time.RFC3339)},
 		Measures: IngestMeasures{
-			Files:           1,
-			Lines:           8,
-			Ncloc:           8,
-			Coverage:        &coverage,
-			Tests:           12,
-			TestFailures:    1,
-			MutationScore:   &mutationScore,
-			MutantsTotal:    10,
-			MutantsKilled:   8,
-			MutantsSurvived: 2,
+			Files:                  1,
+			Lines:                  8,
+			Ncloc:                  8,
+			Coverage:               &coverage,
+			Tests:                  12,
+			TestFailures:           1,
+			MutationScore:          &mutationScore,
+			MutantsTotal:           10,
+			MutantsKilled:          8,
+			MutantsSurvived:        2,
+			MutantsSkipped:         1,
+			ChangedMutationScore:   &changedMutationScore,
+			ChangedMutantsTotal:    4,
+			ChangedMutantsKilled:   3,
+			ChangedMutantsSurvived: 1,
 		},
 	})
 	if err != nil {
@@ -427,6 +433,81 @@ func TestIngestPersistsTestAndMutationMetrics(t *testing.T) {
 	}
 	if values[model.MetricMutantsSurvived] != 2 {
 		t.Fatalf("mutants_survived measure = %v, want 2", values[model.MetricMutantsSurvived])
+	}
+	if values[model.MetricMutantsSkipped] != 1 {
+		t.Fatalf("mutants_skipped measure = %v, want 1", values[model.MetricMutantsSkipped])
+	}
+	if values[model.MetricChangedMutationScore] != changedMutationScore {
+		t.Fatalf("changed_mutation_score measure = %v, want %v", values[model.MetricChangedMutationScore], changedMutationScore)
+	}
+	if values[model.MetricChangedMutantsSurvived] != 1 {
+		t.Fatalf("changed_mutants_survived measure = %v, want 1", values[model.MetricChangedMutantsSurvived])
+	}
+}
+
+func TestIngestPersistsMeasuredZeroTestAndMutationMetricsWhenEvidenceExists(t *testing.T) {
+	t.Parallel()
+
+	measureRepo := &fakeMeasureRepo{}
+	uc := NewIngestUseCase(
+		&scopeAwareProjectRepo{project: &model.Project{ID: 1, Key: "shop", MainBranch: defaultMainBranch}},
+		&observingScanRepo{defaultBranch: defaultMainBranch},
+		&queryIssueRepo{},
+		measureRepo,
+		nil,
+		nil,
+		nil,
+	)
+	_, err := uc.Ingest(context.Background(), &IngestRequest{
+		Metadata:    IngestMetadata{ProjectKey: "shop", AnalysisDate: time.Now().UTC().Format(time.RFC3339)},
+		Measures:    IngestMeasures{Files: 1, Lines: 8, Ncloc: 8},
+		TestSignals: json.RawMessage(`{"summary":{},"modules":[{"suites":[{"name":"contract","tests":0}],"mutation":{"total":0,"killed":0,"survived":0}}]}`),
+	})
+	if err != nil {
+		t.Fatalf(ingestErrorMessage, err)
+	}
+
+	values := map[string]float64{}
+	for _, measure := range measureRepo.inserted {
+		values[measure.MetricKey] = measure.Value
+	}
+	for _, metric := range []string{model.MetricTests, model.MetricTestFailures, model.MetricMutantsTotal, model.MetricMutantsKilled, model.MetricMutantsSurvived} {
+		value, ok := values[metric]
+		if !ok || value != 0 {
+			t.Fatalf("metric %s = %v/%v, want persisted measured zero", metric, value, ok)
+		}
+	}
+}
+
+func TestIngestOmitsZeroTestAndMutationMetricsWhenEvidenceUnavailable(t *testing.T) {
+	t.Parallel()
+
+	measureRepo := &fakeMeasureRepo{}
+	uc := NewIngestUseCase(
+		&scopeAwareProjectRepo{project: &model.Project{ID: 1, Key: "shop", MainBranch: defaultMainBranch}},
+		&observingScanRepo{defaultBranch: defaultMainBranch},
+		&queryIssueRepo{},
+		measureRepo,
+		nil,
+		nil,
+		nil,
+	)
+	_, err := uc.Ingest(context.Background(), &IngestRequest{
+		Metadata: IngestMetadata{ProjectKey: "shop", AnalysisDate: time.Now().UTC().Format(time.RFC3339)},
+		Measures: IngestMeasures{Files: 1, Lines: 8, Ncloc: 8},
+	})
+	if err != nil {
+		t.Fatalf(ingestErrorMessage, err)
+	}
+
+	values := map[string]bool{}
+	for _, measure := range measureRepo.inserted {
+		values[measure.MetricKey] = true
+	}
+	for _, metric := range []string{model.MetricTests, model.MetricTestFailures, model.MetricMutantsTotal, model.MetricMutantsKilled, model.MetricMutantsSurvived} {
+		if values[metric] {
+			t.Fatalf("metric %s was persisted, want absent without evidence", metric)
+		}
 	}
 }
 

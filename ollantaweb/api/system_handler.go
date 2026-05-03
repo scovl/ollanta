@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"runtime"
 
+	"github.com/scovl/ollanta/ollantacore/constants"
 	"github.com/scovl/ollanta/ollantastore/postgres"
 	"github.com/scovl/ollanta/ollantaweb/config"
 )
@@ -29,7 +30,7 @@ func (h *SystemHandler) Info(w http.ResponseWriter, r *http.Request) {
 	}
 
 	jsonOK(w, http.StatusOK, map[string]any{
-		"version":        "0.1.0",
+		"version":        constants.Version,
 		"go_version":     runtime.Version(),
 		"os":             runtime.GOOS,
 		"arch":           runtime.GOARCH,

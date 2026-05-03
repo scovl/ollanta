@@ -27,6 +27,16 @@ export interface Measures {
   test_skipped?: number;
   test_duration_ms?: number;
   mutation_score?: number;
+  mutants_total?: number;
+  mutants_killed?: number;
+  mutants_survived?: number;
+  mutants_timeout?: number;
+  mutants_skipped?: number;
+  mutants_error?: number;
+  changed_mutation_score?: number;
+  changed_mutants_total?: number;
+  changed_mutants_killed?: number;
+  changed_mutants_survived?: number;
   by_language: Record<string, number>;
 }
 
@@ -41,6 +51,17 @@ export interface TestSignalSummary {
   lines_to_cover?: number;
   covered_lines?: number;
   coverage?: number;
+  mutants_total?: number;
+  mutants_killed?: number;
+  mutants_survived?: number;
+  mutants_timeout?: number;
+  mutants_skipped?: number;
+  mutants_error?: number;
+  mutation_score?: number;
+  changed_mutants_total?: number;
+  changed_mutants_killed?: number;
+  changed_mutants_survived?: number;
+  changed_mutation_score?: number;
 }
 
 export interface TestModuleSignal {
@@ -48,8 +69,41 @@ export interface TestModuleSignal {
   root: string;
   language?: string;
   architecture_role?: string;
+  mutation?: TestMutationSummary;
   coverage?: TestCoverageSummary;
   files?: TestFileCoverage[];
+}
+
+export interface TestMutationSummary {
+  tool?: string;
+  status?: string;
+  confidence?: string;
+  score?: number;
+  changed_code_score?: number;
+  total?: number;
+  killed?: number;
+  survived?: number;
+  timeout?: number;
+  skipped?: number;
+  errors?: number;
+  changed_total?: number;
+  changed_killed?: number;
+  changed_survived?: number;
+  partial?: boolean;
+  stale?: boolean;
+  survived_mutants?: TestMutantSignal[];
+}
+
+export interface TestMutantSignal {
+  id?: string;
+  status?: string;
+  mutator?: string;
+  file?: string;
+  line?: number;
+  replacement?: string;
+  description?: string;
+  changed_code?: boolean;
+  confidence?: string;
 }
 
 export interface TestCoverageSummary {

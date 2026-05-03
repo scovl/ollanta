@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/scovl/ollanta/ollantascanner/scan"
 )
 
 func TestWaitForServerJobCompleted(t *testing.T) {
@@ -73,5 +75,39 @@ func TestAuthorizedRequestAddsBearerToken(t *testing.T) {
 	}
 	if got := fmt.Sprint(req.Body != nil); got != "true" {
 		t.Fatalf("expected request body reader to be initialized, got %s", got)
+	}
+}
+
+func TestPushReportAddsStableIdempotencyKey(t *testing.T) {
+	t.Parallel()
+
+	var idempotencyKey string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/scans" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		idempotencyKey = r.Header.Get("Idempotency-Key")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":7,"status":"accepted"}`))
+	}))
+	defer server.Close()
+
+	report := &scan.Report{Metadata: scan.Metadata{
+		ProjectKey:     "demo",
+		AnalysisDate:   "2026-05-02T12:00:00Z",
+		ScopeType:      "branch",
+		Branch:         "main",
+		CommitSHA:      "abcdef",
+		PullRequestKey: "",
+	}}
+
+	if _, err := pushReport(server.URL, "secret", report); err != nil {
+		t.Fatalf("pushReport() error = %v", err)
+	}
+	if idempotencyKey == "" {
+		t.Fatal("Idempotency-Key is empty, want stable key")
+	}
+	if got, want := idempotencyKey, reportIdempotencyKey(report); got != want {
+		t.Fatalf("Idempotency-Key = %q, want %q", got, want)
 	}
 }

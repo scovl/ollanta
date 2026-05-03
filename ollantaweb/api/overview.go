@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/scovl/ollanta/domain/model"
 	"github.com/scovl/ollanta/ollantastore/postgres"
 )
 
@@ -91,6 +92,10 @@ func (h *OverviewHandler) fillOverviewMeasures(ctx context.Context, resp *overvi
 		"files", "lines", "ncloc", "comments",
 		"bugs", "code_smells", "vulnerabilities",
 		"coverage", "duplicated_lines_density",
+		model.MetricMutationScore, model.MetricMutantsTotal, model.MetricMutantsKilled,
+		model.MetricMutantsSurvived, model.MetricMutantsSkipped, model.MetricMutantsTimeout,
+		model.MetricMutantsError, model.MetricChangedMutationScore, model.MetricChangedMutantsTotal,
+		model.MetricChangedMutantsKilled, model.MetricChangedMutantsSurvived,
 	}
 	for _, mk := range metricKeys {
 		if scan == nil {

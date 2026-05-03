@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -45,69 +46,11 @@ func NewAuthMiddleware(
 // On success it stores the user in the request context; on failure it returns 401.
 func (m *AuthMiddleware) Authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		raw := r.Header.Get("Authorization")
-		if raw == "" {
-			jsonError(w, http.StatusUnauthorized, "authorization required")
+		user, message := m.userFromRequest(r)
+		if message != "" {
+			jsonError(w, http.StatusUnauthorized, message)
 			return
 		}
-		parts := strings.SplitN(raw, " ", 2)
-		if len(parts) != 2 || !strings.EqualFold(parts[0], "bearer") {
-			jsonError(w, http.StatusUnauthorized, "invalid authorization header")
-			return
-		}
-		tokenStr := parts[1]
-
-		// Scanner pre-shared token — allows CI/CD push without a user account.
-		if m.scannerToken != "" && tokenStr == m.scannerToken {
-			next.ServeHTTP(w, WithUser(r, &postgres.User{
-				Login:    "scanner",
-				IsActive: true,
-			}))
-			return
-		}
-
-		var user *postgres.User
-
-		if auth.IsAPIToken(tokenStr) {
-			// API token path
-			hash := auth.HashToken(tokenStr)
-			tok, err := m.tokens.GetByHash(r.Context(), hash)
-			if err != nil || tok == nil {
-				jsonError(w, http.StatusUnauthorized, "invalid token")
-				return
-			}
-			if tok.ExpiresAt != nil && time.Now().After(*tok.ExpiresAt) {
-				jsonError(w, http.StatusUnauthorized, "token expired")
-				return
-			}
-			u, err := m.users.GetByID(r.Context(), tok.UserID)
-			if err != nil {
-				jsonError(w, http.StatusUnauthorized, "user not found")
-				return
-			}
-			user = u
-			// Non-blocking last_used update
-			go func() { _ = m.tokens.UpdateLastUsed(r.Context(), tok.ID) }()
-		} else {
-			// JWT path
-			claims, err := auth.ParseAccessToken(m.secret, tokenStr)
-			if err != nil {
-				jsonError(w, http.StatusUnauthorized, "invalid or expired token")
-				return
-			}
-			var userID int64
-			if _, err := parseIDFromString(claims.Subject, &userID); err != nil {
-				jsonError(w, http.StatusUnauthorized, "invalid token subject")
-				return
-			}
-			u, err := m.users.GetByID(r.Context(), userID)
-			if err != nil {
-				jsonError(w, http.StatusUnauthorized, "user not found")
-				return
-			}
-			user = u
-		}
-
 		if !user.IsActive {
 			jsonError(w, http.StatusUnauthorized, "account deactivated")
 			return
@@ -115,6 +58,64 @@ func (m *AuthMiddleware) Authenticate(next http.Handler) http.Handler {
 
 		next.ServeHTTP(w, WithUser(r, user))
 	})
+}
+
+func (m *AuthMiddleware) userFromRequest(r *http.Request) (*postgres.User, string) {
+	tokenStr, message := bearerToken(r.Header.Get("Authorization"))
+	if message != "" {
+		return nil, message
+	}
+	if m.scannerToken != "" && tokenStr == m.scannerToken {
+		return &postgres.User{Login: "scanner", IsActive: true}, ""
+	}
+	if auth.IsAPIToken(tokenStr) {
+		return m.userFromAPIToken(r.Context(), tokenStr)
+	}
+	return m.userFromJWT(r.Context(), tokenStr)
+}
+
+func bearerToken(raw string) (string, string) {
+	if raw == "" {
+		return "", "authorization required"
+	}
+	parts := strings.SplitN(raw, " ", 2)
+	if len(parts) != 2 || !strings.EqualFold(parts[0], "bearer") {
+		return "", "invalid authorization header"
+	}
+	return parts[1], ""
+}
+
+func (m *AuthMiddleware) userFromAPIToken(ctx context.Context, tokenStr string) (*postgres.User, string) {
+	hash := auth.HashToken(tokenStr)
+	tok, err := m.tokens.GetByHash(ctx, hash)
+	if err != nil || tok == nil {
+		return nil, "invalid token"
+	}
+	if tok.ExpiresAt != nil && time.Now().After(*tok.ExpiresAt) {
+		return nil, "token expired"
+	}
+	user, err := m.users.GetByID(ctx, tok.UserID)
+	if err != nil {
+		return nil, "user not found"
+	}
+	go func() { _ = m.tokens.UpdateLastUsed(ctx, tok.ID) }()
+	return user, ""
+}
+
+func (m *AuthMiddleware) userFromJWT(ctx context.Context, tokenStr string) (*postgres.User, string) {
+	claims, err := auth.ParseAccessToken(m.secret, tokenStr)
+	if err != nil {
+		return nil, "invalid or expired token"
+	}
+	var userID int64
+	if _, err := parseIDFromString(claims.Subject, &userID); err != nil {
+		return nil, "invalid token subject"
+	}
+	user, err := m.users.GetByID(ctx, userID)
+	if err != nil {
+		return nil, "user not found"
+	}
+	return user, ""
 }
 
 // RequirePermission returns a middleware that checks a global permission.
@@ -194,19 +195,38 @@ func RequestLogger(metrics *telemetry.Metrics) func(http.Handler) http.Handler {
 	}
 }
 
-// CORS adds permissive CORS headers to every response.
-// In production, replace with a proper allowlist.
-func CORS(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
-			return
+// CORS adds CORS headers for configured allowed origins.
+func CORS(allowedOrigins []string, allowUnsafeWildcard bool) func(http.Handler) http.Handler {
+	allowed := make(map[string]struct{}, len(allowedOrigins))
+	allowWildcard := false
+	for _, origin := range allowedOrigins {
+		if origin == "*" && allowUnsafeWildcard {
+			allowWildcard = true
+			continue
 		}
-		next.ServeHTTP(w, r)
-	})
+		allowed[origin] = struct{}{}
+	}
+
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			origin := r.Header.Get("Origin")
+			if allowWildcard {
+				w.Header().Set("Access-Control-Allow-Origin", "*")
+			} else if origin != "" {
+				if _, ok := allowed[origin]; ok {
+					w.Header().Set("Access-Control-Allow-Origin", origin)
+					w.Header().Add("Vary", "Origin")
+				}
+			}
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, Idempotency-Key")
+			if r.Method == http.MethodOptions {
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
 }
 
 // MaxBody limits the request body to limit bytes (default 10 MB).

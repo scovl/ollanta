@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"go.opentelemetry.io/otel/trace"
 )
@@ -29,8 +30,8 @@ func TestParseLogLevel(t *testing.T) {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-				if got := parseLogLevel(tt.input); got != tt.want {
-					t.Fatalf("parseLogLevel(%q) = %v, want %v", tt.input, got, tt.want)
+			if got := parseLogLevel(tt.input); got != tt.want {
+				t.Fatalf("parseLogLevel(%q) = %v, want %v", tt.input, got, tt.want)
 			}
 		})
 	}
@@ -74,5 +75,23 @@ func TestRegistryHandlerExportsMetrics(t *testing.T) {
 	}
 	if !strings.Contains(body, "ollanta_http_request_duration_seconds_count 1") {
 		t.Fatalf("metrics output missing duration histogram count: %s", body)
+	}
+}
+
+func TestRegistryHandlerExportsLabelledMetrics(t *testing.T) {
+	t.Parallel()
+
+	registry := NewRegistry()
+	metrics := NewMetrics(registry)
+	metrics.ObserveIngestStep("process", "success", 150*time.Millisecond)
+
+	rec := httptest.NewRecorder()
+	registry.Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/metrics", nil))
+	body := rec.Body.String()
+	if !strings.Contains(body, `ollanta_ingest_step_total{step="process",outcome="success"} 1`) {
+		t.Fatalf("metrics output missing labelled counter: %s", body)
+	}
+	if !strings.Contains(body, `ollanta_ingest_step_duration_seconds_count{step="process",outcome="success"} 1`) {
+		t.Fatalf("metrics output missing labelled histogram count: %s", body)
 	}
 }

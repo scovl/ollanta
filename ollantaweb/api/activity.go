@@ -1,11 +1,13 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strconv"
 	"time"
 
+	"github.com/scovl/ollanta/domain/model"
 	"github.com/scovl/ollanta/ollantastore/postgres"
 )
 
@@ -16,18 +18,36 @@ import (
 type ActivityHandler struct {
 	scans    *postgres.ScanRepository
 	projects *postgres.ProjectRepository
+	measures *postgres.MeasureRepository
 }
 
 type activityEntry struct {
-	ScanID       int64           `json:"scan_id"`
-	AnalysisDate time.Time       `json:"analysis_date"`
-	Version      string          `json:"version,omitempty"`
-	Branch       string          `json:"branch,omitempty"`
-	GateStatus   string          `json:"gate_status"`
-	TotalIssues  int             `json:"total_issues"`
-	NewIssues    int             `json:"new_issues"`
-	ClosedIssues int             `json:"closed_issues"`
-	Events       []activityEvent `json:"events"`
+	ScanID               int64              `json:"scan_id"`
+	AnalysisDate         time.Time          `json:"analysis_date"`
+	Version              string             `json:"version,omitempty"`
+	Branch               string             `json:"branch,omitempty"`
+	CommitSHA            string             `json:"commit_sha,omitempty"`
+	GateStatus           string             `json:"gate_status"`
+	ElapsedMs            int64              `json:"elapsed_ms,omitempty"`
+	TotalFiles           int                `json:"total_files"`
+	TotalNcloc           int                `json:"total_ncloc"`
+	TotalIssues          int                `json:"total_issues"`
+	TotalBugs            int                `json:"total_bugs"`
+	TotalCodeSmells      int                `json:"total_code_smells"`
+	TotalVulnerabilities int                `json:"total_vulnerabilities"`
+	NewIssues            int                `json:"new_issues"`
+	ClosedIssues         int                `json:"closed_issues"`
+	Delta                activityDelta      `json:"delta"`
+	Measures             map[string]float64 `json:"measures,omitempty"`
+	Events               []activityEvent    `json:"events"`
+}
+
+type activityDelta struct {
+	Issues          int `json:"issues"`
+	Bugs            int `json:"bugs"`
+	CodeSmells      int `json:"code_smells"`
+	Vulnerabilities int `json:"vulnerabilities"`
+	Ncloc           int `json:"ncloc"`
 }
 
 type activityEvent struct {
@@ -39,6 +59,13 @@ type activityEvent struct {
 func appendScanComparisonEvents(entry *activityEntry, current, previous *postgres.Scan) {
 	if entry == nil || current == nil || previous == nil {
 		return
+	}
+	entry.Delta = activityDelta{
+		Issues:          current.TotalIssues - previous.TotalIssues,
+		Bugs:            current.TotalBugs - previous.TotalBugs,
+		CodeSmells:      current.TotalCodeSmells - previous.TotalCodeSmells,
+		Vulnerabilities: current.TotalVulnerabilities - previous.TotalVulnerabilities,
+		Ncloc:           current.TotalNcloc - previous.TotalNcloc,
 	}
 	if current.GateStatus != previous.GateStatus && current.GateStatus != "" {
 		entry.Events = append(entry.Events, activityEvent{
@@ -61,14 +88,50 @@ func appendScanComparisonEvents(entry *activityEntry, current, previous *postgre
 
 func buildActivityEntry(scan *postgres.Scan) activityEntry {
 	return activityEntry{
-		ScanID:       scan.ID,
-		AnalysisDate: scan.AnalysisDate,
-		Version:      scan.Version,
-		Branch:       scan.Branch,
-		GateStatus:   scan.GateStatus,
-		TotalIssues:  scan.TotalIssues,
-		NewIssues:    scan.NewIssues,
-		ClosedIssues: scan.ClosedIssues,
+		ScanID:               scan.ID,
+		AnalysisDate:         scan.AnalysisDate,
+		Version:              scan.Version,
+		Branch:               scan.Branch,
+		CommitSHA:            scan.CommitSHA,
+		GateStatus:           scan.GateStatus,
+		ElapsedMs:            scan.ElapsedMs,
+		TotalFiles:           scan.TotalFiles,
+		TotalNcloc:           scan.TotalNcloc,
+		TotalIssues:          scan.TotalIssues,
+		TotalBugs:            scan.TotalBugs,
+		TotalCodeSmells:      scan.TotalCodeSmells,
+		TotalVulnerabilities: scan.TotalVulnerabilities,
+		NewIssues:            scan.NewIssues,
+		ClosedIssues:         scan.ClosedIssues,
+	}
+}
+
+var activityMeasureKeys = []string{
+	model.MetricCoverage,
+	model.MetricMutationScore,
+	model.MetricChangedMutationScore,
+	model.MetricTestFailures,
+	model.MetricTestErrors,
+}
+
+func (h *ActivityHandler) decorateActivityMeasures(ctx context.Context, entries []activityEntry) {
+	if h.measures == nil {
+		return
+	}
+	for i := range entries {
+		for _, metricKey := range activityMeasureKeys {
+			measure, err := h.measures.GetForScan(ctx, entries[i].ScanID, metricKey)
+			if errors.Is(err, postgres.ErrNotFound) {
+				continue
+			}
+			if err != nil {
+				continue
+			}
+			if entries[i].Measures == nil {
+				entries[i].Measures = map[string]float64{}
+			}
+			entries[i].Measures[metricKey] = measure.Value
+		}
 	}
 }
 
@@ -136,6 +199,7 @@ func (h *ActivityHandler) Activity(w http.ResponseWriter, r *http.Request) {
 	scans := allScans[offset:end]
 
 	entries := buildActivityEntries(scans, total, offset, limit)
+	h.decorateActivityMeasures(ctx, entries)
 
 	jsonOK(w, http.StatusOK, map[string]interface{}{
 		"items":  entries,

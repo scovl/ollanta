@@ -12,7 +12,7 @@ This guide covers deploying the Ollanta server stack on Kubernetes. The architec
 | **Customizable** | 100 % env-var driven config, pluggable search backend (`zincsearch` / `postgres`) |
 | **Atomic** | Distroless nonroot image, static Go binary, no shell, minimal attack surface |
 | **Scalable** | Stateless web pods behind a Service, separate compute, index, and webhook worker deployments, ZincSearch scaled independently |
-| **Ephemeral** | Zero local volumes on web and worker pods, auto-migration on boot, indexes rebuilt from PostgreSQL on demand |
+| **Ephemeral** | Zero local volumes on web and worker pods, explicit migration job for production, indexes rebuilt from PostgreSQL on demand |
 
 ---
 
@@ -109,6 +109,7 @@ data:
   OLLANTA_ZINCSEARCH_USER: "admin"
   OLLANTA_SEARCH_BACKEND: "zincsearch"
   OLLANTA_LOG_LEVEL: "info"
+  OLLANTA_AUTO_MIGRATE: "false"
 ```
 
 ### Environment Variable Reference
@@ -122,10 +123,67 @@ data:
 | `OLLANTA_ZINCSEARCH_PASSWORD` | `admin` | ZincSearch Basic Auth password |
 | `OLLANTA_SEARCH_BACKEND` | `zincsearch` | `zincsearch` or `postgres` (fallback with no external dependency) |
 | `OLLANTA_SCANNER_TOKEN` | *(empty)* | Shared token accepted for scanner pushes to `POST /api/v1/scans` |
-| `OLLANTA_JWT_SECRET` | *(random)* | HMAC-SHA256 signing key — **must be set for multi-replica** |
+| `OLLANTA_JWT_SECRET` | *(required unless dev opt-in)* | HMAC-SHA256 signing key; set a stable secret for every pod |
+| `OLLANTA_ALLOW_RANDOM_JWT_SECRET` | `false` | Development-only opt-in for random JWT secrets |
 | `OLLANTA_JWT_EXPIRY` | `15m` | Access token lifetime |
 | `OLLANTA_REFRESH_EXPIRY` | `720h` | Refresh token lifetime (30 days) |
+| `OLLANTA_AUTO_MIGRATE` | `true` locally | Set `false` on production API and worker roles after running the migration job |
+| `OLLANTA_CORS_ALLOWED_ORIGINS` | same-origin/local dev | Comma-separated allowlist of browser origins |
+| `OLLANTA_CORS_ALLOW_UNSAFE_WILDCARD` | `false` | Development-only opt-in for `*` CORS |
+| `OLLANTA_HTTP_MAX_BODY_BYTES` | `52428800` | Maximum scan report request body size |
+| `OLLANTA_POSTGRES_MAX_CONNS` | `25` | Maximum PostgreSQL pool size per pod |
+| `OLLANTA_SCAN_QUEUE_MAX_ACCEPTED` | `0` | Optional accepted scan queue pressure limit; `0` disables |
+| `OLLANTA_SCAN_QUEUE_MAX_RUNNING` | `0` | Optional running scan queue pressure limit; `0` disables |
+| `OLLANTA_SCAN_QUEUE_MAX_OLDEST_ACCEPTED_AGE` | `0s` | Optional age-based scan intake pressure limit; `0s` disables |
+| `OLLANTA_SCAN_QUEUE_RETRY_AFTER` | `30s` | Retry hint used for scan intake `429` responses |
 | `OLLANTA_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
+
+### Development Defaults To Avoid In Production
+
+| Development convenience | Production alternative |
+|-------------------------|------------------------|
+| `OLLANTA_ALLOW_RANDOM_JWT_SECRET=true` | Set a stable high-entropy `OLLANTA_JWT_SECRET` in Kubernetes Secret storage. |
+| Wildcard CORS with `OLLANTA_CORS_ALLOW_UNSAFE_WILDCARD=true` | Set `OLLANTA_CORS_ALLOWED_ORIGINS` to the exact UI origins. |
+| `OLLANTA_AUTO_MIGRATE=true` on every pod | Run the `ollantamigrate` Job, then set `OLLANTA_AUTO_MIGRATE=false` on API and worker pods. |
+| Local Compose observability defaults | Use managed or cluster observability with explicit retention, access control, and scrape targets. |
+
+---
+
+## Migration Job
+
+For production, run migrations as a one-shot deploy job and set `OLLANTA_AUTO_MIGRATE=false` on long-running API and worker pods. The migrator uses the same image and acquires a PostgreSQL advisory lock, so repeated or concurrent deploy attempts are serialized by the database.
+
+```yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ollantamigrate
+  namespace: ollanta
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: ollantamigrate
+          image: YOUR_REGISTRY/ollantaweb:latest
+          command: ["/ollantamigrate"]
+          envFrom:
+            - configMapRef:
+                name: ollanta-config
+          env:
+            - name: OLLANTA_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: ollanta-secrets
+                  key: database-url
+            - name: OLLANTA_JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: ollanta-secrets
+                  key: jwt-secret
+```
+
+After this job succeeds, API and worker pods verify that the latest embedded migration exists in `schema_migrations` before serving or processing work.
 
 ---
 
@@ -403,22 +461,16 @@ spec:
 
 ---
 
-## Indexing Behavior on Multiple Replicas
+## Durable Worker Behavior on Multiple Replicas
 
-Each `ollantaweb` pod runs its own in-process indexing worker. The pod that receives `POST /api/v1/scans` persists the report and enqueues the indexing job locally:
-
-1. The request hits one pod behind the Service.
-2. That pod persists the scan in PostgreSQL.
-3. The same pod enqueues and executes the background indexing job.
+`ollantaweb` no longer depends on a local in-process indexing queue. The pod that receives `POST /api/v1/scans` writes an accepted `scan_job` to PostgreSQL. Any `ollantaworker` replica can claim that job, materialize the scan, and enqueue durable `index_jobs` and `webhook_jobs`. Any `ollantaindexer` or `ollantawebhookworker` replica can then claim those jobs.
 
 ```
-Pod A (receives scan) ──local queue──▶ Pod A worker ──HTTP──▶ ZincSearch
+API Pod A ──scan_jobs──▶ PostgreSQL ◀──claims── Worker Pod N
+Worker Pod N ──index_jobs/webhook_jobs──▶ PostgreSQL ◀──claims── Indexer/Webhook workers
 ```
 
-There is no distributed index coordinator in the current runtime. For Kubernetes this means two operational requirements matter:
-
-1. Keep graceful termination enabled so a pod can drain its in-flight queue before exit.
-2. If a pod is interrupted mid-index, rebuild the search index with `POST /admin/reindex`.
+This means worker replicas are horizontally scalable and restart-tolerant. Duplicate active jobs are guarded by database indexes and repository checks. Stale running jobs are recovered by each worker role according to the configured stale threshold and max-attempt settings. If ZincSearch data is lost or suspected stale, rebuild it from PostgreSQL with the reindex admin operation.
 
 ---
 
@@ -441,7 +493,10 @@ This uses PostgreSQL full-text search (`tsvector`/`tsquery`) for the `/api/v1/se
 | Namespace created | |
 | Secrets populated (database-url, zincsearch-password, jwt-secret) | |
 | `OLLANTA_JWT_SECRET` set (required for multi-replica token validation) | |
-| Graceful termination preserved so local index jobs can drain | |
+| Migration Job completed and app/worker pods use `OLLANTA_AUTO_MIGRATE=false` | |
+| API, scan worker, indexer, and webhook worker Deployments configured separately | |
+| Worker admin `/readyz` probes target each role dependency set | |
+| Scan intake queue pressure limits chosen for the database and worker capacity | |
 | PostgreSQL accessible from cluster | |
 | ZincSearch Deployment + PVC + Service running | |
 | ollantaweb Deployment with probes, resources, security context | |

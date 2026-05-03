@@ -23,6 +23,21 @@ type IngestRequest = appingest.IngestRequest
 // IngestResult is the response returned after a successful ingest.
 type IngestResult = appingest.IngestResult
 
+// ScanBackpressureConfig configures durable queue pressure limits for scan intake.
+type ScanBackpressureConfig = appingest.ScanBackpressureConfig
+
+// ScanJobSubmitOptions controls scan intake idempotency and backpressure.
+type ScanJobSubmitOptions = appingest.ScanJobSubmitOptions
+
+// ScanJobSubmitResult describes whether scan intake created or reused a job.
+type ScanJobSubmitResult = appingest.ScanJobSubmitResult
+
+// ScanJobBackpressureError is returned when durable queue pressure rejects intake.
+type ScanJobBackpressureError = appingest.ScanJobBackpressureError
+
+// ErrScanJobIdempotencyConflict is returned when an idempotency key is reused with a different payload.
+var ErrScanJobIdempotencyConflict = appingest.ErrScanJobIdempotencyConflict
+
 // IndexEnqueuer abstracts the mechanism for enqueuing durable search index jobs.
 type IndexEnqueuer interface {
 	Enqueue(ctx context.Context, scanID, projectID int64, projectKey string) error

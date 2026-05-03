@@ -27,7 +27,7 @@ Quality gates can evaluate any numeric measure persisted for the scan. Common pr
 | `vulnerabilities` | Security vulnerabilities. |
 | `code_smells` | Maintainability findings. |
 | `coverage` | Coverage percentage, when supplied in the report. |
-| `tests` | Total unit tests. |
+| `tests` | Total automated tests collected from available evidence. |
 | `test_failures` | Failed tests. |
 | `test_errors` | Test execution errors. |
 | `test_skipped` | Skipped tests. |
@@ -38,8 +38,25 @@ Quality gates can evaluate any numeric measure persisted for the scan. Common pr
 | `mutants_survived` | Survived mutants. |
 | `mutants_timeout` | Timed-out mutants. |
 | `mutants_error` | Errored mutants. |
+| `mutants_skipped` | Skipped mutants. |
+| `changed_mutation_score` | Mutation score for changed code. |
+| `changed_mutants_total` | Mutants generated for changed code. |
+| `changed_mutants_killed` | Killed mutants on changed code. |
+| `changed_mutants_survived` | Survived mutants on changed code. |
 
 Missing optional test or mutation metrics do not fail a gate condition. They are reported as missing values and pass by default, which keeps legacy reports compatible.
+
+Measured zero is different from unavailable. When test or mutation evidence is collected and the measured value is zero, Ollanta persists the zero-valued metric so gates can evaluate it. When evidence was not collected at all, Ollanta leaves optional metrics absent instead of creating synthetic zero values.
+
+Example mutation conditions for teams that have already rolled out mutation reports:
+
+```go
+conditions := []qualitygate.Condition{
+    {MetricKey: "mutation_score", Operator: qualitygate.OpLessThan, ErrorThreshold: 70, Description: "Overall mutation score >= 70%"},
+    {MetricKey: "changed_mutation_score", Operator: qualitygate.OpLessThan, ErrorThreshold: 85, Description: "Changed-code mutation score >= 85%"},
+    {MetricKey: "changed_mutants_survived", Operator: qualitygate.OpGreaterThan, ErrorThreshold: 0, Description: "No survived mutants on changed code"},
+}
+```
 
 ## API Endpoints
 

@@ -30,26 +30,31 @@ type IngestMetadata struct {
 
 // IngestMeasures mirrors the Measures field of report.Report for JSON decoding.
 type IngestMeasures struct {
-	Files           int            `json:"files"`
-	Lines           int            `json:"lines"`
-	Ncloc           int            `json:"ncloc"`
-	Comments        int            `json:"comments"`
-	Bugs            int            `json:"bugs"`
-	CodeSmells      int            `json:"code_smells"`
-	Vulnerabilities int            `json:"vulnerabilities"`
-	Coverage        *float64       `json:"coverage,omitempty"`
-	Tests           int            `json:"tests,omitempty"`
-	TestFailures    int            `json:"test_failures,omitempty"`
-	TestErrors      int            `json:"test_errors,omitempty"`
-	TestSkipped     int            `json:"test_skipped,omitempty"`
-	TestDurationMs  int64          `json:"test_duration_ms,omitempty"`
-	MutationScore   *float64       `json:"mutation_score,omitempty"`
-	MutantsTotal    int            `json:"mutants_total,omitempty"`
-	MutantsKilled   int            `json:"mutants_killed,omitempty"`
-	MutantsSurvived int            `json:"mutants_survived,omitempty"`
-	MutantsTimeout  int            `json:"mutants_timeout,omitempty"`
-	MutantsError    int            `json:"mutants_error,omitempty"`
-	ByLang          map[string]int `json:"by_language"`
+	Files                  int            `json:"files"`
+	Lines                  int            `json:"lines"`
+	Ncloc                  int            `json:"ncloc"`
+	Comments               int            `json:"comments"`
+	Bugs                   int            `json:"bugs"`
+	CodeSmells             int            `json:"code_smells"`
+	Vulnerabilities        int            `json:"vulnerabilities"`
+	Coverage               *float64       `json:"coverage,omitempty"`
+	Tests                  int            `json:"tests,omitempty"`
+	TestFailures           int            `json:"test_failures,omitempty"`
+	TestErrors             int            `json:"test_errors,omitempty"`
+	TestSkipped            int            `json:"test_skipped,omitempty"`
+	TestDurationMs         int64          `json:"test_duration_ms,omitempty"`
+	MutationScore          *float64       `json:"mutation_score,omitempty"`
+	MutantsTotal           int            `json:"mutants_total,omitempty"`
+	MutantsKilled          int            `json:"mutants_killed,omitempty"`
+	MutantsSurvived        int            `json:"mutants_survived,omitempty"`
+	MutantsTimeout         int            `json:"mutants_timeout,omitempty"`
+	MutantsSkipped         int            `json:"mutants_skipped,omitempty"`
+	MutantsError           int            `json:"mutants_error,omitempty"`
+	ChangedMutationScore   *float64       `json:"changed_mutation_score,omitempty"`
+	ChangedMutantsTotal    int            `json:"changed_mutants_total,omitempty"`
+	ChangedMutantsKilled   int            `json:"changed_mutants_killed,omitempty"`
+	ChangedMutantsSurvived int            `json:"changed_mutants_survived,omitempty"`
+	ByLang                 map[string]int `json:"by_language"`
 }
 
 // IngestRequest is the payload accepted by POST /api/v1/scans.
@@ -225,7 +230,8 @@ func (uc *IngestUseCase) Ingest(ctx context.Context, req *IngestRequest) (*Inges
 		model.MetricLines:           float64(req.Measures.Lines),
 		model.MetricNcloc:           float64(req.Measures.Ncloc),
 	}
-	addOptionalTestMeasures(measures, req.Measures)
+	evidence := detectTestSignalEvidence(req.TestSignals)
+	addOptionalTestMeasures(measures, req.Measures, evidence)
 	gateStatus := service.Evaluate(service.DefaultConditions(), measures)
 	gateStr := string(gateStatus.Status)
 
@@ -388,6 +394,7 @@ func domainToIssueRow(iss *model.Issue, scanID, projectID int64, trackingState s
 }
 
 func buildMeasureRows(m IngestMeasures, testSignals json.RawMessage, scanID, projectID int64) []model.MeasureRow {
+	evidence := detectTestSignalEvidence(testSignals)
 	rows := []model.MeasureRow{
 		{ScanID: scanID, ProjectID: projectID, MetricKey: "files", Value: float64(m.Files)},
 		{ScanID: scanID, ProjectID: projectID, MetricKey: "lines", Value: float64(m.Lines)},
@@ -400,38 +407,10 @@ func buildMeasureRows(m IngestMeasures, testSignals json.RawMessage, scanID, pro
 	if m.Coverage != nil {
 		rows = append(rows, model.MeasureRow{ScanID: scanID, ProjectID: projectID, MetricKey: model.MetricCoverage, Value: *m.Coverage})
 	}
-	if m.Tests > 0 {
-		rows = append(rows, model.MeasureRow{ScanID: scanID, ProjectID: projectID, MetricKey: model.MetricTests, Value: float64(m.Tests)})
-	}
-	if m.TestFailures > 0 {
-		rows = append(rows, model.MeasureRow{ScanID: scanID, ProjectID: projectID, MetricKey: model.MetricTestFailures, Value: float64(m.TestFailures)})
-	}
-	if m.TestErrors > 0 {
-		rows = append(rows, model.MeasureRow{ScanID: scanID, ProjectID: projectID, MetricKey: model.MetricTestErrors, Value: float64(m.TestErrors)})
-	}
-	if m.TestSkipped > 0 {
-		rows = append(rows, model.MeasureRow{ScanID: scanID, ProjectID: projectID, MetricKey: model.MetricTestSkipped, Value: float64(m.TestSkipped)})
-	}
-	if m.TestDurationMs > 0 {
-		rows = append(rows, model.MeasureRow{ScanID: scanID, ProjectID: projectID, MetricKey: model.MetricTestDurationMs, Value: float64(m.TestDurationMs)})
-	}
-	if m.MutationScore != nil {
-		rows = append(rows, model.MeasureRow{ScanID: scanID, ProjectID: projectID, MetricKey: model.MetricMutationScore, Value: *m.MutationScore})
-	}
-	if m.MutantsTotal > 0 {
-		rows = append(rows, model.MeasureRow{ScanID: scanID, ProjectID: projectID, MetricKey: model.MetricMutantsTotal, Value: float64(m.MutantsTotal)})
-	}
-	if m.MutantsKilled > 0 {
-		rows = append(rows, model.MeasureRow{ScanID: scanID, ProjectID: projectID, MetricKey: model.MetricMutantsKilled, Value: float64(m.MutantsKilled)})
-	}
-	if m.MutantsSurvived > 0 {
-		rows = append(rows, model.MeasureRow{ScanID: scanID, ProjectID: projectID, MetricKey: model.MetricMutantsSurvived, Value: float64(m.MutantsSurvived)})
-	}
-	if m.MutantsTimeout > 0 {
-		rows = append(rows, model.MeasureRow{ScanID: scanID, ProjectID: projectID, MetricKey: model.MetricMutantsTimeout, Value: float64(m.MutantsTimeout)})
-	}
-	if m.MutantsError > 0 {
-		rows = append(rows, model.MeasureRow{ScanID: scanID, ProjectID: projectID, MetricKey: model.MetricMutantsError, Value: float64(m.MutantsError)})
+	for _, measure := range optionalTestMeasureValues(m, evidence) {
+		if measure.Include {
+			rows = append(rows, model.MeasureRow{ScanID: scanID, ProjectID: projectID, MetricKey: measure.Key, Value: measure.Value})
+		}
 	}
 	for lang, count := range m.ByLang {
 		rows = append(rows, model.MeasureRow{
@@ -501,41 +480,104 @@ func issueLanguage(issue *model.Issue) string {
 	return model.LanguageFromPath(issue.ComponentPath)
 }
 
-func addOptionalTestMeasures(measures map[string]float64, m IngestMeasures) {
+func addOptionalTestMeasures(measures map[string]float64, m IngestMeasures, evidence testSignalEvidence) {
 	if m.Coverage != nil {
 		measures[model.MetricCoverage] = *m.Coverage
 	}
-	if m.Tests > 0 {
-		measures[model.MetricTests] = float64(m.Tests)
+	for _, measure := range optionalTestMeasureValues(m, evidence) {
+		if measure.Include {
+			measures[measure.Key] = measure.Value
+		}
 	}
-	if m.TestFailures > 0 {
-		measures[model.MetricTestFailures] = float64(m.TestFailures)
-	}
-	if m.TestErrors > 0 {
-		measures[model.MetricTestErrors] = float64(m.TestErrors)
-	}
-	if m.TestSkipped > 0 {
-		measures[model.MetricTestSkipped] = float64(m.TestSkipped)
-	}
-	if m.TestDurationMs > 0 {
-		measures[model.MetricTestDurationMs] = float64(m.TestDurationMs)
+}
+
+type optionalMeasureValue struct {
+	Key     string
+	Value   float64
+	Include bool
+}
+
+func optionalTestMeasureValues(m IngestMeasures, evidence testSignalEvidence) []optionalMeasureValue {
+	values := []optionalMeasureValue{
+		{Key: model.MetricTests, Value: float64(m.Tests), Include: metricEvidenceAvailable(evidence.Tests, float64(m.Tests))},
+		{Key: model.MetricTestFailures, Value: float64(m.TestFailures), Include: metricEvidenceAvailable(evidence.Tests, float64(m.TestFailures))},
+		{Key: model.MetricTestErrors, Value: float64(m.TestErrors), Include: metricEvidenceAvailable(evidence.Tests, float64(m.TestErrors))},
+		{Key: model.MetricTestSkipped, Value: float64(m.TestSkipped), Include: metricEvidenceAvailable(evidence.Tests, float64(m.TestSkipped))},
+		{Key: model.MetricTestDurationMs, Value: float64(m.TestDurationMs), Include: metricEvidenceAvailable(evidence.Tests, float64(m.TestDurationMs))},
+		{Key: model.MetricMutantsTotal, Value: float64(m.MutantsTotal), Include: metricEvidenceAvailable(evidence.Mutation, float64(m.MutantsTotal))},
+		{Key: model.MetricMutantsKilled, Value: float64(m.MutantsKilled), Include: metricEvidenceAvailable(evidence.Mutation, float64(m.MutantsKilled))},
+		{Key: model.MetricMutantsSurvived, Value: float64(m.MutantsSurvived), Include: metricEvidenceAvailable(evidence.Mutation, float64(m.MutantsSurvived))},
+		{Key: model.MetricMutantsTimeout, Value: float64(m.MutantsTimeout), Include: metricEvidenceAvailable(evidence.Mutation, float64(m.MutantsTimeout))},
+		{Key: model.MetricMutantsSkipped, Value: float64(m.MutantsSkipped), Include: metricEvidenceAvailable(evidence.Mutation, float64(m.MutantsSkipped))},
+		{Key: model.MetricMutantsError, Value: float64(m.MutantsError), Include: metricEvidenceAvailable(evidence.Mutation, float64(m.MutantsError))},
+		{Key: model.MetricChangedMutantsTotal, Value: float64(m.ChangedMutantsTotal), Include: metricEvidenceAvailable(evidence.ChangedMutation, float64(m.ChangedMutantsTotal))},
+		{Key: model.MetricChangedMutantsKilled, Value: float64(m.ChangedMutantsKilled), Include: metricEvidenceAvailable(evidence.ChangedMutation, float64(m.ChangedMutantsKilled))},
+		{Key: model.MetricChangedMutantsSurvived, Value: float64(m.ChangedMutantsSurvived), Include: metricEvidenceAvailable(evidence.ChangedMutation, float64(m.ChangedMutantsSurvived))},
 	}
 	if m.MutationScore != nil {
-		measures[model.MetricMutationScore] = *m.MutationScore
+		values = append(values, optionalMeasureValue{Key: model.MetricMutationScore, Value: *m.MutationScore, Include: true})
 	}
-	if m.MutantsTotal > 0 {
-		measures[model.MetricMutantsTotal] = float64(m.MutantsTotal)
+	if m.ChangedMutationScore != nil {
+		values = append(values, optionalMeasureValue{Key: model.MetricChangedMutationScore, Value: *m.ChangedMutationScore, Include: true})
 	}
-	if m.MutantsKilled > 0 {
-		measures[model.MetricMutantsKilled] = float64(m.MutantsKilled)
+	return values
+}
+
+func metricEvidenceAvailable(hasEvidence bool, value float64) bool {
+	return hasEvidence || value > 0
+}
+
+type testSignalEvidence struct {
+	Tests           bool
+	Mutation        bool
+	ChangedMutation bool
+}
+
+func detectTestSignalEvidence(raw json.RawMessage) testSignalEvidence {
+	if len(raw) == 0 {
+		return testSignalEvidence{}
 	}
-	if m.MutantsSurvived > 0 {
-		measures[model.MetricMutantsSurvived] = float64(m.MutantsSurvived)
+	var payload struct {
+		Summary struct {
+			Tests                  int      `json:"tests"`
+			MutationScore          *float64 `json:"mutation_score"`
+			MutantsTotal           int      `json:"mutants_total"`
+			ChangedMutationScore   *float64 `json:"changed_mutation_score"`
+			ChangedMutantsTotal    int      `json:"changed_mutants_total"`
+			ChangedMutantsKilled   int      `json:"changed_mutants_killed"`
+			ChangedMutantsSurvived int      `json:"changed_mutants_survived"`
+		} `json:"summary"`
+		Modules []struct {
+			Suites   []json.RawMessage `json:"suites"`
+			Mutation *json.RawMessage  `json:"mutation"`
+			Reports  []struct {
+				Kind string `json:"kind"`
+			} `json:"reports"`
+		} `json:"modules"`
 	}
-	if m.MutantsTimeout > 0 {
-		measures[model.MetricMutantsTimeout] = float64(m.MutantsTimeout)
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return testSignalEvidence{}
 	}
-	if m.MutantsError > 0 {
-		measures[model.MetricMutantsError] = float64(m.MutantsError)
+	evidence := testSignalEvidence{
+		Tests:           payload.Summary.Tests > 0,
+		Mutation:        payload.Summary.MutationScore != nil || payload.Summary.MutantsTotal > 0,
+		ChangedMutation: payload.Summary.ChangedMutationScore != nil || payload.Summary.ChangedMutantsTotal > 0 || payload.Summary.ChangedMutantsKilled > 0 || payload.Summary.ChangedMutantsSurvived > 0,
 	}
+	for _, module := range payload.Modules {
+		if len(module.Suites) > 0 {
+			evidence.Tests = true
+		}
+		if module.Mutation != nil {
+			evidence.Mutation = true
+		}
+		for _, report := range module.Reports {
+			switch report.Kind {
+			case "test", "native":
+				evidence.Tests = true
+			case "mutation", "native_mutation":
+				evidence.Mutation = true
+			}
+		}
+	}
+	return evidence
 }
