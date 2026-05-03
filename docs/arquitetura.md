@@ -155,7 +155,36 @@ graph TD
 
 ---
 
-### Etapa 3: Execução de Regras
+### Etapa 3: Resolução de Quality Profile e Execução de Regras
+
+Antes de executar regras, o scanner resolve a política efetiva de Quality Profile para as linguagens descobertas. O Quality Profile é a camada de seleção de regras: ele decide quais regras estão ativas, qual severidade elas emitem e quais parâmetros são enviados aos analyzers.
+
+A ordem de resolução é explícita e previsível:
+
+1. `-profile-source local` ou `profile_file` carrega um documento profile-as-code em JSON/YAML.
+2. `-profile-source server` busca `GET /api/v1/projects/{key}/profiles/effective` no `ollantaweb`.
+3. `-profile-source builtin` usa o catálogo embarcado `Ollanta Way`.
+4. `auto` prefere arquivo local, depois servidor e por fim os defaults embarcados.
+
+A menos que `-profile-strict` esteja ativo, falhas ao carregar local/servidor fazem fallback para defaults embarcados e aparecem como diagnósticos de profile no relatório.
+
+```mermaid
+flowchart LR
+  CFG["Flags / config do scanner"] --> R["Resolve política de profile"]
+  R -->|local| FILE["profiles.yaml/json"]
+  R -->|server| API["/projects/{key}/profiles/effective"]
+  R -->|fallback| BUILTIN["Ollanta Way embarcado"]
+  FILE --> POL["Regras efetivas por linguagem"]
+  API --> POL
+  BUILTIN --> POL
+  POL --> EXEC["Executor filtra analyzers"]
+  EXEC --> REPORT["report.json quality_profiles"]
+  REPORT --> INGEST["Servidor persiste scan_profile_snapshots"]
+```
+
+No lado servidor, o `ollantaweb` continua livre de CGo. Ele usa `ollantacore/rulecatalog` para metadados e validação de regras, enquanto implementações de analyzer que dependem de CGo ficam nos módulos de scanner/rules. Na inicialização, o servidor sincroniza os profiles built-in `Ollanta Way` a partir desse catálogo sem apagar profiles customizados, regras customizadas, assignments ou overrides.
+
+TypeScript e Rust hoje são parser-only: o scanner consegue parsear essas linguagens, mas o Ollanta ainda não entrega regras embarcadas para elas. As APIs de profile efetivo expõem `parser_only` para que a UI não apresente um profile vazio como política acionável de regras.
 
 Com a árvore sintática pronta, o scanner aplica **regras**, cada regra sabe detectar um tipo específico de problema. Por exemplo:
 
@@ -211,7 +240,8 @@ Após todas as regras rodarem, o scanner consolida tudo em um relatório que con
 
 1. **Metadados** — chave do projeto, data, duração do scan e escopo de branch ou pull request
 2. **Métricas** — arquivos, linhas, bugs, code smells, vulnerabilidades e, opcionalmente, cobertura, testes e mutação
-3. **Issues** — cada problema encontrado, com arquivo, linha, regra, severidade, mensagem, tags, linguagem e domínio de qualidade derivado
+3. **Snapshots de Quality Profile** — fonte do profile, quantidade de regras ativas, rules hash e diagnósticos para cada linguagem analisada
+4. **Issues** — cada problema encontrado, com arquivo, linha, regra, severidade, mensagem, tags, linguagem e domínio de qualidade derivado
 
 O relatório é salvo em dois formatos:
 - **JSON** (`.ollanta/report.json`) — para consumo pela API/servidor
@@ -238,6 +268,16 @@ Exemplo:
     "mutation_score": 74.2,
     "mutants_survived": 8
   },
+  "quality_profiles": [
+    {
+      "language": "go",
+      "profile_name": "Ollanta Way",
+      "source": "builtin",
+      "active_rule_count": 8,
+      "rules_hash": "...",
+      "metadata_available": true
+    }
+  ],
   "issues": [
     {
       "rule_key": "go:no-large-functions",
@@ -1219,6 +1259,7 @@ flowchart TB
 | `POST/GET` | `/api/v1/groups` | `manage_groups` | Gerenciar grupos |
 | `POST/GET` | `/api/v1/gates` | `project_admin` | Configurar quality gates |
 | `POST/GET` | `/api/v1/profiles` | `project_admin` | Configurar quality profiles |
+| `GET` | `/api/v1/projects/{key}/profiles/effective` | `can_view` | Ler a política efetiva do scanner |
 | `PUT` | `/api/v1/projects/{key}/new-code` | `project_admin` | Configurar new code period |
 | `POST/GET` | `/api/v1/projects/{key}/webhooks` | `project_admin` | Gerenciar webhooks |
 | `POST` | `/api/v1/admin/reindex` | `admin` | Reindexar busca |
@@ -1296,6 +1337,14 @@ O schema evolui via migrações numeradas, aplicadas em ordem:
 | 017 | `engine_id` + `secondary_locations` | Suporte multi-engine e contexto expandido |
 | 018 | `changelog` | Histórico de transições de issues |
 | 019 | Fix `quality_profiles` | Remove perfis Java/C# (não suportados), adiciona perfil Rust |
+| 020 | `scan_jobs` | Jobs duráveis de entrada assíncrona de scans |
+| 021 | `outbox_jobs` | Jobs duráveis de indexação e entrega de webhooks |
+| 022 | Análise por branch | Metadados de branch e pull request em scans/code snapshots |
+| 023 | Trace context de jobs | Contexto de trace em jobs duráveis |
+| 024 | Estado de tracking | Estado de ciclo de vida de escopo nas issues |
+| 025 | Jobs cancelados | Suporte a cancelamento de jobs duráveis |
+| 026 | Idempotência/dedupe de jobs | Hashes de payload, tentativas e índices de dedupe ativo |
+| 027 | `quality_profile_changelog` + `scan_profile_snapshots` | Auditoria de profiles e snapshots da política usada no scan |
 
 ---
 
@@ -1308,8 +1357,10 @@ O schema evolui via migrações numeradas, aplicadas em ordem:
 | **Component** | Um nó na hierarquia: projeto → módulo → pacote → arquivo |
 | **Rule** | Uma regra que sabe detectar um tipo de problema (ex: "função grande demais") |
 | **Measure** | Um valor numérico de métrica para um componente (ex: ncloc = 1500) |
-| **Quality Gate** | Conjunto de condições que determinam se o projeto "passa" ou "falha" |
-| **Quality Profile** | Conjunto de regras ativas para uma linguagem (ex: "Sonar Way Go") |
+| **Quality Gate** | Conjunto de condições de métricas avaliado depois do scan para determinar se o projeto passa ou falha |
+| **Quality Profile** | Conjunto de regras ativas, severidades e parâmetros para uma linguagem; aplicado antes da execução das regras |
+| **Profile-as-code** | Documento JSON/YAML versionado que define regras de profile locais ou importáveis |
+| **Rules Hash** | Hash estável das regras efetivas, severidades, parâmetros e marcadores de desativação para auditoria/histórico |
 | **New Code Period** | Ponto de referência que define o que é "código novo" |
 | **LineHash** | SHA-256 do conteúdo de uma linha — identidade estável de uma issue |
 | **Tracking** | Algoritmo que correlaciona issues entre scans usando (rule_key + line_hash) |

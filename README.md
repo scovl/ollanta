@@ -130,6 +130,15 @@ cp config.toml.example config.toml
 
 Scanner settings live under `[scanner]`, including `project_dir`, `project_key`, `format`, `local_ui`, `server_url`, and `server_wait`.
 
+Quality Profile settings also live under `[scanner]`:
+
+| Setting | Purpose |
+|---------|---------|
+| `profile_source` | `auto`, `local`, `server`, or `builtin`. `auto` uses a local file when configured, then server profiles when a server URL exists, otherwise built-in defaults. |
+| `profile_file` | JSON or YAML profile-as-code file for local scans. |
+| `profile_strict` | Fail the scan if the requested local/server profile cannot be loaded. |
+| `profile_fetch_timeout` | Timeout for loading effective profiles from `ollantaweb`. |
+
 Server settings live under `[server]`, `[database]`, and `[search]`.
 
 Configuration precedence:
@@ -167,11 +176,46 @@ Important environment variables for Docker/server use:
 | `-server` | `ollantaweb` URL for pushing results |
 | `-server-token` | Bearer token used when pushing results |
 | `-server-wait` | Wait for server-side processing to complete |
+| `-profile-source` | Quality profile source: `auto`, `local`, `server`, or `builtin` |
+| `-profile-file` | JSON or YAML profile-as-code file for local scans |
+| `-profile-strict` | Fail when the requested profile source cannot be loaded |
+| `-profile-fetch-timeout` | Timeout for fetching effective profiles from the server |
 | `-config` | Explicit path to a TOML config file |
 
 Branch and pull request metadata can be provided with `-branch`, `-commit-sha`, `-pull-request-key`, `-pull-request-branch`, and `-pull-request-base`.
 
 Test and mutation evidence collection is optional. See [docs/test-signals.md](docs/test-signals.md) for `collect`, `run`, and `doctor` modes.
+
+## Quality Profiles
+
+Quality Profiles decide which rules run. Quality Gates decide whether the finished scan passes based on metrics such as bugs, coverage, or mutation score. In server mode, Ollanta resolves the project profile per language and the scanner enforces that policy before analysis. In local mode, you can use profile-as-code without a server:
+
+```yaml
+version: 1
+profiles:
+  - language: go
+    name: Strict Go
+    rules:
+      - key: go:no-large-functions
+        severity: critical
+        params:
+          max_lines: "30"
+      - key: go:todo-comment
+        active: false
+```
+
+Run it with:
+
+```sh
+go run github.com/scovl/ollanta/ollantascanner/cmd/ollanta \
+  -project-dir . \
+  -project-key my-project \
+  -profile-source local \
+  -profile-file profiles.yaml \
+  -format all
+```
+
+Reports include `quality_profiles` snapshots with active rule counts and stable rule hashes. The server stores those snapshots during ingest and marks older reports without this field as profile metadata unavailable.
 
 ## Validate A Local Checkout
 

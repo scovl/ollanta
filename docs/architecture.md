@@ -153,7 +153,36 @@ graph TD
 
 ---
 
-### Step 3: Rule Execution
+### Step 3: Quality Profile Resolution And Rule Execution
+
+Before executing rules, the scanner resolves an effective Quality Profile policy for the discovered languages. A Quality Profile is the rule-selection layer: it decides which rules are active, which severity they emit, and which rule parameters are passed to analyzers.
+
+Resolution order is explicit and predictable:
+
+1. `-profile-source local` or `profile_file` loads a JSON/YAML profile-as-code document.
+2. `-profile-source server` fetches `GET /api/v1/projects/{key}/profiles/effective` from `ollantaweb`.
+3. `-profile-source builtin` uses the embedded `Ollanta Way` catalog.
+4. `auto` prefers local file, then server, then built-in defaults.
+
+Unless `-profile-strict` is set, local/server failures fall back to built-in defaults and are recorded as profile diagnostics in the report.
+
+```mermaid
+flowchart LR
+  CFG["Scanner flags / config"] --> R["Resolve profile policy"]
+  R -->|local| FILE["profiles.yaml/json"]
+  R -->|server| API["/projects/{key}/profiles/effective"]
+  R -->|fallback| BUILTIN["Embedded Ollanta Way"]
+  FILE --> POL["Effective rules by language"]
+  API --> POL
+  BUILTIN --> POL
+  POL --> EXEC["Executor filters analyzers"]
+  EXEC --> REPORT["report.json quality_profiles"]
+  REPORT --> INGEST["Server persists scan_profile_snapshots"]
+```
+
+On the server side, `ollantaweb` stays CGo-free. It uses `ollantacore/rulecatalog` for rule metadata and validation, while CGo-dependent analyzer implementations remain in scanner/rules modules. At startup, the server synchronizes built-in `Ollanta Way` profiles from that catalog without deleting custom profiles, custom rules, assignments, or overrides.
+
+TypeScript and Rust are parser-only today: the scanner can parse them, but Ollanta ships no bundled rules yet. Effective profile APIs expose `parser_only` so the UI does not present an empty profile as an actionable rule policy.
 
 With the syntax tree ready, the scanner applies **rules** — each rule knows how to detect one specific type of problem. For example:
 
@@ -209,7 +238,8 @@ After all rules run, the scanner consolidates everything into a report containin
 
 1. **Metadata** — project key, timestamp, scan duration, and branch or pull request scope
 2. **Metrics** — file count, line count, bugs, code smells, vulnerabilities, plus optional coverage, test, and mutation metrics
-3. **Issues** — each problem found, with file path, line, rule, severity, message, tags, language, and derived quality domain
+3. **Quality profile snapshots** — the profile source, active rule count, rules hash, and diagnostics for every analyzed language
+4. **Issues** — each problem found, with file path, line, rule, severity, message, tags, language, and derived quality domain
 
 The report is saved in two formats:
 - **JSON** (`.ollanta/report.json`) — consumed by the API/server
@@ -236,6 +266,16 @@ Example:
     "mutation_score": 74.2,
     "mutants_survived": 8
   },
+  "quality_profiles": [
+    {
+      "language": "go",
+      "profile_name": "Ollanta Way",
+      "source": "builtin",
+      "active_rule_count": 8,
+      "rules_hash": "...",
+      "metadata_available": true
+    }
+  ],
   "issues": [
     {
       "rule_key": "go:no-large-functions",
@@ -1236,6 +1276,7 @@ flowchart TB
 | `POST/GET` | `/api/v1/groups` | `manage_groups` | Manage groups |
 | `POST/GET` | `/api/v1/gates` | `project_admin` | Configure quality gates |
 | `POST/GET` | `/api/v1/profiles` | `project_admin` | Configure quality profiles |
+| `GET` | `/api/v1/projects/{key}/profiles/effective` | `can_view` | Read effective scanner policy |
 | `PUT` | `/api/v1/projects/{key}/new-code` | `project_admin` | Configure new code period |
 | `POST/GET` | `/api/v1/projects/{key}/webhooks` | `project_admin` | Manage webhooks |
 | `POST` | `/api/v1/admin/reindex` | `admin` | Reindex search |
@@ -1311,6 +1352,15 @@ The schema evolves via numbered migrations applied in order:
 | 016 | `resolution` column on `issues` | Closure reason (fixed, false_positive, won't_fix) |
 | 017 | `engine_id` + `secondary_locations` | Multi-engine support and expanded context |
 | 018 | `changelog` | Issue transition history |
+| 019 | `fix_quality_profiles_languages` | Remove unsupported Java/C# profiles and add Rust |
+| 020 | `scan_jobs` | Durable asynchronous scan intake jobs |
+| 021 | `outbox_jobs` | Durable search-index and webhook delivery jobs |
+| 022 | Branch-aware analysis | Branch and pull request metadata on scans/code snapshots |
+| 023 | Job trace context | Trace context on durable jobs |
+| 024 | Issue tracking state | Scope lifecycle state on issues |
+| 025 | Cancelled jobs | Durable job cancellation support |
+| 026 | Job idempotency/dedupe | Payload hashes, attempts, and active job dedupe indexes |
+| 027 | `quality_profile_changelog` + `scan_profile_snapshots` | Profile audit trail and scan-time policy snapshots |
 
 ---
 
@@ -1323,8 +1373,10 @@ The schema evolves via numbered migrations applied in order:
 | **Component** | A node in the hierarchy: project → module → package → file |
 | **Rule** | A rule that knows how to detect one type of problem (e.g., "function too long") |
 | **Measure** | A numeric metric value for a component (e.g., ncloc = 1500) |
-| **Quality Gate** | A set of conditions that determine whether a project passes or fails |
-| **Quality Profile** | A set of active rules for a language (e.g., "Sonar Way Go") |
+| **Quality Gate** | A set of metric conditions evaluated after a scan to determine whether a project passes or fails |
+| **Quality Profile** | A set of active rules, severities, and params for a language; enforced before rule execution |
+| **Profile-as-code** | Versioned JSON/YAML document that defines local or importable profile rules |
+| **Rules Hash** | Stable hash of effective rules, severities, params, and disabled markers for audit/history |
 | **New Code Period** | A reference point that defines what counts as "new code" |
 | **LineHash** | SHA-256 of a line's content — the stable identity of an issue |
 | **Tracking** | Algorithm that correlates issues across scans using (rule_key + line_hash) |
