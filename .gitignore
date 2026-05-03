@@ -28,9 +28,12 @@ ollantascanner/server/static/node_modules/
 # dist/app.js is a pre-built bundle committed alongside source; do not ignore it
 
 
-# presentation
+# Local review, planning, and presentation notes
 presentation/
-over.md
-over02.md
+/review.md
+/*-review.md
+/scenes.md
+/over.md
+/over02.md
 
 
