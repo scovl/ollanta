@@ -69,6 +69,7 @@ func main() {
 	sessionRepo := postgres.NewSessionRepository(db)
 	permRepo := postgres.NewPermissionRepository(db)
 	profileRepo := postgres.NewProfileRepository(db)
+	customRuleRepo := postgres.NewCustomRuleRepository(db)
 	gateRepo := postgres.NewGateRepository(db)
 	periodRepo := postgres.NewNewCodePeriodRepository(db)
 	webhookRepo := postgres.NewWebhookRepository(db)
@@ -117,6 +118,7 @@ func main() {
 		Measures:         measureRepo,
 		Snapshots:        snapshotRepo,
 		ProfileSnapshots: profileSnapshotRepo,
+		CustomRules:      customRuleRepo,
 		Users:            userRepo,
 		Groups:           groupRepo,
 		Tokens:           tokenRepo,

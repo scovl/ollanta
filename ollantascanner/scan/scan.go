@@ -24,7 +24,13 @@ func ParseFlags(args []string) (*ScanOptions, error) {
 
 // Run executes the full scan pipeline through application/scan.
 func Run(ctx context.Context, opts *ScanOptions) (*Report, error) {
-	return appscan.NewScanUseCase(newParserBridge(), newAnalyzerBridges()).Run(ctx, opts)
+	analyzers := newAnalyzerBridges()
+	customAnalyzers, err := loadCustomAnalyzerBridges(ctx, opts)
+	if err != nil {
+		return nil, err
+	}
+	analyzers = append(analyzers, customAnalyzers...)
+	return appscan.NewScanUseCase(newParserBridge(), analyzers).Run(ctx, opts)
 }
 
 // PrintSummary writes a human-readable scan summary to stdout.

@@ -33,11 +33,18 @@ type ProfileOptions struct {
 	FetchTimeout time.Duration
 }
 
+type CustomRuleOptions struct {
+	CatalogHash string
+	Rules       []model.CustomRuleDefinition
+	Sources     []string
+}
+
 // ProfilePolicy is the effective rule policy used by the executor.
 type ProfilePolicy struct {
-	profiles    map[string]*model.EffectiveQualityProfile
-	diagnostics []model.ProfileDiagnostic
-	allowAll    bool
+	profiles          map[string]*model.EffectiveQualityProfile
+	diagnostics       []model.ProfileDiagnostic
+	customCatalogHash string
+	allowAll          bool
 }
 
 // AllowAllProfilePolicy preserves legacy behavior for tests or callers that do not pass a policy.
@@ -52,20 +59,28 @@ func ResolveProfilePolicy(ctx context.Context, opts *ScanOptions, languages []st
 	}
 	profileOpts := normalizeProfileOptions(opts.Profiles)
 	if profileOpts.Source == ProfileSourceLocal || (profileOpts.Source == ProfileSourceAuto && profileOpts.FilePath != "") {
-		return resolveLocalProfilePolicy(profileOpts, languages)
+		return resolveLocalProfilePolicy(profileOpts, languages, opts.CustomRules)
 	}
 	if profileOpts.Source == ProfileSourceServer || (profileOpts.Source == ProfileSourceAuto && opts.Server != "") {
 		return resolveServerProfilePolicy(ctx, opts, profileOpts, languages)
 	}
-	return NewProfilePolicy(builtinEffectiveProfiles(languages), nil), nil
+	return newProfilePolicyWithCustomCatalog(builtinEffectiveProfiles(languages), nil, opts.CustomRules.CatalogHash), nil
 }
 
 // NewProfilePolicy normalizes effective profiles for executor lookup and reporting.
 func NewProfilePolicy(profiles []*model.EffectiveQualityProfile, diagnostics []model.ProfileDiagnostic) *ProfilePolicy {
+	return newProfilePolicyWithCustomCatalog(profiles, diagnostics, "")
+}
+
+func newProfilePolicyWithCustomCatalog(profiles []*model.EffectiveQualityProfile, diagnostics []model.ProfileDiagnostic, customCatalogHash string) *ProfilePolicy {
 	policy := &ProfilePolicy{profiles: map[string]*model.EffectiveQualityProfile{}, diagnostics: diagnostics}
+	policy.customCatalogHash = customCatalogHash
 	for _, profile := range profiles {
 		if profile == nil || profile.Language == "" {
 			continue
+		}
+		if policy.customCatalogHash == "" && profile.CustomCatalogHash != "" {
+			policy.customCatalogHash = profile.CustomCatalogHash
 		}
 		normalizeEffectiveProfile(profile)
 		policy.profiles[profile.Language] = profile
@@ -113,6 +128,7 @@ func (p *ProfilePolicy) Snapshots() []model.ProfileSnapshot {
 			Source:            profile.Source,
 			ActiveRuleCount:   profile.ActiveRuleCount,
 			RulesHash:         profile.RulesHash,
+			CustomCatalogHash: p.customCatalogHash,
 			MetadataAvailable: true,
 			Diagnostics:       append([]model.ProfileDiagnostic(nil), profile.Diagnostics...),
 		})
@@ -149,28 +165,28 @@ func normalizeProfileOptions(opts ProfileOptions) ProfileOptions {
 	return opts
 }
 
-func resolveLocalProfilePolicy(opts ProfileOptions, languages []string) (*ProfilePolicy, error) {
-	profiles, err := loadLocalProfileDocument(opts.FilePath, languages)
+func resolveLocalProfilePolicy(opts ProfileOptions, languages []string, customRules CustomRuleOptions) (*ProfilePolicy, error) {
+	profiles, err := loadLocalProfileDocument(opts.FilePath, languages, customRules)
 	if err == nil {
-		return NewProfilePolicy(mergeMissingBuiltinProfiles(profiles, languages), nil), nil
+		return newProfilePolicyWithCustomCatalog(mergeMissingBuiltinProfiles(profiles, languages), nil, customRules.CatalogHash), nil
 	}
 	if opts.Strict {
 		return nil, err
 	}
 	diagnostic := model.ProfileDiagnostic{Level: "warning", Code: "local_profile_load_failed", Message: err.Error()}
-	return NewProfilePolicy(builtinEffectiveProfiles(languages), []model.ProfileDiagnostic{diagnostic}), nil
+	return newProfilePolicyWithCustomCatalog(builtinEffectiveProfiles(languages), []model.ProfileDiagnostic{diagnostic}, customRules.CatalogHash), nil
 }
 
 func resolveServerProfilePolicy(ctx context.Context, opts *ScanOptions, profileOpts ProfileOptions, languages []string) (*ProfilePolicy, error) {
 	profiles, err := fetchServerEffectiveProfiles(ctx, opts.Server, opts.ServerToken, opts.ProjectKey, profileOpts.FetchTimeout)
 	if err == nil {
-		return NewProfilePolicy(mergeMissingBuiltinProfiles(profiles, languages), nil), nil
+		return newProfilePolicyWithCustomCatalog(mergeMissingBuiltinProfiles(profiles, languages), nil, opts.CustomRules.CatalogHash), nil
 	}
 	if profileOpts.Strict {
 		return nil, err
 	}
 	diagnostic := model.ProfileDiagnostic{Level: "warning", Code: "server_profile_load_failed", Message: err.Error()}
-	return NewProfilePolicy(builtinEffectiveProfiles(languages), []model.ProfileDiagnostic{diagnostic}), nil
+	return newProfilePolicyWithCustomCatalog(builtinEffectiveProfiles(languages), []model.ProfileDiagnostic{diagnostic}, opts.CustomRules.CatalogHash), nil
 }
 
 func fetchServerEffectiveProfiles(ctx context.Context, serverURL, token, projectKey string, timeout time.Duration) ([]*model.EffectiveQualityProfile, error) {
@@ -231,7 +247,7 @@ type profileDocumentRule struct {
 	Activate *bool             `json:"activate" yaml:"activate"`
 }
 
-func loadLocalProfileDocument(path string, languages []string) ([]*model.EffectiveQualityProfile, error) {
+func loadLocalProfileDocument(path string, languages []string, customRules CustomRuleOptions) ([]*model.EffectiveQualityProfile, error) {
 	if path == "" {
 		return nil, fmt.Errorf("profile file is required for profile-source=local")
 	}
@@ -243,7 +259,7 @@ func loadLocalProfileDocument(path string, languages []string) ([]*model.Effecti
 	if err := decodeProfileDocument(data, &doc); err != nil {
 		return nil, fmt.Errorf("parse profile file: %w", err)
 	}
-	return documentEffectiveProfiles(doc, languages)
+	return documentEffectiveProfiles(doc, languages, customRulesByKey(customRules.Rules))
 }
 
 func decodeProfileDocument(data []byte, doc *profileDocument) error {
@@ -253,7 +269,7 @@ func decodeProfileDocument(data []byte, doc *profileDocument) error {
 	return yaml.Unmarshal(data, doc)
 }
 
-func documentEffectiveProfiles(doc profileDocument, languages []string) ([]*model.EffectiveQualityProfile, error) {
+func documentEffectiveProfiles(doc profileDocument, languages []string, customCatalog map[string]model.CustomRuleDefinition) ([]*model.EffectiveQualityProfile, error) {
 	if doc.Version != 0 && doc.Version != 1 {
 		return nil, fmt.Errorf("unsupported profile schema version %d", doc.Version)
 	}
@@ -266,7 +282,7 @@ func documentEffectiveProfiles(doc profileDocument, languages []string) ([]*mode
 	}
 	out := make([]*model.EffectiveQualityProfile, 0, len(profiles))
 	for _, profile := range profiles {
-		effective, err := documentLanguageProfile(profile)
+		effective, err := documentLanguageProfile(profile, customCatalog)
 		if err != nil {
 			return nil, err
 		}
@@ -275,14 +291,14 @@ func documentEffectiveProfiles(doc profileDocument, languages []string) ([]*mode
 	return filterProfilesByLanguage(out, languages), nil
 }
 
-func documentLanguageProfile(profile profileDocumentLanguage) (*model.EffectiveQualityProfile, error) {
+func documentLanguageProfile(profile profileDocumentLanguage, customCatalog map[string]model.CustomRuleDefinition) (*model.EffectiveQualityProfile, error) {
 	language, ok := rulecatalog.LanguageByKey(profile.Language)
 	if !ok {
 		return nil, fmt.Errorf("unsupported profile language %q", profile.Language)
 	}
 	rules := make([]*model.EffectiveRule, 0, len(profile.Rules))
 	for _, entry := range profile.Rules {
-		rule, active, err := documentRule(profile.Language, entry)
+		rule, active, err := documentRule(profile.Language, entry, customCatalog)
 		if err != nil {
 			return nil, err
 		}
@@ -308,11 +324,17 @@ func documentLanguageProfile(profile profileDocumentLanguage) (*model.EffectiveQ
 	return effective, nil
 }
 
-func documentRule(language string, entry profileDocumentRule) (*model.EffectiveRule, bool, error) {
+func documentRule(language string, entry profileDocumentRule, customCatalog map[string]model.CustomRuleDefinition) (*model.EffectiveRule, bool, error) {
 	ruleKey := firstProfileField(entry.Key, entry.RuleKey, entry.Rule)
 	rule, ok := rulecatalog.ByKey(ruleKey)
+	ruleVersionHash := ""
 	if !ok {
-		return nil, false, fmt.Errorf("unknown rule %q", ruleKey)
+		customRule, found := customCatalog[ruleKey]
+		if !found {
+			return nil, false, fmt.Errorf("unknown rule %q", ruleKey)
+		}
+		rule = customRuleCatalogRule(customRule)
+		ruleVersionHash = customRule.VersionHash
 	}
 	if rule.Language != language && rule.Language != "*" {
 		return nil, false, fmt.Errorf("rule %q belongs to language %q, not %q", ruleKey, rule.Language, language)
@@ -338,7 +360,34 @@ func documentRule(language string, entry profileDocumentRule) (*model.EffectiveR
 	if err != nil {
 		return nil, false, err
 	}
-	return &model.EffectiveRule{RuleKey: ruleKey, Severity: severity, Params: params, Origin: model.RuleOriginLocal}, active, nil
+	return &model.EffectiveRule{RuleKey: ruleKey, Severity: severity, Params: params, RuleVersionHash: ruleVersionHash, Origin: model.RuleOriginLocal}, active, nil
+}
+
+func customRulesByKey(rules []model.CustomRuleDefinition) map[string]model.CustomRuleDefinition {
+	out := make(map[string]model.CustomRuleDefinition, len(rules))
+	for _, rule := range rules {
+		if rule.RuleKey != "" {
+			out[rule.RuleKey] = rule
+		}
+	}
+	return out
+}
+
+func customRuleCatalogRule(rule model.CustomRuleDefinition) *coredomain.Rule {
+	params := make(map[string]coredomain.ParamDef, len(rule.ParamsSchema))
+	for key, param := range rule.ParamsSchema {
+		params[key] = coredomain.ParamDef{Key: param.Key, Description: param.Description, DefaultValue: param.DefaultValue, Type: param.Type}
+	}
+	return &coredomain.Rule{
+		Key:             rule.RuleKey,
+		Name:            rule.Name,
+		Description:     rule.Description,
+		Language:        rule.Language,
+		Type:            coredomain.IssueType(rule.Type),
+		DefaultSeverity: coredomain.Severity(rule.DefaultSeverity),
+		Tags:            append([]string(nil), rule.Tags...),
+		ParamsSchema:    params,
+	}
 }
 
 func effectiveRuleParams(rule *coredomain.Rule, overrides map[string]string) (map[string]string, error) {

@@ -29,15 +29,16 @@ type ScanOptions struct {
 	PullRequestBase   string
 	Format            string // "summary" | "json" | "sarif" | "all"
 	Debug             bool
-	Serve             bool            // open local web UI after scan
-	Port              int             // port for -local-ui (default 7777)
-	Bind              string          // bind address for -local-ui (default 127.0.0.1)
-	Server            string          // URL of ollantaweb server for push mode (empty = disabled)
-	ServerToken       string          // Bearer token for authenticating with ollantaweb
-	ServerWait        bool            // wait for accepted server job until completion
-	WaitTimeout       time.Duration   // maximum time to wait for server-side job completion
-	WaitPoll          time.Duration   // polling interval while waiting for server-side job completion
-	Profiles          ProfileOptions  // effective quality profile loading and enforcement
+	Serve             bool           // open local web UI after scan
+	Port              int            // port for -local-ui (default 7777)
+	Bind              string         // bind address for -local-ui (default 127.0.0.1)
+	Server            string         // URL of ollantaweb server for push mode (empty = disabled)
+	ServerToken       string         // Bearer token for authenticating with ollantaweb
+	ServerWait        bool           // wait for accepted server job until completion
+	WaitTimeout       time.Duration  // maximum time to wait for server-side job completion
+	WaitPoll          time.Duration  // polling interval while waiting for server-side job completion
+	Profiles          ProfileOptions // effective quality profile loading and enforcement
+	CustomRules       CustomRuleOptions
 	Tests             TestOptions     // optional test-signal discovery and collection
 	Mutations         MutationOptions // optional mutation-signal discovery and collection
 }
@@ -300,9 +301,14 @@ func scannerOptionsFromScanOptions(opts *ScanOptions) ScannerOptions {
 		WaitTimeout:       opts.WaitTimeout.String(),
 		WaitPoll:          opts.WaitPoll.String(),
 		Profiles:          scannerProfileOptionsFromProfileOptions(opts.Profiles),
+		CustomRules:       scannerCustomRuleOptionsFromCustomRuleOptions(opts.CustomRules),
 		Tests:             scannerTestOptionsFromTestOptions(opts.Tests),
 		Mutations:         scannerMutationOptionsFromMutationOptions(opts.Mutations),
 	}
+}
+
+func scannerCustomRuleOptionsFromCustomRuleOptions(opts CustomRuleOptions) ScannerCustomRuleOptions {
+	return ScannerCustomRuleOptions{CatalogHash: opts.CatalogHash, RuleCount: len(opts.Rules), Sources: append([]string(nil), opts.Sources...)}
 }
 
 func scannerProfileOptionsFromProfileOptions(opts ProfileOptions) ScannerProfileOptions {

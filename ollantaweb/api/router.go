@@ -31,6 +31,7 @@ type RouterDeps struct {
 	Measures         *postgres.MeasureRepository
 	Snapshots        *postgres.CodeSnapshotRepository
 	ProfileSnapshots *postgres.ProfileSnapshotRepository
+	CustomRules      *postgres.CustomRuleRepository
 	Users            *postgres.UserRepository
 	Groups           *postgres.GroupRepository
 	Tokens           *postgres.TokenRepository
@@ -81,11 +82,13 @@ func NewRouter(d *RouterDeps) http.Handler {
 	tokensH := NewTokensHandler(d.Tokens, d.Projects, d.Perms)
 	permsH := NewPermsHandler(d.Perms, d.Projects)
 	profilesH := NewProfilesHandler(d.Profiles, d.Projects)
+	customRulesH := NewCustomRulesHandler(d.CustomRules)
+	customRuleAIH := NewCustomRuleAIHandler()
 	gatesH := NewGatesHandler(d.Gates, d.Projects)
 	periodsH := NewNewCodePeriodHandler(d.Periods, d.Projects)
 	webhooksH := NewWebhooksHandler(d.Webhooks, d.Projects, d.Dispatcher)
 	sysH := &SystemHandler{users: d.Users, projects: d.Projects, config: d.Config}
-	rulesH := NewRulesHandler()
+	rulesH := NewRulesHandler(d.CustomRules)
 
 	ph := &ProjectsHandler{repo: d.Projects}
 	jobService := ingest.NewScanJobService(d.ScanJobs)
@@ -227,6 +230,25 @@ func NewRouter(d *RouterDeps) http.Handler {
 			// Rules (read-only, returns rule metadata including descriptions and examples)
 			r.Get("/rules", rulesH.List)
 			r.Get("/rules/*", rulesH.Get)
+			r.Get("/rule-engines", customRulesH.Engines)
+			r.Get("/custom-rules/catalog", customRulesH.Catalog)
+			r.Group(func(r chi.Router) {
+				r.Use(RequirePermission(d.Perms, "admin"))
+				r.Get("/custom-rules/ai/models", customRuleAIH.Models)
+				r.Post("/custom-rules/ai/suggest", customRuleAIH.Suggest)
+				r.Get("/custom-rules", customRulesH.List)
+				r.Get("/custom-rules/{id}", customRulesH.Get)
+				r.Get("/custom-rules/{id}/export", customRulesH.Export)
+				r.Get("/custom-rules/{id}/audit", customRulesH.Audit)
+				r.Post("/custom-rules", customRulesH.Create)
+				r.Post("/custom-rules/import", customRulesH.Import)
+				r.Put("/custom-rules/{id}", customRulesH.Update)
+				r.Post("/custom-rules/{id}/validate", customRulesH.Validate)
+				r.Post("/custom-rules/{id}/preview", customRulesH.Preview)
+				r.Post("/custom-rules/{id}/publish", customRulesH.Publish)
+				r.Post("/custom-rules/{id}/disable", customRulesH.Disable)
+				r.Post("/custom-rules/{id}/deprecate", customRulesH.Deprecate)
+			})
 
 			// Project overview & activity (SonarQube-inspired dashboard)
 			r.Get("/projects/{key}/overview", oh.Overview)

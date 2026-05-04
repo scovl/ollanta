@@ -37,6 +37,7 @@ type EffectiveRule struct {
 	RuleKey           string            `json:"rule_key"`
 	Severity          string            `json:"severity"`
 	Params            map[string]string `json:"params,omitempty"`
+	RuleVersionHash   string            `json:"rule_version_hash,omitempty"`
 	Origin            RuleOrigin        `json:"origin,omitempty"`
 	Disabled          bool              `json:"disabled,omitempty"`
 	SourceProfileID   int64             `json:"source_profile_id,omitempty"`
@@ -72,16 +73,17 @@ type ProjectQualityProfile struct {
 
 // EffectiveQualityProfile is the fully resolved policy for one project language.
 type EffectiveQualityProfile struct {
-	Language        string              `json:"language"`
-	ProfileID       int64               `json:"profile_id,omitempty"`
-	ProfileName     string              `json:"profile_name,omitempty"`
-	Source          ProfileSource       `json:"source"`
-	Rules           []*EffectiveRule    `json:"rules"`
-	ActiveRuleCount int                 `json:"active_rule_count"`
-	RulesHash       string              `json:"rules_hash"`
-	HasRules        bool                `json:"has_rules"`
-	ParserOnly      bool                `json:"parser_only"`
-	Diagnostics     []ProfileDiagnostic `json:"diagnostics,omitempty"`
+	Language          string              `json:"language"`
+	ProfileID         int64               `json:"profile_id,omitempty"`
+	ProfileName       string              `json:"profile_name,omitempty"`
+	Source            ProfileSource       `json:"source"`
+	Rules             []*EffectiveRule    `json:"rules"`
+	ActiveRuleCount   int                 `json:"active_rule_count"`
+	RulesHash         string              `json:"rules_hash"`
+	CustomCatalogHash string              `json:"custom_catalog_hash,omitempty"`
+	HasRules          bool                `json:"has_rules"`
+	ParserOnly        bool                `json:"parser_only"`
+	Diagnostics       []ProfileDiagnostic `json:"diagnostics,omitempty"`
 }
 
 type ProfileDiagnostic struct {
@@ -99,6 +101,7 @@ type ProfileSnapshot struct {
 	Source            ProfileSource       `json:"source"`
 	ActiveRuleCount   int                 `json:"active_rule_count"`
 	RulesHash         string              `json:"rules_hash"`
+	CustomCatalogHash string              `json:"custom_catalog_hash,omitempty"`
 	MetadataAvailable bool                `json:"metadata_available"`
 	Diagnostics       []ProfileDiagnostic `json:"diagnostics,omitempty"`
 }
@@ -149,7 +152,7 @@ func HashEffectiveRules(rules []*EffectiveRule) string {
 		if rule.Disabled || strings.EqualFold(rule.Severity, "OFF") {
 			disabled = "disabled"
 		}
-		parts = append(parts, rule.RuleKey+"|"+rule.Severity+"|"+disabled+"|"+strings.Join(params, ","))
+		parts = append(parts, rule.RuleKey+"|"+rule.Severity+"|"+disabled+"|"+rule.RuleVersionHash+"|"+strings.Join(params, ","))
 	}
 	sort.Strings(parts)
 	sum := sha256.Sum256([]byte(strings.Join(parts, "\n")))

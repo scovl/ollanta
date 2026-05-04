@@ -237,7 +237,7 @@ func (r *ProfileRepository) ActivateRule(ctx context.Context, profileID int64, r
 	if err != nil {
 		return err
 	}
-	rule, err := validateRuleActivation(profile.Language, ruleKey, severity, params)
+	rule, _, err := r.validateRuleActivation(ctx, profile.Language, ruleKey, severity, params)
 	if err != nil {
 		return err
 	}
@@ -360,17 +360,22 @@ func (r *ProfileRepository) ProjectProfiles(ctx context.Context, projectID int64
 // ProjectEffectiveProfiles returns the effective rule policy for each supported language.
 func (r *ProfileRepository) ProjectEffectiveProfiles(ctx context.Context, projectID int64) ([]*model.EffectiveQualityProfile, error) {
 	out := make([]*model.EffectiveQualityProfile, 0, len(rulecatalog.SupportedLanguages()))
+	customCatalogHash := ""
+	if snapshot, err := NewCustomRuleRepository(r.db).PublishedCatalogSnapshot(ctx); err == nil {
+		customCatalogHash = snapshot.Hash
+	}
 	for _, language := range rulecatalog.SupportedLanguages() {
 		profile, source, err := r.projectProfile(ctx, projectID, language.Key)
 		if errors.Is(err, ErrNotFound) {
 			out = append(out, &model.EffectiveQualityProfile{
-				Language:    language.Key,
-				Source:      model.ProfileSourceDefault,
-				Rules:       []*model.EffectiveRule{},
-				RulesHash:   model.HashEffectiveRules(nil),
-				HasRules:    language.HasRules,
-				ParserOnly:  language.ParserOnly,
-				Diagnostics: []model.ProfileDiagnostic{{Level: "warning", Code: "no_default_profile", Message: "no default profile configured", Language: language.Key}},
+				Language:          language.Key,
+				Source:            model.ProfileSourceDefault,
+				Rules:             []*model.EffectiveRule{},
+				RulesHash:         model.HashEffectiveRules(nil),
+				CustomCatalogHash: customCatalogHash,
+				HasRules:          language.HasRules,
+				ParserOnly:        language.ParserOnly,
+				Diagnostics:       []model.ProfileDiagnostic{{Level: "warning", Code: "no_default_profile", Message: "no default profile configured", Language: language.Key}},
 			})
 			continue
 		}
@@ -386,16 +391,17 @@ func (r *ProfileRepository) ProjectEffectiveProfiles(ctx context.Context, projec
 			diagnostics = append(diagnostics, model.ProfileDiagnostic{Level: "info", Code: "parser_only_language", Message: "language is parsed but has no bundled rules", Language: language.Key})
 		}
 		out = append(out, &model.EffectiveQualityProfile{
-			Language:        language.Key,
-			ProfileID:       profile.ID,
-			ProfileName:     profile.Name,
-			Source:          source,
-			Rules:           rules,
-			ActiveRuleCount: activeRuleCount(rules),
-			RulesHash:       model.HashEffectiveRules(rules),
-			HasRules:        language.HasRules,
-			ParserOnly:      language.ParserOnly,
-			Diagnostics:     diagnostics,
+			Language:          language.Key,
+			ProfileID:         profile.ID,
+			ProfileName:       profile.Name,
+			Source:            source,
+			Rules:             rules,
+			ActiveRuleCount:   activeRuleCount(rules),
+			RulesHash:         model.HashEffectiveRules(rules),
+			CustomCatalogHash: customCatalogHash,
+			HasRules:          language.HasRules,
+			ParserOnly:        language.ParserOnly,
+			Diagnostics:       diagnostics,
 		})
 	}
 	return out, nil
@@ -461,7 +467,7 @@ func (r *ProfileRepository) ApplyProfileRules(ctx context.Context, profileID int
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	for _, e := range entries {
-		if err := applyProfileRuleEntry(ctx, tx, profile, e); err != nil {
+		if err := r.applyProfileRuleEntry(ctx, tx, profile, e); err != nil {
 			return err
 		}
 	}
@@ -518,17 +524,27 @@ func (r *ProfileRepository) mergeProfileRules(ctx context.Context, profileID, le
 		return fmt.Errorf("list rules for profile %d: %w", profileID, err)
 	}
 	for _, rule := range rules {
-		mergeEffectiveRule(merged, profile, rule, profileID, leafID)
+		r.mergeEffectiveRule(ctx, merged, profile, rule, profileID, leafID)
 	}
 	return nil
 }
 
-func mergeEffectiveRule(merged map[string]*EffectiveRule, profile *QualityProfile, rule *ProfileRule, profileID, leafID int64) {
+func (r *ProfileRepository) customRuleVersionHash(ctx context.Context, ruleKey string) string {
+	_, versionHash, err := NewCustomRuleRepository(r.db).PublishedCoreRuleByKey(ctx, ruleKey)
+	if err != nil {
+		return ""
+	}
+	return versionHash
+}
+
+func (r *ProfileRepository) mergeEffectiveRule(ctx context.Context, merged map[string]*EffectiveRule, profile *QualityProfile, rule *ProfileRule, profileID, leafID int64) {
+	versionHash := r.customRuleVersionHash(ctx, rule.RuleKey)
 	if rule.Severity == "OFF" {
 		merged[rule.RuleKey] = &EffectiveRule{
 			RuleKey:           rule.RuleKey,
 			Severity:          rule.Severity,
 			Params:            rule.Params,
+			RuleVersionHash:   versionHash,
 			Origin:            model.RuleOriginDisabled,
 			Disabled:          true,
 			SourceProfileID:   profile.ID,
@@ -546,18 +562,19 @@ func mergeEffectiveRule(merged map[string]*EffectiveRule, profile *QualityProfil
 		RuleKey:           rule.RuleKey,
 		Severity:          rule.Severity,
 		Params:            rule.Params,
+		RuleVersionHash:   versionHash,
 		Origin:            origin,
 		SourceProfileID:   profile.ID,
 		SourceProfileName: profile.Name,
 	}
 }
 
-func applyProfileRuleEntry(ctx context.Context, tx pgx.Tx, profile *QualityProfile, entry ProfileYAMLEntry) error {
+func (r *ProfileRepository) applyProfileRuleEntry(ctx context.Context, tx pgx.Tx, profile *QualityProfile, entry ProfileYAMLEntry) error {
 	ruleKey := profileRuleEntryKey(entry)
 	if entry.Activate {
-		return applyActiveProfileRuleEntry(ctx, tx, profile, ruleKey, entry)
+		return r.applyActiveProfileRuleEntry(ctx, tx, profile, ruleKey, entry)
 	}
-	return applyDisabledProfileRuleEntry(ctx, tx, profile, ruleKey)
+	return r.applyDisabledProfileRuleEntry(ctx, tx, profile, ruleKey)
 }
 
 func profileRuleEntryKey(entry ProfileYAMLEntry) string {
@@ -567,12 +584,12 @@ func profileRuleEntryKey(entry ProfileYAMLEntry) string {
 	return entry.Rule
 }
 
-func applyActiveProfileRuleEntry(ctx context.Context, tx pgx.Tx, profile *QualityProfile, ruleKey string, entry ProfileYAMLEntry) error {
+func (r *ProfileRepository) applyActiveProfileRuleEntry(ctx context.Context, tx pgx.Tx, profile *QualityProfile, ruleKey string, entry ProfileYAMLEntry) error {
 	severity := entry.Severity
 	if severity == "" {
 		severity = "major"
 	}
-	rule, err := validateRuleActivation(profile.Language, ruleKey, severity, entry.Params)
+	rule, _, err := r.validateRuleActivation(ctx, profile.Language, ruleKey, severity, entry.Params)
 	if err != nil {
 		return fmt.Errorf("activate rule %s: %w", ruleKey, err)
 	}
@@ -594,8 +611,8 @@ func applyActiveProfileRuleEntry(ctx context.Context, tx pgx.Tx, profile *Qualit
 	return nil
 }
 
-func applyDisabledProfileRuleEntry(ctx context.Context, tx pgx.Tx, profile *QualityProfile, ruleKey string) error {
-	if _, err := validateRuleActivation(profile.Language, ruleKey, "OFF", nil); err != nil {
+func (r *ProfileRepository) applyDisabledProfileRuleEntry(ctx context.Context, tx pgx.Tx, profile *QualityProfile, ruleKey string) error {
+	if _, _, err := r.validateRuleActivation(ctx, profile.Language, ruleKey, "OFF", nil); err != nil {
 		return fmt.Errorf("deactivate rule %s: %w", ruleKey, err)
 	}
 	if _, err := tx.Exec(ctx, `
@@ -692,27 +709,51 @@ func activeRuleCount(rules []*model.EffectiveRule) int {
 	return count
 }
 
-func validateRuleActivation(language, ruleKey, severity string, params map[string]string) (*coredomain.Rule, error) {
-	rule, ok := rulecatalog.ByKey(ruleKey)
-	if !ok {
-		return nil, fmt.Errorf("unknown rule %q", ruleKey)
+func (r *ProfileRepository) validateRuleActivation(ctx context.Context, language, ruleKey, severity string, params map[string]string) (*coredomain.Rule, string, error) {
+	rule, versionHash, err := r.lookupActivationRule(ctx, language, ruleKey, severity)
+	if err != nil {
+		return nil, "", err
 	}
 	if rule.Language != language && rule.Language != "*" {
-		return nil, fmt.Errorf("rule %q belongs to language %q, not %q", ruleKey, rule.Language, language)
+		return nil, "", fmt.Errorf("rule %q belongs to language %q, not %q", ruleKey, rule.Language, language)
 	}
 	if severity != "" && !validSeverity(severity) {
-		return nil, fmt.Errorf("invalid severity %q", severity)
+		return nil, "", fmt.Errorf("invalid severity %q", severity)
 	}
+	if err := validateActivationParams(rule, ruleKey, params); err != nil {
+		return nil, "", err
+	}
+	return rule, versionHash, nil
+}
+
+func (r *ProfileRepository) lookupActivationRule(ctx context.Context, language, ruleKey, severity string) (*coredomain.Rule, string, error) {
+	if rule, ok := rulecatalog.ByKey(ruleKey); ok {
+		return rule, "", nil
+	}
+	customRule, hash, err := NewCustomRuleRepository(r.db).PublishedCoreRuleByKey(ctx, ruleKey)
+	if errors.Is(err, ErrNotFound) {
+		if strings.EqualFold(severity, "OFF") {
+			return &coredomain.Rule{Key: ruleKey, Language: language, DefaultSeverity: coredomain.SeverityMajor, ParamsSchema: map[string]coredomain.ParamDef{}}, "", nil
+		}
+		return nil, "", fmt.Errorf("unknown rule %q", ruleKey)
+	}
+	if err != nil {
+		return nil, "", err
+	}
+	return customRule, hash, nil
+}
+
+func validateActivationParams(rule *coredomain.Rule, ruleKey string, params map[string]string) error {
 	for key, value := range params {
 		param, ok := rule.ParamsSchema[key]
 		if !ok {
-			return nil, fmt.Errorf("unknown parameter %q for rule %q", key, ruleKey)
+			return fmt.Errorf("unknown parameter %q for rule %q", key, ruleKey)
 		}
 		if err := validateParamValue(param.Type, value); err != nil {
-			return nil, fmt.Errorf("invalid parameter %q for rule %q: %w", key, ruleKey, err)
+			return fmt.Errorf("invalid parameter %q for rule %q: %w", key, ruleKey, err)
 		}
 	}
-	return rule, nil
+	return nil
 }
 
 func validSeverity(severity string) bool {

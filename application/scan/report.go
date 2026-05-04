@@ -68,28 +68,35 @@ type Metadata struct {
 
 // ScannerOptions describes the scanner parameters used to produce a report.
 type ScannerOptions struct {
-	ConfigPath        string                 `json:"config_path,omitempty"`
-	ProjectDir        string                 `json:"project_dir,omitempty"`
-	Sources           []string               `json:"sources,omitempty"`
-	Exclusions        []string               `json:"exclusions,omitempty"`
-	ProjectKey        string                 `json:"project_key,omitempty"`
-	Branch            string                 `json:"branch,omitempty"`
-	CommitSHA         string                 `json:"commit_sha,omitempty"`
-	PullRequestKey    string                 `json:"pull_request_key,omitempty"`
-	PullRequestBranch string                 `json:"pull_request_branch,omitempty"`
-	PullRequestBase   string                 `json:"pull_request_base,omitempty"`
-	Format            string                 `json:"format,omitempty"`
-	Debug             bool                   `json:"debug,omitempty"`
-	LocalUI           bool                   `json:"local_ui,omitempty"`
-	Port              int                    `json:"port,omitempty"`
-	Bind              string                 `json:"bind,omitempty"`
-	Server            string                 `json:"server,omitempty"`
-	ServerWait        bool                   `json:"server_wait,omitempty"`
-	WaitTimeout       string                 `json:"server_wait_timeout,omitempty"`
-	WaitPoll          string                 `json:"server_wait_poll,omitempty"`
-	Profiles          ScannerProfileOptions  `json:"profiles,omitempty"`
-	Tests             ScannerTestOptions     `json:"tests,omitempty"`
-	Mutations         ScannerMutationOptions `json:"mutations,omitempty"`
+	ConfigPath        string                   `json:"config_path,omitempty"`
+	ProjectDir        string                   `json:"project_dir,omitempty"`
+	Sources           []string                 `json:"sources,omitempty"`
+	Exclusions        []string                 `json:"exclusions,omitempty"`
+	ProjectKey        string                   `json:"project_key,omitempty"`
+	Branch            string                   `json:"branch,omitempty"`
+	CommitSHA         string                   `json:"commit_sha,omitempty"`
+	PullRequestKey    string                   `json:"pull_request_key,omitempty"`
+	PullRequestBranch string                   `json:"pull_request_branch,omitempty"`
+	PullRequestBase   string                   `json:"pull_request_base,omitempty"`
+	Format            string                   `json:"format,omitempty"`
+	Debug             bool                     `json:"debug,omitempty"`
+	LocalUI           bool                     `json:"local_ui,omitempty"`
+	Port              int                      `json:"port,omitempty"`
+	Bind              string                   `json:"bind,omitempty"`
+	Server            string                   `json:"server,omitempty"`
+	ServerWait        bool                     `json:"server_wait,omitempty"`
+	WaitTimeout       string                   `json:"server_wait_timeout,omitempty"`
+	WaitPoll          string                   `json:"server_wait_poll,omitempty"`
+	Profiles          ScannerProfileOptions    `json:"profiles,omitempty"`
+	CustomRules       ScannerCustomRuleOptions `json:"custom_rules,omitempty"`
+	Tests             ScannerTestOptions       `json:"tests,omitempty"`
+	Mutations         ScannerMutationOptions   `json:"mutations,omitempty"`
+}
+
+type ScannerCustomRuleOptions struct {
+	CatalogHash string   `json:"catalog_hash,omitempty"`
+	RuleCount   int      `json:"rule_count,omitempty"`
+	Sources     []string `json:"sources,omitempty"`
 }
 
 // ScannerProfileOptions describes quality profile loading options without secrets.

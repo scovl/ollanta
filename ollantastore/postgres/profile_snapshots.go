@@ -53,11 +53,11 @@ func (r *ProfileSnapshotRepository) Replace(ctx context.Context, projectID, scan
 			INSERT INTO scan_profile_snapshots (
 				project_id, scan_id, scope_type, branch, pull_request_key, language,
 				profile_id, profile_name, source, active_rule_count, rules_hash,
-				metadata_available, diagnostics
-			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,TRUE,$12)`,
+				custom_catalog_hash, metadata_available, diagnostics
+			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,TRUE,$13)`,
 			projectID, scanID, scope.Type, scope.Branch, scope.PullRequestKey, snapshot.Language,
 			nullZeroInt64(snapshot.ProfileID), snapshot.ProfileName, string(snapshot.Source), snapshot.ActiveRuleCount,
-			snapshot.RulesHash, diagnostics); err != nil {
+			snapshot.RulesHash, snapshot.CustomCatalogHash, diagnostics); err != nil {
 			return fmt.Errorf("insert profile snapshot %s: %w", snapshot.Language, err)
 		}
 	}
@@ -70,7 +70,7 @@ func (r *ProfileSnapshotRepository) Replace(ctx context.Context, projectID, scan
 // ListByScan returns snapshots for a scan and whether profile metadata was available.
 func (r *ProfileSnapshotRepository) ListByScan(ctx context.Context, scanID int64) ([]model.ProfileSnapshot, bool, error) {
 	rows, err := r.db.Pool.Query(ctx, `
-		SELECT language, COALESCE(profile_id, 0), profile_name, source, active_rule_count, rules_hash,
+		SELECT language, COALESCE(profile_id, 0), profile_name, source, active_rule_count, rules_hash, custom_catalog_hash,
 		       metadata_available, diagnostics
 		FROM scan_profile_snapshots
 		WHERE scan_id = $1
@@ -89,7 +89,7 @@ func (r *ProfileSnapshotRepository) ListByScan(ctx context.Context, scanID int64
 		var source string
 		var metadataAvailable bool
 		var diagnosticsRaw []byte
-		if err := rows.Scan(&snapshot.Language, &snapshot.ProfileID, &snapshot.ProfileName, &source, &snapshot.ActiveRuleCount, &snapshot.RulesHash, &metadataAvailable, &diagnosticsRaw); err != nil {
+		if err := rows.Scan(&snapshot.Language, &snapshot.ProfileID, &snapshot.ProfileName, &source, &snapshot.ActiveRuleCount, &snapshot.RulesHash, &snapshot.CustomCatalogHash, &metadataAvailable, &diagnosticsRaw); err != nil {
 			return nil, false, err
 		}
 		if !metadataAvailable {
