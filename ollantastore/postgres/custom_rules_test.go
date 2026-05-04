@@ -51,6 +51,10 @@ func importCustomRuleForRegression(t *testing.T, ctx context.Context, repo *Cust
 				"pattern": "CUSTOM_RULE_DEBUG_MARKER",
 			},
 			Message: "Remove the custom debug marker.",
+			Examples: []model.CustomRuleExample{
+				{Name: "compliant", Code: "package main\nfunc main() { println(\"ok\") }", Compliant: true},
+				{Name: "noncompliant", Code: "package main\nfunc main() { println(\"CUSTOM_RULE_DEBUG_MARKER\") }", Compliant: false},
+			},
 		}},
 	}
 
