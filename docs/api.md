@@ -13,9 +13,11 @@ The server listens on `:8080` by default. Start it with:
 docker compose --profile server up -d
 ```
 
+The local compose stack has development defaults for PostgreSQL, ZincSearch, the seeded admin login, and the scanner token. Override them in `.env` for shared environments.
+
 `ollantaweb` also reads a local `config.toml` file when present. To point at a different path, start the binary with `OLLANTA_CONFIG_FILE=/path/to/config.toml`.
 The backend reads its own settings from `[server]`, PostgreSQL connectivity from `[database]`, and search configuration from `[search]`.
-Database and search settings can be expressed either as a full `url` or as explicit host/port/credential fields in `config.toml`.
+Database and search settings can be expressed either as a full `url` or as explicit host/port/credential fields in `config.toml`. Environment-based deployments can use `OLLANTA_DATABASE_URL` or the discrete `OLLANTA_POSTGRES_HOST`, `OLLANTA_POSTGRES_PORT`, `OLLANTA_POSTGRES_DB`, `OLLANTA_POSTGRES_USER`, `OLLANTA_POSTGRES_PASSWORD`, and `OLLANTA_POSTGRES_SSLMODE` variables.
 
 ---
 
@@ -73,13 +75,11 @@ Database and search settings can be expressed either as a full `url` or as expli
 The scanner push workflow can authenticate without a user account by sharing a pre-configured scanner secret:
 
 ```sh
-export OLLANTA_SCANNER_TOKEN=ollanta-dev-scanner-token
-export OLLANTA_TOKEN=ollanta-dev-scanner-token
 docker compose --profile server up -d
 docker compose --profile push run --build --rm push
 ```
 
-If `OLLANTA_SCANNER_TOKEN` is empty on the server, ingestion falls back to regular token-based authentication.
+The compose defaults set both scanner-token sides to `ollanta-dev-scanner-token`. If `OLLANTA_SCANNER_TOKEN` is empty on the server, ingestion falls back to regular token-based authentication.
 The same value can also be provided through `[server].scanner_token` in `config.toml`.
 
 ### Scope-aware project endpoints
@@ -246,6 +246,60 @@ Quality Profiles and Quality Gates are separate APIs. Profiles decide which rule
 | GET    | `/api/v1/projects/{key}/profiles`                  | Project profile assignment/default state per supported language |
 | POST   | `/api/v1/projects/{key}/profiles`                  | Assign a profile to a project language |
 | GET    | `/api/v1/projects/{key}/profiles/effective`        | Effective scanner policy for all supported languages |
+
+## Custom Rule Packs
+
+Custom Rule Packs are catalog entries managed separately from Quality Profiles. Published custom rules appear in `/api/v1/rules`, can be activated in profiles, and are fetched by scanners as a scan-start catalog snapshot. Draft, invalid, disabled, and deprecated rules stay out of scanner/profile catalog responses. Draft/detail lifecycle endpoints require the `admin` permission; the published catalog snapshot is readable by authenticated scanners.
+
+| Method | Endpoint                                      | Description |
+|--------|-----------------------------------------------|-------------|
+| GET    | `/api/v1/rule-engines`                        | List supported declarative custom rule engines and capabilities |
+| GET    | `/api/v1/custom-rules`                        | List custom rule versions for Rule Studio/admin views |
+| POST   | `/api/v1/custom-rules`                        | Import/create a draft rule pack document |
+| POST   | `/api/v1/custom-rules/import`                 | Import a JSON or YAML rule pack document |
+| GET    | `/api/v1/custom-rules/{id}`                   | Get a custom rule version |
+| PUT    | `/api/v1/custom-rules/{id}`                   | Update an editable draft, or create a new draft version from a published rule |
+| POST   | `/api/v1/custom-rules/{id}/validate`          | Run CGo-free validation and example checks |
+| POST   | `/api/v1/custom-rules/{id}/preview`           | Preview matches against a supplied source snippet for CGo-free engines |
+| POST   | `/api/v1/custom-rules/{id}/publish`           | Publish a rule version after current validation passes |
+| POST   | `/api/v1/custom-rules/{id}/disable`           | Disable a custom rule version |
+| POST   | `/api/v1/custom-rules/{id}/deprecate`         | Deprecate a custom rule version |
+| GET    | `/api/v1/custom-rules/{id}/export`            | Export a rule pack document containing the selected rule |
+| GET    | `/api/v1/custom-rules/{id}/audit`             | Paginated lifecycle audit entries |
+| GET    | `/api/v1/custom-rules/catalog`                | Published custom rule catalog snapshot used by scanners |
+| GET    | `/api/v1/custom-rules/ai/models`              | List AI providers, model states, setup status, and local/cloud labels without secrets |
+| POST   | `/api/v1/custom-rules/ai/suggest`             | Generate an editable custom rule draft suggestion from provider, model, intent, and current draft fields |
+
+Rule pack schema:
+
+```yaml
+version: 1
+pack:
+  name: Team Rules
+  namespace: team
+rules:
+  - key: no-debug-print
+    name: Debug prints should not be committed
+    language: go
+    type: code_smell
+    severity: major
+    engine: go-ast
+    engine_config:
+      pattern: forbidden_call
+      target: fmt.Println
+    message: Remove debug printing before committing.
+    examples:
+      - name: compliant
+        code: 'package main; func main() { println("ok") }'
+        compliant: true
+      - name: noncompliant
+        code: 'package main; import "fmt"; func main() { fmt.Println("debug") }'
+        compliant: false
+```
+
+`ollantaweb` keeps validation CGo-free. Text and Go AST rules can be validated and published directly through the server. Tree-sitter query compilation and full source preview require scanner/local runtime support; server validation records that runtime validation is required until an engine-capable validator is used.
+
+Rule Studio AI assistance returns suggestions only. It does not create, validate, publish, or activate a rule unless the user explicitly saves the draft and follows the normal lifecycle. Provider metadata exposes setup state and model identifiers but never returns API keys. Ollama is treated as a local provider via `OLLANTA_AI_OLLAMA_BASE_URL`; cloud providers use server-side base URL, model list, label, and credential configuration. The default OpenAI list is `gpt-5.5`, `gpt-5.4`, `gpt-5.4-mini`, and `gpt-5.4-nano`; Ollanta uses `OLLANTA_AI_OPENAI_API=responses` for OpenAI's endpoint and accepts `OLLANTA_AI_OPENAI_API=chat` for chat-completions-compatible providers. Anthropic Claude is available through `ANTHROPIC_API_KEY` and the Messages API, with default models `claude-opus-4-7`, `claude-sonnet-4-6`, and `claude-haiku-4-5`. Kimi K2 uses Moonshot's Chat Completions API with `MOONSHOT_API_KEY` or `KIMI_API_KEY`, default base URL `https://api.moonshot.ai/v1`, and default model `kimi-k2.6`. Qwen uses DashScope's OpenAI-compatible Chat Completions API with `DASHSCOPE_API_KEY` or `QWEN_API_KEY`, default base URL `https://dashscope-intl.aliyuncs.com/compatible-mode/v1`, and default model `qwen3.6-max-preview`. Use each provider's `OLLANTA_AI_<PROVIDER>_MODELS`, `OLLANTA_AI_<PROVIDER>_MODEL`, `OLLANTA_AI_<PROVIDER>_BASE_URL`, or `OLLANTA_AI_<PROVIDER>_LABEL` variables to override details.
 
 ### Profile-as-code schema
 

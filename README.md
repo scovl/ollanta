@@ -15,6 +15,8 @@ You can use Ollanta in two ways:
 - **Scanner**: a local CLI that scans a project and writes JSON/SARIF reports. It can also open an embedded local UI on port `7777`.
 - **Server**: a centralized API that receives scan reports, stores history, tracks issues across scans, evaluates quality gates, exposes dashboards, and runs background workers.
 
+For the full first-project flow, see [docs/how-to-use.md](docs/how-to-use.md).
+
 ## Language Support
 
 | Language | Parser | Bundled rules |
@@ -42,36 +44,41 @@ On Windows, the Makefile prepends `C:\msys64\mingw64\bin` to `PATH` for its own 
 
 ## Quick Start
 
-### 1. Run a local scan with the embedded UI
+This section is the shortest happy path. The complete scanner-to-server journey is in [docs/how-to-use.md](docs/how-to-use.md).
+
+### 1. Scan this checkout
 
 From the repository root:
 
 ```sh
 go run github.com/scovl/ollanta/ollantascanner/cmd/ollanta \
   -project-dir . \
-  -project-key ollanta \
+  -project-key ollanta-self \
   -format all \
   -local-ui
 ```
 
-Open `http://localhost:7777` to inspect issues, metrics, rule details, and optional `Fix with AI` suggestions.
+This is the fastest way to try Ollanta on Ollanta itself. Open `http://localhost:7777` to inspect issues, metrics, rule details, and optional `Fix with AI` suggestions.
 
 Reports are written to `.ollanta/` inside the scanned project:
 
 - `.ollanta/report.json`
 - `.ollanta/report.sarif`
 
-### 2. Run the scanner with Docker
+### 2. Scan with Docker
 
 ```sh
 docker compose --profile scanner up local-ui
 ```
 
-Useful overrides:
+By default this scans the current checkout. For another project, set `PROJECT_DIR` and `PROJECT_KEY` in your shell or in a local `.env` file before running the same command.
 
-```sh
-PROJECT_DIR=/path/to/project PROJECT_KEY=my-project docker compose --profile scanner up local-ui
-PORT=7788 docker compose --profile scanner up local-ui
+PowerShell example:
+
+```powershell
+$env:PROJECT_DIR = 'D:\projects\myapp'
+$env:PROJECT_KEY = 'myapp'
+docker compose --profile scanner up local-ui
 ```
 
 ### 3. Generate CI-friendly reports only
@@ -98,7 +105,7 @@ This starts:
 - `ollantaweb` on port `8080`
 - `ollantaworker`, `ollantaindexer`, and `ollantawebhookworker`
 
-The development scanner token defaults to `ollanta-dev-scanner-token` in Docker Compose.
+The local Docker stack works without extra variables. It uses `admin` / `admin` for the seeded development login and `ollanta-dev-scanner-token` for scanner pushes. Override `PG_PASSWORD`, `OLLANTA_JWT_SECRET`, and `OLLANTA_SCANNER_TOKEN` in a local `.env` file for any shared or long-lived environment.
 
 ### 5. Push a scan to the server
 
@@ -114,32 +121,25 @@ go run github.com/scovl/ollanta/ollantascanner/cmd/ollanta \
 
 `-server-wait` makes the CLI wait until the accepted server-side scan job finishes. Without it, the server returns after accepting the job.
 
+When waiting is enabled, the scanner may exit non-zero after a successful push if the evaluated Quality Gate is `ERROR`. Treat that as a CI gate failure, not as an ingestion failure.
+
 Docker push mode is also available:
 
 ```sh
-PROJECT_DIR=/path/to/project PROJECT_KEY=my-project docker compose --profile push run --build --rm push
+docker compose --profile push run --build --rm push
 ```
+
+Set `PROJECT_DIR`, `PROJECT_KEY`, and `OLLANTA_SERVER_WAIT=true` in your shell or `.env` when pushing a different project or when you want the containerized scanner to wait for server-side processing.
 
 ## Configuration
 
-Ollanta can read settings from [config.toml.example](config.toml.example). Use it as a starting point:
+Ollanta can read settings from [config.toml.example](config.toml.example). The example is intentionally small: scanner defaults, optional server push settings, and local server connectivity. Use [docs/how-to-use.md](docs/how-to-use.md) for the recommended scanner/server configuration split.
 
 ```sh
 cp config.toml.example config.toml
 ```
 
-Scanner settings live under `[scanner]`, including `project_dir`, `project_key`, `format`, `local_ui`, `server_url`, and `server_wait`.
-
-Quality Profile settings also live under `[scanner]`:
-
-| Setting | Purpose |
-|---------|---------|
-| `profile_source` | `auto`, `local`, `server`, or `builtin`. `auto` uses a local file when configured, then server profiles when a server URL exists, otherwise built-in defaults. |
-| `profile_file` | JSON or YAML profile-as-code file for local scans. |
-| `profile_strict` | Fail the scan if the requested local/server profile cannot be loaded. |
-| `profile_fetch_timeout` | Timeout for loading effective profiles from `ollantaweb`. |
-
-Server settings live under `[server]`, `[database]`, and `[search]`.
+Use CLI flags for one-off runs and `config.toml` when the same project or CI job should be repeatable. Advanced test, coverage, and mutation evidence settings are documented in [docs/test-signals.md](docs/test-signals.md).
 
 Configuration precedence:
 
@@ -216,6 +216,12 @@ go run github.com/scovl/ollanta/ollantascanner/cmd/ollanta \
 ```
 
 Reports include `quality_profiles` snapshots with active rule counts and stable rule hashes. The server stores those snapshots during ingest and marks older reports without this field as profile metadata unavailable.
+
+## Custom Rule Packs
+
+Custom Rule Packs add declarative team rules without rebuilding Ollanta. Local scans load packs from `.ollanta/rules/*.yaml`, `.ollanta/rules/*.yml`, and `.ollanta/rules/*.json`; server users can create, validate, publish, and activate rules through Rule Studio. AI-assisted drafts are available through server-side provider configuration, but generated rules still require validation, publication, and Quality Profile activation.
+
+See [docs/rules.md](docs/rules.md) for pack schema, examples, AI provider setup, and the full custom-rule smoke flow.
 
 ## Validate A Local Checkout
 

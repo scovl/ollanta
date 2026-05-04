@@ -1,161 +1,52 @@
+# Minimal local configuration for Ollanta.
+# Copy this file to config.toml when you want repeatable local runs:
+#   cp config.toml.example config.toml
+#
+# CLI flags and OLLANTA_* environment variables still override this file.
+
 [scanner]
 project_dir = "."
+project_key = "ollanta"
 sources = ["./..."]
-format = "all"
+exclusions = [".git/**", ".ollanta/**", "**/node_modules/**"]
+format = "all" # summary, json, sarif, all
 local_ui = true
 bind = "127.0.0.1"
 port = 7777
-server_url = "http://localhost:8080"
-server_token = "ollanta-dev-scanner-token"
+
+# Uncomment these when this scanner should push to a centralized server.
+# server_url = "http://localhost:8080"
+# server_token = "ollanta-dev-scanner-token"
 server_wait = false
 server_wait_timeout = "10m"
 server_wait_poll = "2s"
 
-# Quality Profiles control which bundled rules execute and which severities or
-# params they use. auto = local file when profile_file is set, otherwise server
-# when server_url is set, otherwise built-in Ollanta Way.
+# Quality Profiles control which rules run. Keep auto for first use:
+# local profile file when configured, server profiles when a server URL is set,
+# otherwise built-in defaults.
 profile_source = "auto" # auto, local, server, builtin
-profile_file = ""      # JSON or YAML profile-as-code file
-profile_strict = false # fail scan if requested local/server profile cannot load
+profile_file = ""
+profile_strict = false
 profile_fetch_timeout = "10s"
 
-# Optional test-signal discovery. Disabled by default so scans remain fast and
-# never execute repository test commands unless explicitly requested.
+# Optional test and mutation evidence. Disabled by default so a first scan never
+# executes repository commands. See docs/test-signals.md for full examples.
 [tests]
 enabled = false
-mode = "collect" # collect existing reports; use "run" only with explicit opt-in
-discover = true
-run = false
-max_report_age = "24h"
-exclusions = ["node_modules/**", "vendor/**", "dist/**", "build/**", ".git/**"]
-max_depth = 8
-max_candidates = 200
-max_report_bytes = 20971520
-max_runtime = "10m"
-command_policy = "explicit"
-fail_on_timeout = false
-allow_external_artifacts = false
 
-[[tests.path_mapping]]
-from = "/workspace/project"
-to = "."
-
-[[tests.modules]]
-name = "domain"
-root = "domain"
-language = "go"
-architecture_role = "domain"
-test_policy = "required"
-command = "go test ./... -coverprofile=coverage.out"
-coverage_reports = ["coverage.out"]
-test_reports = ["junit.xml"]
-coverage_threshold = 85.0
-new_coverage_threshold = 90.0
-suite_kind = "unit"
-evidence_confidence = "high"
-allow_external_artifacts = false
-owner = "platform"
-team = "quality"
-
-[[tests.modules]]
-name = "generated fixtures"
-root = "testdata/generated"
-test_policy = "ignored"
-ignore_reason = "Generated fixture code is not part of product test health."
-
-# Optional mutation-signal discovery. Like test signals, collection is report-only
-# by default. Use doctor mode to preview discovered tools/reports before enabling
-# explicit mutation execution in CI.
 [mutations]
 enabled = false
-mode = "collect" # collect existing reports; use "doctor" to preview, "run" only with opt-in
-discover = true
-run = false
-changed_only = true
-max_runtime = "10m"
-max_mutants = 500
-max_report_age = "24h"
-exclusions = ["node_modules/**", "vendor/**", "dist/**", "build/**", ".git/**"]
-max_depth = 8
-max_candidates = 200
-max_report_bytes = 20971520
-command_policy = "explicit"
-fail_on_timeout = false
-allow_external_artifacts = false
 
-[[mutations.path_mapping]]
-from = "/workspace/project"
-to = "."
-
-[[mutations.modules]]
-name = "domain mutation"
-root = "domain"
-language = "go"
-architecture_role = "domain"
-tool = "native"
-command = "go test ./... && go-mutesting ./..."
-native_report_paths = ["ollanta-mutations.json"]
-report_paths = ["reports/mutation.json"]
-threshold = 75.0
-changed_code_threshold = 85.0
-suite_kind = "contract"
-evidence_confidence = "medium"
-owner = "platform"
-team = "quality"
-mutation_policy = "required"
-changed_only = true
-max_runtime = "5m"
-max_mutants = 200
-allow_external_artifacts = false
-
-[[mutations.modules]]
-name = "generated mutation fixtures"
-root = "testdata/generated"
-mutation_policy = "ignored"
-ignore_reason = "Generated fixture code is not mutation tested."
-
+# Server settings are needed only when running ollantaweb or worker binaries
+# directly. Docker Compose supplies these values through environment variables.
 [server]
 addr = ":8080"
 admin_addr = ":9090"
 log_level = "info"
 jwt_secret = "ollanta-dev-jwt-secret-change-me"
-# Development-only escape hatch when no JWT secret is configured. Do not enable
-# this in multi-replica or production deployments because tokens will not survive
-# restarts or work across replicas.
-allow_random_jwt_secret = false
 cors_allowed_origins = ["http://localhost:8080"]
-# Development-only opt-in required before using cors_allowed_origins = ["*"].
-cors_allow_unsafe_wildcard = false
-http_max_body_bytes = 10485760
 auto_migrate = true
-scan_queue_max_accepted = 0 # 0 disables this local-development limit
-scan_queue_max_running = 0 # 0 disables this local-development limit
-scan_queue_max_oldest_accepted_age = "0s" # 0s disables this limit
-scan_queue_retry_after = "30s"
-scan_job_stale_after = "15m"
-scan_job_max_attempts = 3
-scan_job_recovery_interval = "1m"
-index_job_stale_after = "15m"
-index_job_max_attempts = 3
-index_job_recovery_interval = "1m"
-webhook_job_stale_after = "15m"
-webhook_job_max_attempts = 3
-webhook_job_recovery_interval = "1m"
 scanner_token = "ollanta-dev-scanner-token"
-
-# Optional links shown in the web UI admin navigation. Leave unset when your
-# deployment uses another observability stack or when no external UI should be linked.
-[[ui.observability_links]]
-label = "Prometheus"
-url = "http://localhost:9091/targets"
-
-[[ui.observability_links]]
-label = "Jaeger"
-url = "http://localhost:16686"
-
-[[ui.observability_links]]
-label = "Loki"
-url = "http://localhost:3100/ready"
 
 [database]
 host = "localhost"
@@ -166,16 +57,9 @@ password = "ollanta_dev"
 sslmode = "disable"
 pool_max_conns = 25
 pool_min_conns = 5
-pool_max_conn_lifetime = "1h"
-pool_max_conn_idle_time = "30m"
-# Optional override when you prefer to provide a full connection string:
-# url = "postgres://ollanta:ollanta_dev@localhost:5432/ollanta?sslmode=disable"
 
 [search]
-backend = "zincsearch"
-host = "localhost"
-port = 4080
+backend = "zincsearch" # zincsearch or postgres
+url = "http://localhost:4080"
 user = "admin"
 password = "ollanta_dev"
-# Optional override when you prefer to provide a full endpoint:
-# url = "http://localhost:4080"

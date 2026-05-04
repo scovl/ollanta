@@ -181,6 +181,43 @@ url = "postgres://file@localhost:5432/ollanta?sslmode=disable"
 	}
 }
 
+func TestLoadBuildsDatabaseURLFromPostgresEnvParts(t *testing.T) {
+	dir := t.TempDir()
+	enterDir(t, dir)
+	t.Setenv("OLLANTA_JWT_SECRET", "env-secret")
+	t.Setenv("OLLANTA_POSTGRES_HOST", "postgres")
+	t.Setenv("OLLANTA_POSTGRES_PORT", "15432")
+	t.Setenv("OLLANTA_POSTGRES_DB", "ollanta")
+	t.Setenv("OLLANTA_POSTGRES_USER", "ollanta")
+	t.Setenv("OLLANTA_POSTGRES_PASSWORD", "secret")
+	t.Setenv("OLLANTA_POSTGRES_SSLMODE", "require")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf(loadError, err)
+	}
+	if cfg.DatabaseURL != "postgres://ollanta:secret@postgres:15432/ollanta?sslmode=require" {
+		t.Fatalf("DatabaseURL = %q, want URL built from postgres env parts", cfg.DatabaseURL)
+	}
+}
+
+func TestLoadDatabaseURLEnvOverridesPostgresEnvParts(t *testing.T) {
+	dir := t.TempDir()
+	enterDir(t, dir)
+	t.Setenv("OLLANTA_JWT_SECRET", "env-secret")
+	t.Setenv("OLLANTA_DATABASE_URL", "postgres://env@localhost:5432/ollanta?sslmode=disable")
+	t.Setenv("OLLANTA_POSTGRES_HOST", "postgres")
+	t.Setenv("OLLANTA_POSTGRES_PASSWORD", "secret")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf(loadError, err)
+	}
+	if cfg.DatabaseURL != "postgres://env@localhost:5432/ollanta?sslmode=disable" {
+		t.Fatalf("DatabaseURL = %q, want OLLANTA_DATABASE_URL override", cfg.DatabaseURL)
+	}
+}
+
 func TestLoadRequiresDatabaseURL(t *testing.T) {
 	dir := t.TempDir()
 	enterDir(t, dir)
