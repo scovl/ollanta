@@ -26,13 +26,16 @@ export function renderProjectInformationTab() {
     return `<div class="loading-state"><div class="spinner"></div></div>`;
   }
 
+  return `<div class="info-grid">${renderProjectInformationSections(data, 'info-card')}</div>`;
+}
+
+function renderProjectInformationSections(data, sectionClass) {
   const project = data.project || state.currentProject || {};
   const scope = normalizeScope(data.scope || state.scope);
   const snapshot = data.code_snapshot || null;
   const measures = data.measures || {};
 
-  return `<div class="info-grid">
-    <section class="info-card">
+  return `<section class="${sectionClass}">
       <h3>Project</h3>
       <dl class="info-list">
         <div><dt>Name</dt><dd>${escHtml(project.name || project.key || '\u2014')}</dd></div>
@@ -43,7 +46,7 @@ export function renderProjectInformationTab() {
         <div><dt>Updated</dt><dd>${project.updated_at ? fmtDate(project.updated_at) : '\u2014'}</dd></div>
       </dl>
     </section>
-    <section class="info-card">
+    <section class="${sectionClass}">
       <h3>Current scope</h3>
       <dl class="info-list">
         <div><dt>Type</dt><dd>${escHtml(scope.type || '\u2014')}</dd></div>
@@ -54,7 +57,7 @@ export function renderProjectInformationTab() {
         <div><dt>Last analysis</dt><dd>${state.currentScan?.analysis_date ? fmtDate(state.currentScan.analysis_date) : '\u2014'}</dd></div>
       </dl>
     </section>
-    <section class="info-card">
+    <section class="${sectionClass}">
       <h3>Measures</h3>
       <dl class="info-list">
         <div><dt>Files</dt><dd>${fmtNum(measures.files || 0)}</dd></div>
@@ -63,7 +66,7 @@ export function renderProjectInformationTab() {
         <div><dt>Issues</dt><dd>${fmtNum(measures.issues || 0)}</dd></div>
       </dl>
     </section>
-    <section class="info-card">
+    <section class="${sectionClass}">
       <h3>Code snapshot</h3>
       <dl class="info-list">
         <div><dt>Stored files</dt><dd>${fmtNum(snapshot?.stored_files || 0)} / ${fmtNum(snapshot?.total_files || 0)}</dd></div>
@@ -73,6 +76,19 @@ export function renderProjectInformationTab() {
         <div><dt>Max file bytes</dt><dd>${fmtK(snapshot?.max_file_bytes || 0)}</dd></div>
         <div><dt>Updated</dt><dd>${snapshot?.updated_at ? fmtDate(snapshot.updated_at) : '\u2014'}</dd></div>
       </dl>
-    </section>
-  </div>`;
+    </section>`;
+}
+
+export function renderProjectInformationPanel() {
+  const data = state.projectInfoData;
+  if (!data) {
+    return '';
+  }
+
+  return `<section class="overview-panel project-info-panel">
+    <p class="section-title">Project Details</p>
+    <div class="project-info-sections">
+      ${renderProjectInformationSections(data, 'project-info-section')}
+    </div>
+  </section>`;
 }

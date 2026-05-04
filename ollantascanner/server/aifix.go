@@ -24,10 +24,12 @@ import (
 
 const (
 	defaultOpenAIBaseURL = "https://api.openai.com/v1"
-	defaultOpenAIModel   = "gpt-4.1-mini"
+	defaultOpenAIModel   = "gpt-5.5"
+	openAIAPIChat        = "chat"
+	openAIAPIResponses   = "responses"
 )
 
-var defaultOpenAIModels = []string{"gpt-4.1-mini", "gpt-4.1", "gpt-4o-mini", "gpt-4o", "o4-mini"}
+var defaultOpenAIModels = []string{"gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.4-nano"}
 
 const methodNotAllowedMessage = "method not allowed"
 
@@ -718,7 +720,7 @@ func randomID() (string, error) {
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set(contentTypeHeader, jsonContentType)
 	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(payload); err != nil {
 		slog.Error("encode JSON response", "error", err)
@@ -757,12 +759,19 @@ func (p openAIProvider) GenerateFix(ctx context.Context, agent aiAgentConfig, re
 	}
 
 	prompt := buildAIFixPrompt(request)
+	if openAIAPIStyle(agent.BaseURL) == openAIAPIResponses {
+		return p.generateFixWithResponses(ctx, agent, apiKey, prompt)
+	}
+	return p.generateFixWithChat(ctx, agent, apiKey, prompt)
+}
+
+func (p openAIProvider) generateFixWithChat(ctx context.Context, agent aiAgentConfig, apiKey, prompt string) (*aiProviderResponse, error) {
 	body := map[string]any{
 		"model": agent.Model,
 		"messages": []map[string]string{
 			{
 				"role":    "system",
-				"content": "You fix one static-analysis issue in user code. Return strict JSON with keys summary, explanation, replacement. replacement must contain only the code snippet that replaces the original snippet, with no markdown fences.",
+				"content": aiFixSystemPrompt(),
 			},
 			{
 				"role":    "user",
@@ -783,7 +792,7 @@ func (p openAIProvider) GenerateFix(ctx context.Context, agent aiAgentConfig, re
 		return nil, fmt.Errorf("build AI request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+apiKey)
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(contentTypeHeader, jsonContentType)
 
 	resp, err := p.client.Do(req)
 	if err != nil {
@@ -824,6 +833,107 @@ func (p openAIProvider) GenerateFix(ctx context.Context, agent aiAgentConfig, re
 		return nil, fmt.Errorf("decode AI payload: %w", err)
 	}
 	return &result, nil
+}
+
+func (p openAIProvider) generateFixWithResponses(ctx context.Context, agent aiAgentConfig, apiKey, prompt string) (*aiProviderResponse, error) {
+	body := map[string]any{
+		"model": agent.Model,
+		"input": []map[string]string{
+			{
+				"role":    "system",
+				"content": aiFixSystemPrompt(),
+			},
+			{
+				"role":    "user",
+				"content": prompt,
+			},
+		},
+		"text": map[string]any{"format": map[string]string{"type": "json_object"}},
+	}
+
+	payload, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("marshal AI request: %w", err)
+	}
+
+	endpoint := strings.TrimRight(agent.BaseURL, "/") + "/responses"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
+	if err != nil {
+		return nil, fmt.Errorf("build AI request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	req.Header.Set(contentTypeHeader, jsonContentType)
+
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("call AI provider: %w", err)
+	}
+	defer resp.Body.Close()
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read AI response: %w", err)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("AI provider returned %d: %s", resp.StatusCode, strings.TrimSpace(string(bodyBytes)))
+	}
+
+	content, err := responsesOutputText(bodyBytes)
+	if err != nil {
+		return nil, err
+	}
+	jsonPayload, err := extractJSONObject(content)
+	if err != nil {
+		return nil, err
+	}
+
+	var result aiProviderResponse
+	if err := json.Unmarshal([]byte(jsonPayload), &result); err != nil {
+		return nil, fmt.Errorf("decode AI payload: %w", err)
+	}
+	return &result, nil
+}
+
+func aiFixSystemPrompt() string {
+	return "You fix one static-analysis issue in user code. Return strict JSON with keys summary, explanation, replacement. replacement must contain only the code snippet that replaces the original snippet, with no markdown fences."
+}
+
+func openAIAPIStyle(baseURL string) string {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("OLLANTA_AI_OPENAI_API"))) {
+	case "responses", "response":
+		return openAIAPIResponses
+	case "chat", "chat_completions", "chat-completions":
+		return openAIAPIChat
+	}
+	if strings.TrimRight(baseURL, "/") == defaultOpenAIBaseURL {
+		return openAIAPIResponses
+	}
+	return openAIAPIChat
+}
+
+func responsesOutputText(body []byte) (string, error) {
+	var payload struct {
+		OutputText string `json:"output_text"`
+		Output     []struct {
+			Content []struct {
+				Text string `json:"text"`
+			} `json:"content"`
+		} `json:"output"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return "", fmt.Errorf("decode AI response: %w", err)
+	}
+	if strings.TrimSpace(payload.OutputText) != "" {
+		return payload.OutputText, nil
+	}
+	for _, output := range payload.Output {
+		for _, content := range output.Content {
+			if strings.TrimSpace(content.Text) != "" {
+				return content.Text, nil
+			}
+		}
+	}
+	return "", errors.New("AI provider returned no output text")
 }
 
 func buildAIFixPrompt(request aiProviderRequest) string {

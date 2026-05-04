@@ -17,13 +17,21 @@ function createHarness(options = {}) {
 
   function getElement(id) {
     if (!elements.has(id)) {
-      elements.set(id, {
+      const element = {
         id,
         innerHTML: '',
         value: '',
-        addEventListener() {},
+        dataset: {},
+        hidden: false,
+        disabled: false,
+        selectedOptions: [],
+        listeners: {},
+        addEventListener(type, handler) { this.listeners[type] = handler; },
+        click() { this.listeners.click?.({ currentTarget: this, preventDefault() {} }); },
+        setAttribute(name, value) { this[name] = String(value); },
         classList: { add() {}, remove() {} },
-      });
+      };
+      elements.set(id, element);
     }
     return elements.get(id);
   }
@@ -45,6 +53,7 @@ function createHarness(options = {}) {
     readyState: 'loading',
     addEventListener() {},
     getElementById(id) { return getElement(id); },
+    querySelector(selector) { return options.querySelector ? options.querySelector(selector) : null; },
     querySelectorAll() { return []; },
     createElement() { return { classList: { add() {}, remove() {} }, remove() {}, textContent: '' }; },
     body: { appendChild() {} },
@@ -228,8 +237,193 @@ test('renderProjectDetail does not duplicate Background Tasks in project tabs', 
   const tabsHtml = html.match(/<div class="proj-tabs">[\s\S]*?<\/div>/)?.[0] || '';
 
   assert.match(html, /id="backgroundTasksBtn"/);
+  assert.match(tabsHtml, /data-tab="scopes"/);
   assert.doesNotMatch(tabsHtml, /data-tab="admin"/);
+  assert.doesNotMatch(tabsHtml, /data-tab="branches"/);
+  assert.doesNotMatch(tabsHtml, /data-tab="information"/);
   assert.doesNotMatch(tabsHtml, /Background Tasks/);
+});
+
+test('renderRuleStudio shows summary stats and filters rule rows', () => {
+  const { app: harnessApp, elements } = createHarness();
+
+  harnessApp.state.currentProject = { key: 'demo', name: 'Demo' };
+  harnessApp.state.user = { login: 'admin' };
+  harnessApp.state.view = 'project';
+  harnessApp.state.projectTab = 'custom-rules';
+  harnessApp.state.profilesData = { profiles: [] };
+  harnessApp.state.customRuleEngines = [{ engine: 'text', name: 'Text' }];
+  harnessApp.state.customRuleAIProviders = [
+    { id: 'openai', label: 'OpenAI', status: 'setup_required', models: ['gpt-5.5'], default_model: 'gpt-5.5', configured: false, setup_required: true, message: 'Connect an OpenAI-compatible provider before using these models.' },
+    { id: 'mock', label: 'Mock AI', status: 'connected', models: ['deterministic'], default_model: 'deterministic', configured: true, local: true },
+  ];
+  harnessApp.state.customRulesData = [
+    { id: '1', key: 'custom:forbidden-print', name: 'Forbidden print', language: 'go', engine: 'text', type: 'code_smell', severity: 'major', lifecycle: 'published', validation_status: 'passed' },
+    { id: '2', key: 'custom:banned-debug', name: 'Banned debug', language: 'javascript', engine: 'text', type: 'bug', severity: 'critical', lifecycle: 'draft', validation_status: 'failed' },
+  ];
+  harnessApp.state.customRuleFilters = { search: 'debug', lifecycle: 'draft' };
+
+  harnessApp.render();
+  const html = elements.get('app').innerHTML;
+
+  assert.match(html, /Rule Studio/);
+  assert.match(html, /rule-studio-hero/);
+  assert.match(html, /rule-studio-catalog/);
+  assert.match(html, /rule-builder-card/);
+  assert.match(html, /Validation/);
+  assert.match(html, /Rule ID/);
+  assert.match(html, /Full key:/);
+  assert.match(html, /AI assist/);
+  assert.match(html, /id="customRuleAIModel"/);
+  assert.match(html, /OpenAI \/ gpt-5\.5 - setup required/);
+  assert.match(html, /Mock AI \/ deterministic - local/);
+  assert.match(html, /AI provider setup/);
+  assert.match(html, /id="connectCustomRuleAIProviderBtn"/);
+  assert.match(html, /Rule tests/);
+  assert.match(html, /Compliant example/);
+  assert.ok(html.indexOf('Compliant example') < html.indexOf('Noncompliant example'));
+  assert.match(html, /id="customRuleTextPattern"/);
+  assert.match(html, /data-engine-field="tree-sitter" hidden/);
+  assert.doesNotMatch(html, /id="customRulePattern"/);
+  assert.match(html, /Banned debug/);
+  assert.doesNotMatch(html, /Forbidden print/);
+  assert.match(html, /id="customRuleSearch"/);
+});
+
+test('Rule Studio setup-required AI status opens provider setup', () => {
+  let aiProvidersTabClicked = false;
+  const { app: harnessApp, elements } = createHarness({
+    querySelector(selector) {
+      if (selector === '.tab-btn[data-tab="ai-providers"]') {
+        return { click() { aiProvidersTabClicked = true; harnessApp.state.projectTab = 'ai-providers'; } };
+      }
+      return null;
+    },
+  });
+
+  harnessApp.state.currentProject = { key: 'demo', name: 'Demo' };
+  harnessApp.state.user = { login: 'admin' };
+  harnessApp.state.view = 'project';
+  harnessApp.state.projectTab = 'custom-rules';
+  harnessApp.state.profilesData = { profiles: [] };
+  harnessApp.state.customRuleEngines = [{ engine: 'text', name: 'Text' }];
+  harnessApp.state.customRuleAIProviders = [
+    { id: 'openai', label: 'OpenAI', status: 'setup_required', models: ['gpt-5.5'], default_model: 'gpt-5.5', configured: false, setup_required: true, message: 'Connect an OpenAI-compatible provider before using these models.' },
+  ];
+  harnessApp.state.customRulesData = [];
+
+  harnessApp.render();
+  const html = elements.get('app').innerHTML;
+  assert.match(html, /id="connectCustomRuleAIProviderBtn"[^>]*href="#custom-rule-ai-provider-setup"[^>]*>setup required<\/a>/);
+
+  elements.get('customRuleAIModel').selectedOptions = [{ dataset: { provider: 'openai', providerLabel: 'OpenAI', model: 'gpt-5.5', status: 'setup_required', local: 'false' } }];
+  elements.get('connectCustomRuleAIProviderBtn').dataset.provider = 'openai';
+  elements.get('connectCustomRuleAIProviderBtn').click();
+
+  assert.equal(aiProvidersTabClicked, true);
+  assert.equal(harnessApp.state.projectTab, 'ai-providers');
+  assert.equal(harnessApp.state.customRuleAISetupProvider, 'openai');
+});
+
+test('renderRuleStudio shows profile activation controls for published rules', () => {
+  const { app: harnessApp, elements } = createHarness();
+
+  harnessApp.state.currentProject = { key: 'demo', name: 'Demo' };
+  harnessApp.state.user = { login: 'admin' };
+  harnessApp.state.view = 'project';
+  harnessApp.state.projectTab = 'custom-rules';
+  harnessApp.state.profilesData = { profiles: [{ id: 10, name: 'Team Go', language: 'go' }] };
+  harnessApp.state.customRuleEngines = [{ engine: 'text', name: 'Text' }];
+  harnessApp.state.customRulesData = [
+    { id: '1', key: 'custom:forbidden-print', name: 'Forbidden print', language: 'go', engine: 'text', type: 'code_smell', severity: 'major', lifecycle: 'published', validation_status: 'passed' },
+  ];
+  harnessApp.state.customRuleFilters = { search: '', lifecycle: 'all' };
+
+  harnessApp.render();
+  const html = elements.get('app').innerHTML;
+
+  assert.match(html, /Forbidden print/);
+  assert.match(html, /custom-rule-profile-1/);
+  assert.match(html, /Team Go/);
+  assert.match(html, /Add to profile/);
+  assert.match(html, /validate-custom-rule-btn/);
+  assert.match(html, /publish-custom-rule-btn/);
+  assert.match(html, /export-custom-rule-btn/);
+  assert.match(html, /disable-custom-rule-btn/);
+});
+
+test('loadCustomRulesData hydrates Rule Studio dependencies', async () => {
+  const { app: harnessApp, requests, elements } = createHarness({
+    fetchHandler(url) {
+      switch (url) {
+        case apiPrefix + '/custom-rules':
+          return { body: { items: [{ id: '7', key: 'custom:no-debug', name: 'Loaded rule', language: 'go', lifecycle: 'draft', validation_status: 'none' }] } };
+        case apiPrefix + '/rule-engines':
+          return { body: [{ engine: 'text', name: 'Text' }] };
+        case apiPrefix + '/custom-rules/ai/models':
+          return { body: { providers: [{ id: 'mock', label: 'Mock AI', configured: true, models: ['deterministic'] }] } };
+        case apiPrefix + '/profiles':
+          return { body: [{ id: 10, name: 'Team Go', language: 'go' }] };
+        default:
+          throw new Error(`unexpected request ${url}`);
+      }
+    },
+  });
+
+  harnessApp.state.currentProject = { key: 'demo', name: 'Demo' };
+  harnessApp.state.user = { login: 'admin' };
+  harnessApp.state.view = 'project';
+  harnessApp.state.projectTab = 'custom-rules';
+
+  await harnessApp.loadCustomRulesData();
+
+  assert.deepEqual(requests, [
+    apiPrefix + '/custom-rules',
+    apiPrefix + '/rule-engines',
+    apiPrefix + '/custom-rules/ai/models',
+    apiPrefix + '/profiles',
+  ]);
+  assert.equal(harnessApp.state.customRulesData[0].key, 'custom:no-debug');
+  assert.equal(harnessApp.state.customRuleEngines[0].engine, 'text');
+  assert.equal(harnessApp.state.customRuleAIProviders[0].id, 'mock');
+  assert.equal(harnessApp.state.profilesData.profiles[0].name, 'Team Go');
+  assert.match(elements.get('app').innerHTML, /Loaded rule/);
+});
+
+test('renderAIProvidersTab shows provider setup states', () => {
+  const { app: harnessApp, elements } = createHarness();
+
+  harnessApp.state.currentProject = { key: 'demo', name: 'Demo' };
+  harnessApp.state.user = { login: 'admin' };
+  harnessApp.state.view = 'project';
+  harnessApp.state.projectTab = 'ai-providers';
+  harnessApp.state.customRuleAISetupProvider = 'ollama';
+  harnessApp.state.customRuleAIProviders = [
+    { id: 'ollama', label: 'Ollama', status: 'unavailable', local: true, configured: false, setup_required: true, base_url: 'http://host.docker.internal:11434', message: 'Start Ollama and pull a model.' },
+    { id: 'openai', label: 'OpenAI', status: 'setup_required', local: false, configured: false, setup_required: true, models: ['gpt-5.5'], message: 'Connect an OpenAI-compatible provider.' },
+    { id: 'anthropic', label: 'Anthropic Claude', status: 'setup_required', local: false, configured: false, setup_required: true, models: ['claude-sonnet-4-6'], message: 'Connect Anthropic Claude.' },
+    { id: 'kimi', label: 'Kimi K2', status: 'setup_required', local: false, configured: false, setup_required: true, models: ['kimi-k2.6', 'kimi-k2-thinking'], message: 'Connect Kimi.' },
+    { id: 'qwen', label: 'Qwen', status: 'setup_required', local: false, configured: false, setup_required: true, models: ['qwen3.6-max-preview', 'qwen3.6-plus'], message: 'Connect Qwen.' },
+  ];
+
+  harnessApp.render();
+  const html = elements.get('app').innerHTML;
+
+  assert.match(html, /AI Providers/);
+  assert.match(html, /Provider setup/);
+  assert.match(html, /Ollama/);
+  assert.match(html, /unavailable/);
+  assert.match(html, /http:\/\/host\.docker\.internal:11434/);
+  assert.match(html, /OpenAI/);
+  assert.match(html, /setup required/);
+  assert.match(html, /Anthropic Claude/);
+  assert.match(html, /claude-sonnet-4-6/);
+  assert.match(html, /Kimi K2/);
+  assert.match(html, /kimi-k2\.6/);
+  assert.match(html, /Qwen/);
+  assert.match(html, /qwen3\.6-max-preview/);
+  assert.match(html, /Back to Rule Studio/);
+  assert.match(html, /custom-rule-ai-provider-card active/);
 });
 
 test('renderBackgroundTasksPage shows task details and guarded actions', () => {
@@ -282,6 +476,9 @@ test('changeScope refreshes scoped data and persists the branch in the URL', asy
       if (url === apiPrefix + '/projects/demo/pull-requests') {
         return { body: { items: [] } };
       }
+      if (url === apiPrefix + '/projects/demo/information?branch=release') {
+        return { body: { project: { key: 'demo', name: 'Demo' }, scope: { type: 'branch', branch: 'release', default_branch: 'main' } } };
+      }
       throw new Error('unexpected fetch ' + url);
     },
   });
@@ -296,12 +493,13 @@ test('changeScope refreshes scoped data and persists the branch in the URL', asy
     apiPrefix + '/projects/demo/overview?branch=release',
     apiPrefix + '/projects/demo/branches',
     apiPrefix + '/projects/demo/pull-requests',
+    apiPrefix + '/projects/demo/information?branch=release',
   ]);
   assert.equal(harnessApp.state.scope.branch, 'release');
   assert.equal(historyCalls.at(-1).url, '?project=demo&tab=overview&branch=release');
 });
 
-test('loadProject preserves branch scope in reloads and refreshes project information', async () => {
+test('loadProject normalizes project information links into overview details', async () => {
   const { app: harnessApp, requests, historyCalls } = createHarness({
     fetchHandler(url) {
       if (url === apiPrefix + '/projects/demo') {
@@ -327,7 +525,7 @@ test('loadProject preserves branch scope in reloads and refreshes project inform
             project: { key: 'demo', name: 'Demo', main_branch: 'main' },
             scope: { type: 'branch', branch: 'release', default_branch: 'main' },
             measures: { files: 4, lines: 24, ncloc: 18, issues: 2 },
-            code_snapshot: { stored_files: 1, total_files: 1, max_file_bytes: 128, max_total_bytes: 512 },
+            code_snapshot: { stored_files: 1, total_files: 1, truncated_files: 1, omitted_files: 0, stored_bytes: 256, max_file_bytes: 128, max_total_bytes: 512 },
           },
         };
       }
@@ -337,15 +535,20 @@ test('loadProject preserves branch scope in reloads and refreshes project inform
 
   await harnessApp.loadProject('demo', { project: 'demo', tab: 'information', branch: 'release', pullRequest: '' });
 
-  assert.equal(harnessApp.state.projectTab, 'information');
+  assert.equal(harnessApp.state.projectTab, 'overview');
   assert.equal(harnessApp.state.scope.branch, 'release');
   assert.ok(requests.includes(apiPrefix + '/projects/demo/overview?branch=release'));
   assert.ok(requests.includes(apiPrefix + '/projects/demo/information?branch=release'));
-  assert.equal(historyCalls.at(-1).url, '?project=demo&tab=information&branch=release');
-  assert.match(harnessApp.renderProjectInformationTab(), /release/);
+  assert.equal(historyCalls.at(-1).url, '?project=demo&tab=overview&branch=release');
+  const html = harnessApp.renderOverviewTab();
+  assert.match(html, /Project Details/);
+  assert.match(html, /Current scope/);
+  assert.match(html, /Measures/);
+  assert.match(html, /Code snapshot/);
+  assert.match(html, /Stored bytes/);
 });
 
-test('changeScope refreshes project information for a selected pull request', async () => {
+test('changeScope refreshes overview project details for a selected pull request', async () => {
   const { app: harnessApp, requests, historyCalls } = createHarness({
     fetchHandler(url) {
       if (url === apiPrefix + '/projects/demo/overview?pull_request=128') {
@@ -379,8 +582,9 @@ test('changeScope refreshes project information for a selected pull request', as
 
   assert.ok(requests.includes(apiPrefix + '/projects/demo/information?pull_request=128'));
   assert.equal(harnessApp.state.scope.pullRequestKey, '128');
-  assert.equal(historyCalls.at(-1).url, '?project=demo&tab=information&pull_request=128');
-  assert.match(harnessApp.renderProjectInformationTab(), /Pull request/i);
+  assert.equal(historyCalls.at(-1).url, '?project=demo&tab=overview&pull_request=128');
+  assert.match(harnessApp.renderOverviewTab(), /Pull request/i);
+  assert.match(harnessApp.renderOverviewTab(), /128/);
 });
 
 test('loadCodeTreeData fetches the scoped file and renderCoverageTab shows issue markers', async () => {

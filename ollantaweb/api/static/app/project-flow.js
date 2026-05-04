@@ -12,12 +12,12 @@ import {
 } from './core/scope.js';
 import { resetProjectState, state } from './core/state.js';
 import { badgeClassForGateStatus, escAttr, escHtml, fmtDate, fmtK, fmtNum } from './core/utils.js';
-import { bindAdminTabContent, loadGateData, loadProfilesData, loadWebhooksData, renderGateTab, renderProfilesTab, renderWebhooksTab } from './features/admin.js';
+import { bindAdminTabContent, loadAIProvidersData, loadCustomRulesData, loadGateData, loadProfilesData, loadWebhooksData, renderAIProvidersTab, renderCustomRulesTab, renderGateTab, renderProfilesTab, renderWebhooksTab } from './features/admin.js';
 import { loadActivityData, renderActivityTab } from './features/activity.js';
 import { loadCodeFileData, loadCodeTreeData, renderCoverageTab } from './features/code.js';
 import { loadIssues, openIssueDetail, renderIssuesSection } from './features/issues.js';
 import { renderOverviewTab } from './features/overview.js';
-import { loadProjectInfoData, renderProjectInformationTab } from './features/project-information.js';
+import { loadProjectInfoData } from './features/project-information.js';
 
 let renderView = () => {};
 
@@ -26,23 +26,24 @@ export function configureProjectFlowFeature(options) {
 }
 
 function normalizeProjectTab(tab) {
-  if (tab === 'admin') return 'overview';
+  if (tab === 'admin' || tab === 'information') return 'overview';
+  if (tab === 'branches' || tab === 'pull-requests') return 'scopes';
   return tab === 'code' ? 'coverage' : tab;
 }
 
 function renderProjectTabs(activeTab, issueCount) {
-  const tabs = ['overview', 'issues', 'coverage', 'activity', 'branches', 'pull-requests', 'information', 'gate', 'webhooks', 'profiles'];
+  const tabs = ['overview', 'issues', 'coverage', 'activity', 'scopes', 'gate', 'profiles', 'custom-rules', 'ai-providers', 'webhooks'];
   const labels = {
     overview: 'Overview',
     issues: 'Issues',
     activity: 'Activity',
-    branches: 'Branches',
-    'pull-requests': 'Pull Requests',
+    scopes: 'Scopes',
     coverage: 'Coverage',
-    information: 'Project Information',
     gate: 'Quality Gate',
     webhooks: 'Webhooks',
     profiles: 'Profiles',
+    'custom-rules': 'Rule Studio',
+    'ai-providers': 'AI Providers',
   };
   return `<div class="proj-tabs">${tabs.map(tab => {
     const badge = tab === 'issues' && issueCount !== '' ? `<span class="tab-badge">${fmtK(issueCount)}</span>` : '';
@@ -54,13 +55,13 @@ function renderProjectTabs(activeTab, issueCount) {
 function renderProjectTabContent(tab) {
   if (tab === 'issues') return `<div id="issues-section"></div>`;
   if (tab === 'activity') return renderActivityTab();
-  if (tab === 'branches') return renderBranchesTab();
-  if (tab === 'pull-requests') return renderPullRequestsTab();
+  if (tab === 'scopes') return renderScopesTab();
   if (tab === 'coverage') return renderCoverageTab();
-  if (tab === 'information') return renderProjectInformationTab();
   if (tab === 'gate') return renderGateTab();
   if (tab === 'webhooks') return renderWebhooksTab();
   if (tab === 'profiles') return renderProfilesTab();
+  if (tab === 'custom-rules') return renderCustomRulesTab();
+  if (tab === 'ai-providers') return renderAIProvidersTab();
   return renderOverviewTab();
 }
 
@@ -147,7 +148,26 @@ async function loadPullRequestsData() {
   renderView();
 }
 
+async function loadScopesData() {
+  const key = state.currentProject?.key;
+  if (!key) return;
+  const [branches, pullRequests] = await Promise.all([
+    apiFetch('/projects/' + encodeURIComponent(key) + '/branches').catch(() => ({ items: [] })),
+    apiFetch('/projects/' + encodeURIComponent(key) + '/pull-requests').catch(() => ({ items: [] })),
+  ]);
+  state.branchesData = branches.items || [];
+  state.pullRequestsData = pullRequests.items || [];
+  if (branches.default_branch && !state.scope.defaultBranch) {
+    state.scope.defaultBranch = branches.default_branch;
+  }
+  renderView();
+}
+
 const projectTabLoaders = {
+  overview: {
+    shouldLoad: () => state.projectInfoData === null,
+    load: loadProjectInfoData,
+  },
   issues: {
     shouldLoad: () => state.issues.length === 0 && !state.loadingIssues,
     load: loadIssues,
@@ -156,21 +176,13 @@ const projectTabLoaders = {
     shouldLoad: () => state.activityData === null,
     load: loadActivityData,
   },
-  branches: {
-    shouldLoad: () => state.branchesData === null,
-    load: loadBranchesData,
-  },
-  'pull-requests': {
-    shouldLoad: () => state.pullRequestsData === null,
-    load: loadPullRequestsData,
+  scopes: {
+    shouldLoad: () => state.branchesData === null || state.pullRequestsData === null,
+    load: loadScopesData,
   },
   coverage: {
     shouldLoad: () => state.codeTreeData === null,
     load: loadCodeTreeData,
-  },
-  information: {
-    shouldLoad: () => state.projectInfoData === null,
-    load: loadProjectInfoData,
   },
   gate: {
     shouldLoad: () => state.gateData === null,
@@ -184,6 +196,14 @@ const projectTabLoaders = {
     shouldLoad: () => state.profilesData === null,
     load: loadProfilesData,
   },
+  'custom-rules': {
+    shouldLoad: () => state.customRulesData === null || state.customRuleEngines === null || state.profilesData === null,
+    load: loadCustomRulesData,
+  },
+  'ai-providers': {
+    shouldLoad: () => state.customRuleAIProviders === null,
+    load: loadAIProvidersData,
+  },
 };
 
 async function ensureProjectTabLoaded(tab) {
@@ -194,6 +214,7 @@ async function ensureProjectTabLoaded(tab) {
 }
 
 export async function changeScope(scope) {
+  state.projectTab = normalizeProjectTab(state.projectTab);
   state.scope = normalizeScope(scope);
   state.currentScan = null;
   state.overviewData = null;
@@ -293,14 +314,10 @@ function renderBranchScanMeta(scan) {
   </div>`;
 }
 
-function renderBranchesTab() {
-  const branchItems = state.branchesData;
-  if (branchItems === null) {
-    return `<div class="loading-state"><div class="spinner"></div></div>`;
-  }
+function renderBranchScopeGrid(branchItems) {
   const items = branchItems.filter(item => item?.name);
   if (items.length === 0) {
-    return `<div class="empty-state"><p>No named branches with analyses yet.</p></div>`;
+    return `<div class="empty-state compact"><p>No named branches with analyses yet.</p></div>`;
   }
 
   const activeBranch = resolvedBranchName(state.scope);
@@ -321,13 +338,9 @@ function renderBranchesTab() {
   </div>`;
 }
 
-function renderPullRequestsTab() {
-  const items = state.pullRequestsData;
-  if (items === null) {
-    return `<div class="loading-state"><div class="spinner"></div></div>`;
-  }
+function renderPullRequestScopeGrid(items) {
   if (items.length === 0) {
-    return `<div class="empty-state"><p>No pull request analyses yet.</p></div>`;
+    return `<div class="empty-state compact"><p>No pull request analyses yet.</p></div>`;
   }
 
   return `<div class="scope-grid">
@@ -346,6 +359,23 @@ function renderPullRequestsTab() {
         ${renderBranchScanMeta(item.latest_scan)}
       </button>`;
     }).join('')}
+  </div>`;
+}
+
+function renderScopesTab() {
+  if (state.branchesData === null || state.pullRequestsData === null) {
+    return `<div class="loading-state"><div class="spinner"></div></div>`;
+  }
+
+  return `<div class="scope-catalog">
+    <section class="scope-catalog-section">
+      <p class="section-title">Branches</p>
+      ${renderBranchScopeGrid(state.branchesData || [])}
+    </section>
+    <section class="scope-catalog-section">
+      <p class="section-title">Pull Requests</p>
+      ${renderPullRequestScopeGrid(state.pullRequestsData || [])}
+    </section>
   </div>`;
 }
 

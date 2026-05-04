@@ -28,7 +28,7 @@ function buildState(preview: AIFixPreview | null = null): AIFixViewState {
     loadingPreview: false,
     applying: false,
     selectedProviderId: "openai",
-    selectedModel: "gpt-4.1-mini",
+    selectedModel: "gpt-5.5",
     apiKey: "",
     statusMessage: "",
     errorMessage: "",
@@ -55,7 +55,7 @@ describe("detailView", () => {
   it("renders provider/model controls, preview and apply action", () => {
     const preview: AIFixPreview = {
       preview_id: "preview-1",
-      agent: { id: "openai:gpt-4.1-mini", label: "OpenAI", provider: "openai", model: "gpt-4.1-mini" },
+      agent: { id: "openai:gpt-5.5", label: "OpenAI", provider: "openai", model: "gpt-5.5" },
       status: "ready",
       summary: "Generated fix preview",
       explanation: "Preview explanation",
@@ -69,8 +69,8 @@ describe("detailView", () => {
     const providers: AIProviderOption[] = [{
       id: "openai",
       label: "OpenAI",
-      models: ["gpt-4.1-mini", "gpt-4.1"],
-      default_model: "gpt-4.1-mini",
+      models: ["gpt-5.5", "gpt-5.4-mini"],
+      default_model: "gpt-5.5",
       configured: false,
       requires_api_key: true,
     }];
@@ -83,7 +83,7 @@ describe("detailView", () => {
     expect(html).toContain("Generate fix");
     expect(html).toContain("Preview explanation");
     expect(html).toContain("Apply to file");
-    expect(html).toContain("gpt-4.1-mini");
+    expect(html).toContain("gpt-5.5");
     expect(html).toContain("@@ lines 12-12 @@");
   });
 });

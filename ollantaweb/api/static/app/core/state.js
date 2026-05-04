@@ -75,6 +75,11 @@ export function createInitialState() {
     gateData: null,
     webhooksData: null,
     profilesData: null,
+    customRulesData: null,
+    customRuleEngines: null,
+    customRuleAIProviders: null,
+    customRuleAISetupProvider: '',
+    customRuleFilters: { search: '', lifecycle: 'all' },
     activityData: null,
     branchesData: null,
     pullRequestsData: null,
@@ -94,10 +99,11 @@ export function createInitialState() {
   };
 }
 
-export let state = createInitialState();
+export const state = createInitialState();
 
 export function replaceState(nextState) {
-  state = nextState;
+  Object.keys(state).forEach(key => { delete state[key]; });
+  Object.assign(state, nextState);
   return state;
 }
 
@@ -117,6 +123,11 @@ export function resetProjectState() {
   state.gateData = null;
   state.webhooksData = null;
   state.profilesData = null;
+  state.customRulesData = null;
+  state.customRuleEngines = null;
+  state.customRuleAIProviders = null;
+  state.customRuleAISetupProvider = '';
+  state.customRuleFilters = { search: '', lifecycle: 'all' };
   state.activityData = null;
   state.branchesData = null;
   state.pullRequestsData = null;

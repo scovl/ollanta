@@ -49,8 +49,20 @@ function compactSha(value) {
 
 function gateBadge(status) {
   if (!status) return `<span class="badge">UNKNOWN</span>`;
-  const cls = status === 'OK' ? 'badge-ok' : status === 'WARN' ? 'badge-warn' : 'badge-error';
+  const cls = gateStatusClass(status);
   return `<span class="badge ${cls}">${escHtml(status)}</span>`;
+}
+
+function gateStatusClass(status) {
+  if (status === 'OK') return 'badge-ok';
+  if (status === 'WARN') return 'badge-warn';
+  return 'badge-error';
+}
+
+function gateChangeSummary(count) {
+  if (!count) return 'No gate changes in view';
+  const suffix = count === 1 ? '' : 's';
+  return `${fmtNum(count)} gate change${suffix} in view`;
 }
 
 function renderActivityHeader(entries) {
@@ -67,7 +79,7 @@ function renderActivityHeader(entries) {
     <div class="activity-summary-card gate-${String(latest.gate_status || 'unknown').toLowerCase()}">
       <span class="activity-card-label">Latest gate</span>
       <strong>${escHtml(latest.gate_status || 'UNKNOWN')}</strong>
-      <span>${gateChanges ? `${fmtNum(gateChanges)} gate change${gateChanges === 1 ? '' : 's'} in view` : 'No gate changes in view'}</span>
+      <span>${gateChangeSummary(gateChanges)}</span>
     </div>
     <div class="activity-summary-card trend-${trendWord(issueDelta)}">
       <span class="activity-card-label">Issue trend</span>
@@ -113,7 +125,7 @@ function renderActivityTrend(entries) {
   const markers = points.map((entry, index) => {
     const x = xFor(index).toFixed(1);
     const y = yFor(entry.total_issues).toFixed(1);
-    const gate = entry.gate_status === 'OK' ? 'ok' : entry.gate_status === 'WARN' ? 'warn' : entry.gate_status === 'ERROR' ? 'error' : 'unknown';
+    const gate = chartGateClass(entry.gate_status);
     return `<circle cx="${x}" cy="${y}" r="4" class="activity-chart-point ${gate}"><title>${escHtml(new Date(entry.analysis_date).toLocaleString())}: ${fmtNum(entry.total_issues)} issues</title></circle>`;
   }).join('');
   const eventTicks = points.flatMap((entry, index) => (entry.events || []).map(event => ({ entry, index, event }))).map(item => {
@@ -121,7 +133,7 @@ function renderActivityTrend(entries) {
     return `<line x1="${x}" y1="${top + plotHeight + 12}" x2="${x}" y2="${top + plotHeight + 28}" class="activity-event-tick"><title>${escHtml(item.event.name)}</title></line>`;
   }).join('');
   const first = points[0];
-  const last = points[points.length - 1];
+  const last = points.at(-1);
 
   return `<section class="activity-trend-panel">
     <div class="activity-panel-head">
@@ -131,8 +143,8 @@ function renderActivityTrend(entries) {
       </div>
       <div class="activity-chart-legend">
         <span><i class="legend-line"></i>Total issues</span>
-        <span><i class="legend-dot ok"></i>Passed</span>
-        <span><i class="legend-dot error"></i>Failed</span>
+        <span><i class="activity-legend-dot ok"></i>Passed</span>
+        <span><i class="activity-legend-dot error"></i>Failed</span>
       </div>
     </div>
     <svg class="activity-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="Project issue trend over time">
@@ -147,6 +159,13 @@ function renderActivityTrend(entries) {
   </section>`;
 }
 
+function chartGateClass(status) {
+  if (status === 'OK') return 'ok';
+  if (status === 'WARN') return 'warn';
+  if (status === 'ERROR') return 'error';
+  return 'unknown';
+}
+
 function renderActivityTimeline(entries) {
   const eventRows = entries.flatMap(entry => {
     const baseEvents = entry.events?.length ? entry.events : [{ category: 'ANALYSIS', name: 'Analysis completed' }];
@@ -159,7 +178,7 @@ function renderActivityTimeline(entries) {
     return `<div class="activity-entry">
       <div class="activity-dot-col">
         <div class="activity-dot ${cls}"></div>
-        ${!isLast ? '<div class="activity-line"></div>' : ''}
+        ${isLast ? '' : '<div class="activity-line"></div>'}
       </div>
       <div class="activity-body">
         <div class="activity-date">${fmtDate(entry.analysis_date)} <span>${escHtml(new Date(entry.analysis_date).toLocaleString())}</span></div>

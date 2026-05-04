@@ -7,6 +7,7 @@ import {
   state,
 } from '../core/state.js';
 import { escAttr, escHtml, fmtK, fmtNum, fmtPct } from '../core/utils.js';
+import { renderProjectInformationPanel } from './project-information.js';
 
 function renderOverviewEmptyState() {
   return `<div class="empty-state">
@@ -500,6 +501,7 @@ function renderReviewSummaryTab(overview) {
         ${renderSummaryMustFixNow(summary.must_fix_now || [])}
         ${renderSummaryImpactedFiles(summary.impacted_files || [])}
       </div>
+      ${renderProjectInformationPanel()}
     </div>
     <aside class="overview-rail">
       ${renderSummaryOverall(summary.overall_code)}
@@ -533,6 +535,7 @@ export function renderOverviewTab() {
         <section class="overview-panel">${renderDistribution('Severity', SEV_ORDER, SEV_LABEL, SEV_COLOR, severityDist)}</section>
         <section class="overview-panel">${renderDistribution('Type', ['bug', 'code_smell', 'vulnerability'], TYPE_LABEL, TYPE_COLOR, typeDist)}</section>
       </div>
+      ${renderProjectInformationPanel()}
     </div>
     <aside class="overview-rail">
       <section class="overview-panel">${renderOverviewHotspots(facets.by_file || {})}</section>

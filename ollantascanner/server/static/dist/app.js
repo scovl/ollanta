@@ -36,7 +36,7 @@
       </div>
       <div class="ai-fix-control-group">
         <label class="ai-fix-control-label" for="ai-model-input">Model</label>
-        <input id="ai-model-input" class="ai-fix-select ai-fix-input" list="ai-model-options" value="${i(e.selectedModel)}" placeholder="${i(s?.default_model||"gpt-4.1-mini")}" autocomplete="off">
+        <input id="ai-model-input" class="ai-fix-select ai-fix-input" list="ai-model-options" value="${i(e.selectedModel)}" placeholder="${i(s?.default_model||"gpt-5.5")}" autocomplete="off">
         <datalist id="ai-model-options">${r}</datalist>
       </div>
       ${A}

@@ -201,6 +201,595 @@ export function renderProfilesTab() {
   </div>`;
 }
 
+export async function loadCustomRulesData() {
+  try {
+    const [rulesData, enginesData, aiData, profilesData] = await Promise.all([
+      apiFetch('/custom-rules'),
+      apiFetch('/rule-engines'),
+      apiFetch('/custom-rules/ai/models'),
+      apiFetch('/profiles'),
+    ]);
+    state.customRulesData = rulesData.items || (Array.isArray(rulesData) ? rulesData : []);
+    state.customRuleEngines = Array.isArray(enginesData) ? enginesData : [];
+    state.customRuleAIProviders = aiData.providers || aiData.items || [];
+    state.profilesData = {
+      ...(state.profilesData && !Array.isArray(state.profilesData) ? state.profilesData : {}),
+      profiles: profilesData.items || (Array.isArray(profilesData) ? profilesData : []),
+    };
+  } catch {
+    state.customRulesData = [];
+    state.customRuleEngines = [];
+    state.customRuleAIProviders = [];
+  }
+  renderView();
+}
+
+export async function loadAIProvidersData() {
+  try {
+    const aiData = await apiFetch('/custom-rules/ai/models');
+    state.customRuleAIProviders = aiData.providers || aiData.items || [];
+  } catch {
+    state.customRuleAIProviders = [];
+  }
+  renderView();
+}
+
+export function renderAIProvidersTab() {
+  const providers = state.customRuleAIProviders;
+  if (providers === null) return `<div class="loading-state"><div class="spinner"></div></div>`;
+  const items = providers || [];
+  const selectedProvider = state.customRuleAISetupProvider || '';
+  const connected = items.filter(provider => provider.status === 'connected' || provider.configured).length;
+  const local = items.filter(provider => provider.local).length;
+  const cloud = items.length - local;
+
+  return `<div class="tab-section ai-providers-page">
+    <div class="rule-studio-hero ai-providers-hero">
+      <div class="rule-studio-title-block">
+        <span class="rule-studio-eyebrow">Integrations</span>
+        <div class="rule-studio-title-row">
+          <p class="section-title">AI Providers</p>
+          <span>${fmtNum(items.length)} providers</span>
+        </div>
+      </div>
+      <div class="rule-studio-summary">
+        ${ruleStudioStat('Connected', connected, connected ? 'ok' : 'warn')}
+        ${ruleStudioStat('Local', local)}
+        ${ruleStudioStat('Cloud', cloud)}
+        ${ruleStudioStat('Models', customRuleAIModels(items).length)}
+      </div>
+      <button class="btn-sm btn-outline" id="refreshAIProvidersBtn" type="button">Refresh</button>
+    </div>
+    <section class="rule-builder-card ai-providers-workbench">
+      <div class="rule-builder-head">
+        <span>Provider setup</span>
+        <h4>Connect models for Rule Studio</h4>
+      </div>
+      <div class="custom-rule-ai-provider-list">
+        ${items.length ? items.map(provider => renderCustomRuleAIProviderCard(provider, provider.id === selectedProvider)).join('') : '<div class="empty-state compact"><p>No AI providers are configured.</p></div>'}
+      </div>
+      <div class="custom-rule-ai-actions">
+        <button class="btn-sm btn-outline" id="returnRuleStudioBtn" type="button">Back to Rule Studio</button>
+      </div>
+    </section>
+  </div>`;
+}
+
+export function renderCustomRulesTab() {
+  const rules = state.customRulesData;
+  if (rules === null) return `<div class="loading-state"><div class="spinner"></div></div>`;
+  const engines = state.customRuleEngines || [];
+  const aiProviders = state.customRuleAIProviders || [];
+  const profiles = Array.isArray(state.profilesData) ? [] : (state.profilesData?.profiles || []);
+  const filters = state.customRuleFilters || { search: '', lifecycle: 'all' };
+  const allRules = rules || [];
+  const visibleRules = allRules.filter(rule => customRuleMatchesFilters(rule, filters));
+  const stats = customRuleStats(allRules);
+  const emptyRulesMessage = allRules.length ? 'No custom rules match the current filters.' : 'No custom rules yet.';
+  const rows = visibleRules.length
+    ? visibleRules.map(rule => renderCustomRuleRow(rule, profiles)).join('')
+    : renderRuleStudioEmpty(emptyRulesMessage, allRules.length === 0);
+
+  return `<div class="tab-section rule-studio">
+    <div class="rule-studio-hero">
+      <div class="rule-studio-title-block">
+        <span class="rule-studio-eyebrow">Custom rules</span>
+        <div class="rule-studio-title-row">
+          <p class="section-title">Rule Studio</p>
+          <span>${fmtNum(visibleRules.length)} shown</span>
+        </div>
+      </div>
+      <div class="rule-studio-summary">
+        ${ruleStudioStat('Total', stats.total)}
+        ${ruleStudioStat('Published', stats.published, 'ok')}
+        ${ruleStudioStat('Drafts', stats.draft)}
+        ${ruleStudioStat('Validation', stats.needsValidation, stats.needsValidation ? 'warn' : '')}
+      </div>
+      <button class="btn-sm btn-outline" id="refreshCustomRulesBtn" type="button">Refresh</button>
+    </div>
+    <div class="rule-studio-layout">
+      <section class="rule-studio-catalog">
+        <div class="rule-studio-catalog-head">
+          <div>
+            <p class="rule-studio-panel-title">Rule catalog</p>
+            <span>${fmtNum(allRules.length)} total</span>
+          </div>
+          <div class="rule-studio-toolbar">
+            <input id="customRuleSearch" class="filter-input" placeholder="Search rules" value="${escAttr(filters.search || '')}">
+            <select id="customRuleLifecycleFilter" class="filter-sel">
+              ${customRuleLifecycleOptions(filters.lifecycle || 'all')}
+            </select>
+          </div>
+        </div>
+        <div class="rule-studio-list">
+          ${visibleRules.length ? `<div class="custom-rule-list-head"><span>Rule</span><span>State</span><span>Actions</span></div>` : ''}
+          ${rows}
+        </div>
+      </section>
+      <aside class="rule-studio-builder">
+        ${renderCustomRuleForm(engines, aiProviders)}
+        ${renderCustomRuleImport()}
+      </aside>
+    </div>
+  </div>`;
+}
+
+function renderRuleStudioEmpty(message, canCreate) {
+  const action = canCreate ? `<button class="btn-sm btn-outline focus-rule-builder-btn" type="button">New draft</button>` : '';
+  return `<div class="rule-studio-empty">
+    <div class="rule-studio-empty-mark">+</div>
+    <p>${escHtml(message)}</p>
+    ${action}
+  </div>`;
+}
+
+function ruleStudioStat(label, value, tone = '') {
+  return `<div class="rule-studio-stat ${tone}"><span>${escHtml(label)}</span><strong>${fmtNum(value)}</strong></div>`;
+}
+
+function customRuleStats(rules) {
+  return rules.reduce((stats, rule) => {
+    const lifecycle = rule.lifecycle || 'draft';
+    const status = rule.validation_status || 'none';
+    stats.total++;
+    if (lifecycle === 'published') stats.published++;
+    if (lifecycle === 'draft') stats.draft++;
+    if (status !== 'passed' && lifecycle !== 'disabled' && lifecycle !== 'deprecated') stats.needsValidation++;
+    return stats;
+  }, { total: 0, published: 0, draft: 0, needsValidation: 0 });
+}
+
+function customRuleLifecycleOptions(selected) {
+  return [
+    ['all', 'All states'],
+    ['published', 'Published'],
+    ['draft', 'Draft'],
+    ['valid', 'Valid'],
+    ['invalid', 'Invalid'],
+    ['disabled', 'Disabled'],
+    ['deprecated', 'Deprecated'],
+  ].map(([value, label]) => `<option value="${escAttr(value)}"${selected === value ? ' selected' : ''}>${escHtml(label)}</option>`).join('');
+}
+
+function customRuleMatchesFilters(rule, filters) {
+  const lifecycle = rule.lifecycle || 'draft';
+  if (filters.lifecycle && filters.lifecycle !== 'all' && lifecycle !== filters.lifecycle) {
+    return false;
+  }
+  const query = (filters.search || '').trim().toLowerCase();
+  if (!query) {
+    return true;
+  }
+  return [rule.key, rule.name, rule.language, rule.engine, rule.type, rule.severity, rule.pack_name]
+    .filter(Boolean)
+    .some(value => String(value).toLowerCase().includes(query));
+}
+
+function renderCustomRuleRow(rule, profiles) {
+  const lifecycle = rule.lifecycle || 'draft';
+  const status = rule.validation_status || 'none';
+  const compatibleProfiles = profiles.filter(profile => profile.language === rule.language || rule.language === '*');
+  const profileSelect = lifecycle === 'published' && compatibleProfiles.length
+    ? `<select class="filter-sel custom-rule-profile" id="custom-rule-profile-${rule.id}">
+        ${compatibleProfiles.map(profile => `<option value="${profile.id}">${escHtml(profile.language)} / ${escHtml(profile.name)}</option>`).join('')}
+      </select>
+      <button class="btn-sm btn-outline add-custom-rule-profile-btn" data-rule-id="${rule.id}" data-rule-key="${escAttr(rule.key)}">Add to profile</button>`
+    : '';
+  const diagnostics = rule.validation_result?.diagnostics || [];
+  const diagnosticBlock = diagnostics.length
+    ? `<div class="custom-rule-diagnostics">${diagnostics.map(renderCustomRuleDiagnostic).join('')}</div>`
+    : '';
+  return `<article class="custom-rule-row">
+    <div class="custom-rule-main">
+      <div class="custom-rule-title">
+        <strong>${escHtml(rule.name || rule.key)}</strong>
+        <span class="mono">${escHtml(rule.key)}</span>
+      </div>
+      <div class="custom-rule-meta">
+        <span>${escHtml(rule.language || '-')}</span>
+        <span>${escHtml(rule.engine || 'auto')}</span>
+        <span>${escHtml(rule.type || '-')}</span>
+        <span>${escHtml(rule.severity || '-')}</span>
+      </div>
+      ${diagnosticBlock}
+    </div>
+    <div class="custom-rule-state">
+      <span class="badge ${customRuleLifecycleClass(lifecycle)}">${escHtml(lifecycle)}</span>
+      <span class="badge ${customRuleStatusClass(status)}">${escHtml(status)}</span>
+    </div>
+    <div class="custom-rule-actions">
+      <button class="btn-sm btn-outline validate-custom-rule-btn" data-rule-id="${rule.id}">Validate</button>
+      <button class="btn-sm btn-primary publish-custom-rule-btn" data-rule-id="${rule.id}"${status === 'passed' ? '' : ' disabled'}>Publish</button>
+      <button class="btn-sm btn-outline export-custom-rule-btn" data-rule-id="${rule.id}">Export</button>
+      <button class="btn-sm btn-outline disable-custom-rule-btn" data-rule-id="${rule.id}">Disable</button>
+      ${profileSelect}
+    </div>
+  </article>`;
+}
+
+function renderCustomRuleDiagnostic(item) {
+  return `<div class="custom-rule-diagnostic ${escAttr(item.level)}"><span>${escHtml(item.code)}</span>${escHtml(item.message)}</div>`;
+}
+
+function renderCustomRuleForm(engines, aiProviders = []) {
+  const engineList = engines.length ? engines : [{ engine: 'text', name: 'Text pattern' }, { engine: 'go-ast', name: 'Go AST pattern' }, { engine: 'tree-sitter', name: 'Tree-sitter query' }];
+  const selectedEngine = customRuleDefaultEngine(engineList);
+  const engineOptions = engineList
+    .map(item => `<option value="${escAttr(item.engine)}"${item.engine === selectedEngine ? ' selected' : ''}>${escHtml(item.name || item.engine)}</option>`).join('');
+  return `<div class="rule-builder-card custom-rule-create">
+    <div class="rule-builder-head">
+      <span>Builder</span>
+      <h4>New rule</h4>
+    </div>
+    ${renderCustomRuleAIAssist(aiProviders)}
+    <div class="rule-builder-section">
+      <p>Identity</p>
+      <div class="custom-rule-form-grid">
+        <label class="custom-rule-field"><span>Pack</span><input id="customRulePack" class="filter-input" placeholder="Pack" value="Rule Studio"></label>
+        <label class="custom-rule-field"><span>Namespace</span><input id="customRuleNamespace" class="filter-input" placeholder="Namespace" value="custom"></label>
+        <label class="custom-rule-field"><span>Rule ID</span><input id="customRuleKey" class="filter-input" placeholder="no-console-log"><small class="custom-rule-field-hint">Full key: <code id="customRuleKeyPreview">custom:&lt;rule-id&gt;</code></small></label>
+        <label class="custom-rule-field"><span>Name</span><input id="customRuleName" class="filter-input" placeholder="Name"></label>
+      </div>
+    </div>
+    <div class="rule-builder-section">
+      <p>Classification</p>
+      <div class="custom-rule-form-grid">
+        <label class="custom-rule-field"><span>Language</span><select id="customRuleLanguage" class="filter-sel">
+          <option value="go">Go</option>
+          <option value="javascript">JavaScript</option>
+          <option value="typescript">TypeScript</option>
+          <option value="python">Python</option>
+          <option value="rust">Rust</option>
+        </select></label>
+        <label class="custom-rule-field"><span>Type</span><select id="customRuleType" class="filter-sel">
+          <option value="code_smell">Code Smell</option>
+          <option value="bug">Bug</option>
+          <option value="vulnerability">Vulnerability</option>
+          <option value="security_hotspot">Security Hotspot</option>
+        </select></label>
+        <label class="custom-rule-field"><span>Severity</span><select id="customRuleSeverity" class="filter-sel">
+          <option value="major">Major</option>
+          <option value="critical">Critical</option>
+          <option value="minor">Minor</option>
+          <option value="info">Info</option>
+          <option value="blocker">Blocker</option>
+        </select></label>
+        <label class="custom-rule-field"><span>Engine</span><select id="customRuleEngine" class="filter-sel">${engineOptions}</select></label>
+      </div>
+      <p class="custom-rule-field-hint" id="customRuleLanguageHint" hidden>Go AST rules run only on Go, so the language is fixed while this engine is selected.</p>
+    </div>
+    <div class="rule-builder-section">
+      <p>Matcher</p>
+      <div class="custom-rule-engine-guide" id="customRuleEngineGuide">Use a regular expression against source text.</div>
+      <div class="custom-rule-form-grid">
+        <label class="custom-rule-field full" data-engine-field="text"${selectedEngine === 'text' ? '' : ' hidden'}><span>Text regexp</span><input id="customRuleTextPattern" class="filter-input" placeholder="debugger|TODO|panic"><small class="custom-rule-field-hint">Matches the source file text.</small></label>
+        <label class="custom-rule-field" data-engine-field="go-ast"${selectedEngine === 'go-ast' ? '' : ' hidden'}><span>Go AST check</span><select id="customRuleGoASTPattern" class="filter-sel">
+          <option value="forbidden_call">Forbidden call</option>
+          <option value="forbidden_import">Forbidden import</option>
+        </select></label>
+        <label class="custom-rule-field" data-engine-field="go-ast"${selectedEngine === 'go-ast' ? '' : ' hidden'}><span>Target</span><input id="customRuleTarget" class="filter-input" placeholder="fmt.Println or net/http"><small class="custom-rule-field-hint">Exact call or import to flag.</small></label>
+        <label class="custom-rule-field full" data-engine-field="tree-sitter"${selectedEngine === 'tree-sitter' ? '' : ' hidden'}><span>Tree-sitter query</span><textarea id="customRuleQuery" class="filter-input custom-rule-textarea" placeholder="(call_expression function: (identifier) @name)"></textarea><small class="custom-rule-field-hint">Advanced structural query validated by scanner-capable runtimes.</small></label>
+      </div>
+    </div>
+    <div class="rule-builder-section">
+      <p>Rule tests</p>
+      <label class="custom-rule-field full"><span>Compliant example</span><textarea id="customRuleCompliantExample" class="filter-input custom-rule-textarea" placeholder="code that should pass without an issue"></textarea><small class="custom-rule-field-hint">This snippet must not match the rule.</small></label>
+      <label class="custom-rule-field full"><span>Noncompliant example</span><textarea id="customRuleExample" class="filter-input custom-rule-textarea" placeholder="code that should produce an issue"></textarea><small class="custom-rule-field-hint">This snippet must produce the expected issue.</small></label>
+      <label class="custom-rule-field full"><span>Expected issue message</span><input id="customRuleMessage" class="filter-input" placeholder="Issue message"></label>
+    </div>
+    <button class="btn btn-primary custom-rule-create-btn" id="createCustomRuleBtn" type="button">Create draft</button>
+  </div>`;
+}
+
+function renderCustomRuleAIAssist(providers) {
+  const models = customRuleAIModels(providers);
+  const hasModels = models.length > 0;
+  const modelOptions = customRuleAIModelOptions(models);
+  const selected = models.find(model => model.selected) || models[0] || null;
+  const canGenerate = selected?.status === 'connected';
+  const status = selected ? customRuleAIModelMessage(selected) : 'No AI providers are available yet.';
+  const setupLabel = selected ? customRuleAIStateLabel(selected) || 'setup required' : 'setup required';
+  return `<div class="rule-builder-section custom-rule-ai-panel">
+    <p>AI assist</p>
+    <div class="custom-rule-ai-grid">
+      <label class="custom-rule-field"><span>Model</span><select id="customRuleAIModel" class="filter-sel"${hasModels ? '' : ' disabled'}>${modelOptions}</select></label>
+      <label class="custom-rule-field full"><span>Intent</span><textarea id="customRuleAIIntent" class="filter-input custom-rule-ai-prompt" placeholder="Flag debug logging in production code"></textarea></label>
+    </div>
+    <div class="custom-rule-ai-actions">
+      <button class="btn-sm btn-outline" id="generateCustomRuleAIBtn" type="button"${canGenerate ? '' : ' disabled'}>Generate draft</button>
+      <span id="customRuleAIStatus">${escHtml(status)}</span>
+      <a class="custom-rule-ai-setup-link" id="connectCustomRuleAIProviderBtn" href="#custom-rule-ai-provider-setup" role="button" data-provider="${escAttr(selected?.provider || '')}"${canGenerate || !selected ? ' hidden' : ''}>${escHtml(setupLabel)}</a>
+    </div>
+    ${renderCustomRuleAIProviderSetup(providers)}
+  </div>`;
+}
+
+function customRuleAIModels(providers) {
+  const models = [];
+  providers.forEach(provider => {
+    const options = provider.model_options || (provider.models || []).map(model => ({ id: model, label: model, status: provider.status || (provider.configured ? 'connected' : 'setup_required') }));
+    options.forEach(option => {
+      const status = option.status || provider.status || (provider.configured ? 'connected' : 'setup_required');
+      models.push({
+        provider: provider.id,
+        providerLabel: provider.label || provider.id,
+        model: option.id || option.label,
+        label: option.label || option.id,
+        status,
+        local: Boolean(option.local || provider.local),
+        setupRequired: Boolean(option.setup_required || provider.setup_required || status !== 'connected'),
+        setupURL: provider.setup_url || '#custom-rule-ai-provider-setup',
+        message: option.message || provider.message || '',
+        defaultModel: provider.default_model,
+      });
+    });
+  });
+  const firstConnected = models.findIndex(model => model.status === 'connected' && (!model.defaultModel || model.model === model.defaultModel));
+  const fallbackConnected = models.findIndex(model => model.status === 'connected');
+  let selectedIndex = 0;
+  if (firstConnected >= 0) {
+    selectedIndex = firstConnected;
+  } else if (fallbackConnected >= 0) {
+    selectedIndex = fallbackConnected;
+  }
+  return models.map((model, index) => ({ ...model, selected: index === selectedIndex }));
+}
+
+function customRuleAIModelOptions(models) {
+  if (!models.length) {
+    return '<option value="">No AI providers available</option>';
+  }
+  return models.map(model => {
+    const state = customRuleAIStateLabel(model);
+    const selected = model.selected ? ' selected' : '';
+    return `<option value="${escAttr(model.provider + '|' + model.model)}" data-provider="${escAttr(model.provider)}" data-provider-label="${escAttr(model.providerLabel)}" data-model="${escAttr(model.model)}" data-status="${escAttr(model.status)}" data-local="${model.local ? 'true' : 'false'}" data-setup-url="${escAttr(model.setupURL)}" data-message="${escAttr(customRuleAIModelMessage(model))}"${selected}>${escHtml(model.providerLabel)} / ${escHtml(model.label)}${state ? ' - ' + escHtml(state) : ''}</option>`;
+  }).join('');
+}
+
+function customRuleAIStateLabel(model) {
+  if (model.status === 'connected') return model.local ? 'local' : 'connected';
+  if (model.status === 'setup_required') return 'setup required';
+  if (model.status === 'unavailable') return 'unavailable';
+  return model.status || '';
+}
+
+function customRuleAIModelMessage(model) {
+  if (model.message) return model.message;
+  if (model.status === 'connected') return model.local ? 'Local model ready.' : 'Model ready.';
+  if (model.status === 'setup_required') return 'Set up this provider before generating drafts.';
+  if (model.status === 'unavailable') return 'This provider is currently unavailable.';
+  return '';
+}
+
+function renderCustomRuleAIProviderSetup(providers) {
+  if (!providers.length) return '';
+  return `<div class="custom-rule-ai-provider-setup" id="customRuleAIProviderSetup" hidden>
+    <p class="custom-rule-ai-provider-title">AI provider setup</p>
+    <div class="custom-rule-ai-provider-list">
+      ${providers.map(renderCustomRuleAIProviderCard).join('')}
+    </div>
+  </div>`;
+}
+
+function renderCustomRuleAIProviderCard(provider, active = false) {
+  const status = provider.status || (provider.configured ? 'connected' : 'setup_required');
+  const models = provider.models || [];
+  const diagnostics = provider.diagnostics || [];
+  const modelCountText = models.length === 1 ? '1 model available.' : fmtNum(models.length) + ' models available.';
+  return `<article class="custom-rule-ai-provider-card${active ? ' active' : ''}" data-ai-provider-card="${escAttr(provider.id)}">
+    <div>
+      <strong>${escHtml(provider.label || provider.id)}</strong>
+      <span class="badge ${status === 'connected' ? 'badge-ok' : 'badge-warn'}">${escHtml(customRuleAIStateLabel({ status, local: provider.local }))}</span>
+    </div>
+    <p>${escHtml(provider.message || 'Configure this provider to use it from Rule Studio.')}</p>
+    ${provider.base_url ? `<p class="mono">${escHtml(provider.base_url)}</p>` : ''}
+    ${models.length ? `<p>${modelCountText}</p><p class="mono">${escHtml(models.join(', '))}</p>` : ''}
+    ${diagnostics.length ? `<p class="custom-rule-ai-provider-diagnostic">${escHtml(diagnostics[0])}</p>` : ''}
+  </article>`;
+}
+
+function customRuleDefaultEngine(engines) {
+  if (engines.some(item => item.engine === 'text')) return 'text';
+  return engines[0]?.engine || 'text';
+}
+
+function customRuleFullKey(namespace, key) {
+  const cleanNamespace = (namespace || 'custom').trim().toLowerCase() || 'custom';
+  const cleanKey = (key || '').trim().toLowerCase();
+  if (!cleanKey) return cleanNamespace + ':<rule-id>';
+  if (cleanKey.includes(':')) return cleanKey;
+  return cleanNamespace + ':' + cleanKey;
+}
+
+function customRuleEngineGuide(engine) {
+  if (engine === 'go-ast') return 'Choose a built-in Go AST matcher and the exact call or import to flag.';
+  if (engine === 'tree-sitter') return 'Write a structural Tree-sitter query for advanced language-specific matches.';
+  return 'Use a regular expression against source text.';
+}
+
+function bindCustomRuleBuilderControls() {
+  const engineSelect = document.getElementById('customRuleEngine');
+  if (!engineSelect) return;
+  engineSelect.addEventListener('change', syncCustomRuleBuilder);
+  document.getElementById('customRuleAIModel')?.addEventListener('change', syncCustomRuleAIControls);
+  document.getElementById('connectCustomRuleAIProviderBtn')?.addEventListener('click', openCustomRuleAIProviderSetup);
+  document.getElementById('customRuleNamespace')?.addEventListener('input', syncCustomRuleBuilder);
+  document.getElementById('customRuleKey')?.addEventListener('input', syncCustomRuleBuilder);
+  syncCustomRuleBuilder();
+  syncCustomRuleAIControls();
+}
+
+function syncCustomRuleBuilder() {
+  const engine = document.getElementById('customRuleEngine')?.value || 'text';
+  document.querySelectorAll('[data-engine-field]').forEach(field => {
+    const engines = (field.dataset.engineField || '').split(/\s+/).filter(Boolean);
+    const visible = engines.includes(engine);
+    field.hidden = !visible;
+    field.querySelectorAll('input, textarea, select').forEach(control => {
+      control.disabled = !visible;
+    });
+  });
+
+  const language = document.getElementById('customRuleLanguage');
+  const languageHint = document.getElementById('customRuleLanguageHint');
+  if (language) {
+    if (engine === 'go-ast') {
+      language.value = 'go';
+      language.disabled = true;
+      if (languageHint) languageHint.hidden = false;
+    } else {
+      language.disabled = false;
+      if (languageHint) languageHint.hidden = true;
+    }
+  }
+
+  const guide = document.getElementById('customRuleEngineGuide');
+  if (guide) guide.textContent = customRuleEngineGuide(engine);
+
+  const preview = document.getElementById('customRuleKeyPreview');
+  if (preview) {
+    const namespace = document.getElementById('customRuleNamespace')?.value;
+    const key = document.getElementById('customRuleKey')?.value;
+    preview.textContent = customRuleFullKey(namespace, key);
+  }
+}
+
+function syncCustomRuleAIControls() {
+  const select = document.getElementById('customRuleAIModel');
+  const option = select?.selectedOptions?.[0];
+  const generate = document.getElementById('generateCustomRuleAIBtn');
+  const connect = document.getElementById('connectCustomRuleAIProviderBtn');
+  const status = document.getElementById('customRuleAIStatus');
+  const modelStatus = option?.dataset.status || '';
+  const canGenerate = modelStatus === 'connected';
+  if (generate) generate.disabled = !canGenerate;
+  if (connect) {
+    connect.hidden = canGenerate || !option?.dataset.provider;
+    connect.dataset.provider = option?.dataset.provider || '';
+    connect.textContent = customRuleAIStateLabel({ status: modelStatus, local: option?.dataset.local === 'true' }) || 'setup required';
+    connect.setAttribute?.('aria-label', 'Open AI provider setup for ' + (option?.dataset.providerLabel || option?.dataset.provider || 'selected model'));
+  }
+  if (status) status.textContent = option?.dataset.message || '';
+}
+
+function openCustomRuleAIProviderSetup(event) {
+  event?.preventDefault?.();
+  const select = document.getElementById('customRuleAIModel');
+  const option = select?.selectedOptions?.[0];
+  const provider = option?.dataset.provider || event?.currentTarget?.dataset?.provider;
+  if (provider) state.customRuleAISetupProvider = provider;
+  const aiProvidersTab = document.querySelector('.tab-btn[data-tab="ai-providers"]');
+  if (aiProvidersTab) {
+    aiProvidersTab.click();
+    return;
+  }
+  const panel = document.getElementById('customRuleAIProviderSetup');
+  if (!panel) return;
+  panel.hidden = false;
+  panel.querySelectorAll('[data-ai-provider-card]').forEach(card => {
+    card.classList.toggle('active', card.dataset.aiProviderCard === provider);
+  });
+  panel.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' });
+}
+
+function readCustomRuleBuilderDraft() {
+  return {
+    pack_name: document.getElementById('customRulePack')?.value.trim() || 'Rule Studio',
+    namespace: document.getElementById('customRuleNamespace')?.value.trim() || 'custom',
+    rule_id: document.getElementById('customRuleKey')?.value.trim() || '',
+    name: document.getElementById('customRuleName')?.value.trim() || '',
+    language: document.getElementById('customRuleLanguage')?.value || 'go',
+    type: document.getElementById('customRuleType')?.value || 'code_smell',
+    severity: document.getElementById('customRuleSeverity')?.value || 'major',
+    engine: document.getElementById('customRuleEngine')?.value || 'text',
+    text_pattern: document.getElementById('customRuleTextPattern')?.value.trim() || '',
+    go_ast_pattern: document.getElementById('customRuleGoASTPattern')?.value || 'forbidden_call',
+    target: document.getElementById('customRuleTarget')?.value.trim() || '',
+    tree_sitter_query: document.getElementById('customRuleQuery')?.value.trim() || '',
+    noncompliant_example: document.getElementById('customRuleExample')?.value || '',
+    compliant_example: document.getElementById('customRuleCompliantExample')?.value || '',
+    message: document.getElementById('customRuleMessage')?.value.trim() || '',
+  };
+}
+
+function applyCustomRuleAISuggestion(suggestion) {
+  if (!suggestion) return;
+  setInputValue('customRulePack', suggestion.pack_name);
+  applyCustomRuleID(suggestion.rule_id || suggestion.key);
+  setInputValue('customRuleName', suggestion.name);
+  setInputValue('customRuleType', suggestion.type);
+  setInputValue('customRuleSeverity', suggestion.severity);
+  setInputValue('customRuleEngine', suggestion.engine);
+  syncCustomRuleBuilder();
+  setInputValue('customRuleLanguage', suggestion.language);
+  setInputValue('customRuleTextPattern', suggestion.text_pattern || suggestion.pattern);
+  setInputValue('customRuleGoASTPattern', suggestion.go_ast_pattern);
+  setInputValue('customRuleTarget', suggestion.target);
+  setInputValue('customRuleQuery', suggestion.tree_sitter_query || suggestion.query);
+  setInputValue('customRuleExample', suggestion.noncompliant_example);
+  setInputValue('customRuleCompliantExample', suggestion.compliant_example);
+  setInputValue('customRuleMessage', suggestion.message);
+  syncCustomRuleBuilder();
+}
+
+function applyCustomRuleID(ruleID) {
+  const value = (ruleID || '').trim();
+  if (!value) return;
+  const separator = value.indexOf(':');
+  if (separator > 0) {
+    setInputValue('customRuleNamespace', value.slice(0, separator));
+    setInputValue('customRuleKey', value.slice(separator + 1));
+    return;
+  }
+  setInputValue('customRuleKey', value);
+}
+
+function setInputValue(id, value) {
+  if (value === undefined || value === null || value === '') return;
+  const input = document.getElementById(id);
+  if (input) input.value = value;
+}
+
+function renderCustomRuleImport() {
+  return `<details class="rule-import-drawer custom-rule-import">
+    <summary>Import pack</summary>
+    <label class="custom-rule-field full"><span>Rule pack</span><textarea id="customRuleImportText" class="filter-input custom-rule-import-textarea" placeholder="JSON or YAML rule pack"></textarea></label>
+    <button class="btn-sm btn-outline" id="importCustomRulesBtn" type="button">Import</button>
+  </details>`;
+}
+
+function customRuleLifecycleClass(lifecycle) {
+  if (lifecycle === 'published' || lifecycle === 'valid') return 'badge-ok';
+  if (lifecycle === 'invalid' || lifecycle === 'disabled') return 'badge-warn';
+  return '';
+}
+
+function customRuleStatusClass(status) {
+  if (status === 'passed') return 'badge-ok';
+  if (status === 'failed' || status === 'requires_runtime') return 'badge-warn';
+  return '';
+}
+
 function renderEffectiveProfileSummary(lang, assignment, effective, ruleByKey) {
   const profile = assignment?.profile;
   const source = effective?.source || assignment?.source || 'default';
@@ -591,9 +1180,7 @@ export function bindAdminTabContent() {
         try {
           const gate = await apiFetch('/quality-gates/' + id);
           const conds = gate.conditions || [];
-          if (!conds.length) {
-            box.innerHTML = '<p style="color:var(--text-muted);padding:8px 0;font-size:13px">No conditions defined.</p>';
-          } else {
+          if (conds.length) {
             box.innerHTML = `<table class="conditions-table">
               <thead><tr><th>Metric</th><th>Operator</th><th>Threshold</th><th>New Code Only</th></tr></thead>
               <tbody>${conds.map(condition => `<tr>
@@ -603,6 +1190,8 @@ export function bindAdminTabContent() {
                 <td>${condition.on_new_code ? '\u2713' : ''}</td>
               </tr>`).join('')}</tbody>
             </table>`;
+          } else {
+            box.innerHTML = '<p style="color:var(--text-muted);padding:8px 0;font-size:13px">No conditions defined.</p>';
           }
         } catch {
           box.innerHTML = '<p style="color:var(--danger);font-size:13px">Failed to load conditions.</p>';
@@ -725,6 +1314,235 @@ export function bindAdminTabContent() {
         const text = JSON.stringify(doc, null, 2);
         await navigator.clipboard?.writeText(text);
         showToastMessage('Profile "' + name + '" exported.');
+      } catch (err) {
+        showToastMessage(err.message, 'error');
+      }
+      btn.disabled = false;
+    });
+  });
+
+  document.getElementById('refreshCustomRulesBtn')?.addEventListener('click', () => loadCustomRulesData());
+  document.getElementById('refreshAIProvidersBtn')?.addEventListener('click', () => loadAIProvidersData());
+  document.getElementById('returnRuleStudioBtn')?.addEventListener('click', () => {
+    document.querySelector('.tab-btn[data-tab="custom-rules"]')?.click();
+  });
+
+  document.querySelectorAll('.focus-rule-builder-btn').forEach(btn => {
+    btn.addEventListener('click', () => document.getElementById('customRuleKey')?.focus());
+  });
+
+  document.getElementById('customRuleSearch')?.addEventListener('input', event => {
+    const filters = { search: '', lifecycle: 'all', ...state.customRuleFilters };
+    filters.search = event.target.value;
+    state.customRuleFilters = filters;
+    renderView();
+  });
+
+  document.getElementById('customRuleLifecycleFilter')?.addEventListener('change', event => {
+    const filters = { search: '', lifecycle: 'all', ...state.customRuleFilters };
+    filters.lifecycle = event.target.value;
+    state.customRuleFilters = filters;
+    renderView();
+  });
+
+  bindCustomRuleBuilderControls();
+
+  document.getElementById('generateCustomRuleAIBtn')?.addEventListener('click', async event => {
+    const button = event.currentTarget;
+    const select = document.getElementById('customRuleAIModel');
+    const option = select?.selectedOptions?.[0];
+    const intent = document.getElementById('customRuleAIIntent')?.value.trim();
+    if (!option?.dataset.provider || !option?.dataset.model) {
+      showToastMessage('Choose an AI model first.', 'error');
+      return;
+    }
+    if (option.dataset.status !== 'connected') {
+      openCustomRuleAIProviderSetup();
+      showToastMessage('Set up the selected AI provider before generating a draft.', 'error');
+      return;
+    }
+    if (!intent) {
+      showToastMessage('Describe what the rule should detect.', 'error');
+      document.getElementById('customRuleAIIntent')?.focus();
+      return;
+    }
+    const status = document.getElementById('customRuleAIStatus');
+    button.disabled = true;
+    if (status) status.textContent = 'Generating...';
+    try {
+      const response = await apiFetch('/custom-rules/ai/suggest', {
+        method: 'POST',
+        body: JSON.stringify({
+          provider: option.dataset.provider,
+          model: option.dataset.model,
+          intent,
+          current: readCustomRuleBuilderDraft(),
+        }),
+      });
+      applyCustomRuleAISuggestion(response.suggestion || response);
+      if (status) status.textContent = 'Draft generated.';
+      showToastMessage('AI draft generated.');
+    } catch (err) {
+      if (status) status.textContent = err.message;
+      showToastMessage(err.message, 'error');
+    }
+    button.disabled = false;
+  });
+
+  document.getElementById('createCustomRuleBtn')?.addEventListener('click', async () => {
+    const packName = document.getElementById('customRulePack')?.value.trim() || 'Rule Studio';
+    const namespace = document.getElementById('customRuleNamespace')?.value.trim() || 'custom';
+    const key = document.getElementById('customRuleKey')?.value.trim();
+    const name = document.getElementById('customRuleName')?.value.trim();
+    const language = document.getElementById('customRuleLanguage')?.value || 'go';
+    const type = document.getElementById('customRuleType')?.value || 'code_smell';
+    const severity = document.getElementById('customRuleSeverity')?.value || 'major';
+    const engine = document.getElementById('customRuleEngine')?.value || 'text';
+    const textPattern = document.getElementById('customRuleTextPattern')?.value.trim();
+    const goASTPattern = document.getElementById('customRuleGoASTPattern')?.value || 'forbidden_call';
+    const target = document.getElementById('customRuleTarget')?.value.trim();
+    const query = document.getElementById('customRuleQuery')?.value.trim();
+    const example = document.getElementById('customRuleExample')?.value || '';
+    const compliantExample = document.getElementById('customRuleCompliantExample')?.value || '';
+    const message = document.getElementById('customRuleMessage')?.value.trim();
+    if (!key || !name || !compliantExample || !example) {
+      showToastMessage('Rule ID, name, compliant example, and noncompliant example are required.', 'error');
+      return;
+    }
+    if (engine === 'text' && !textPattern) {
+      showToastMessage('Text pattern rules need a regexp pattern.', 'error');
+      return;
+    }
+    if (engine === 'go-ast' && !target) {
+      showToastMessage('Go AST rules need a target such as fmt.Println or net/http.', 'error');
+      return;
+    }
+    if (engine === 'tree-sitter' && !query) {
+      showToastMessage('Tree-sitter rules need a query.', 'error');
+      return;
+    }
+    const engineConfig = {};
+    if (engine === 'tree-sitter') engineConfig.query = query;
+    if (engine === 'go-ast') {
+      engineConfig.pattern = goASTPattern;
+      engineConfig.target = target;
+    }
+    if (engine === 'text') engineConfig.pattern = textPattern;
+    const doc = {
+      version: 1,
+      pack: { name: packName, namespace },
+      rules: [{
+        key,
+        name,
+        language,
+        type,
+        severity,
+        engine,
+        engine_config: engineConfig,
+        message: message || name,
+        examples: [
+          { name: 'compliant', code: compliantExample, compliant: true },
+          { name: 'noncompliant', code: example, compliant: false },
+        ],
+      }],
+    };
+    try {
+      await apiFetch('/custom-rules', { method: 'POST', body: JSON.stringify(doc) });
+      showToastMessage('Custom rule draft created.');
+      await loadCustomRulesData();
+    } catch (err) {
+      showToastMessage(err.message, 'error');
+    }
+  });
+
+  document.getElementById('importCustomRulesBtn')?.addEventListener('click', async () => {
+    const text = document.getElementById('customRuleImportText')?.value.trim();
+    if (!text) {
+      showToastMessage('Paste a rule pack first.', 'error');
+      return;
+    }
+    try {
+      await apiFetch('/custom-rules/import', { method: 'POST', body: text });
+      showToastMessage('Custom rule pack imported.');
+      await loadCustomRulesData();
+    } catch (err) {
+      showToastMessage(err.message, 'error');
+    }
+  });
+
+  document.querySelectorAll('.validate-custom-rule-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      try {
+        await apiFetch('/custom-rules/' + encodeURIComponent(btn.dataset.ruleId) + '/validate', { method: 'POST' });
+        showToastMessage('Custom rule validated.');
+        await loadCustomRulesData();
+      } catch (err) {
+        showToastMessage(err.message, 'error');
+      }
+      btn.disabled = false;
+    });
+  });
+
+  document.querySelectorAll('.publish-custom-rule-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      try {
+        await apiFetch('/custom-rules/' + encodeURIComponent(btn.dataset.ruleId) + '/publish', { method: 'POST' });
+        showToastMessage('Custom rule published.');
+        state.profilesData = null;
+        await loadCustomRulesData();
+      } catch (err) {
+        showToastMessage(err.message, 'error');
+      }
+      btn.disabled = false;
+    });
+  });
+
+  document.querySelectorAll('.disable-custom-rule-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Disable this custom rule?')) return;
+      btn.disabled = true;
+      try {
+        await apiFetch('/custom-rules/' + encodeURIComponent(btn.dataset.ruleId) + '/disable', { method: 'POST' });
+        showToastMessage('Custom rule disabled.');
+        state.profilesData = null;
+        await loadCustomRulesData();
+      } catch (err) {
+        showToastMessage(err.message, 'error');
+      }
+      btn.disabled = false;
+    });
+  });
+
+  document.querySelectorAll('.export-custom-rule-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      try {
+        const doc = await apiFetch('/custom-rules/' + encodeURIComponent(btn.dataset.ruleId) + '/export');
+        await navigator.clipboard?.writeText(JSON.stringify(doc, null, 2));
+        showToastMessage('Custom rule exported.');
+      } catch (err) {
+        showToastMessage(err.message, 'error');
+      }
+      btn.disabled = false;
+    });
+  });
+
+  document.querySelectorAll('.add-custom-rule-profile-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const select = document.getElementById('custom-rule-profile-' + btn.dataset.ruleId);
+      const profileID = Number.parseInt(select?.value || '0', 10);
+      if (!profileID) return;
+      btn.disabled = true;
+      try {
+        await apiFetch('/profiles/' + encodeURIComponent(profileID) + '/rules', {
+          method: 'POST',
+          body: JSON.stringify({ rule_key: btn.dataset.ruleKey, params: {} }),
+        });
+        showToastMessage('Custom rule added to profile.');
+        state.profilesData = null;
+        await loadCustomRulesData();
       } catch (err) {
         showToastMessage(err.message, 'error');
       }

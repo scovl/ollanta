@@ -2,8 +2,11 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -203,6 +206,62 @@ func TestLoadAIProviderOptionsIncludesOpenAIByDefault(t *testing.T) {
 	}
 	if !containsString(options[0].Models, defaultOpenAIModel) {
 		t.Fatalf("expected models to contain %s, got %v", defaultOpenAIModel, options[0].Models)
+	}
+}
+
+func TestOpenAIProviderUsesResponsesAPI(t *testing.T) {
+	var requestedPath string
+	var requestedModel string
+	ai := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestedPath = r.URL.Path
+		var payload struct {
+			Model string `json:"model"`
+			Input []struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+			} `json:"input"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		requestedModel = payload.Model
+		if len(payload.Input) != 2 {
+			t.Fatalf("input = %+v, want system and user messages", payload.Input)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"output_text": `{"summary":"Fixed issue","explanation":"Used current OpenAI Responses API","replacement":"println(ok)"}`,
+		})
+	}))
+	defer ai.Close()
+	t.Setenv("OLLANTA_AI_OPENAI_API", "responses")
+
+	provider := openAIProvider{client: ai.Client()}
+	response, err := provider.GenerateFix(context.Background(), aiAgentConfig{
+		ID:       "openai:gpt-5.5",
+		Label:    "OpenAI",
+		Provider: "openai",
+		Model:    "gpt-5.5",
+		BaseURL:  ai.URL,
+		APIKey:   "test-key",
+	}, aiProviderRequest{
+		Issue:     domain.Issue{RuleKey: "go:no-debug", Severity: domain.SeverityMajor, Message: "remove debug output"},
+		FilePath:  "main.go",
+		Snippet:   "println(debug)",
+		Context:   "func main() { println(debug) }",
+		StartLine: 1,
+		EndLine:   1,
+	})
+	if err != nil {
+		t.Fatalf("GenerateFix() error = %v", err)
+	}
+	if requestedPath != "/responses" {
+		t.Fatalf("path = %s, want /responses", requestedPath)
+	}
+	if requestedModel != "gpt-5.5" {
+		t.Fatalf("model = %s, want gpt-5.5", requestedModel)
+	}
+	if response.Replacement != "println(ok)" {
+		t.Fatalf("replacement = %q, want println(ok)", response.Replacement)
 	}
 }
 
