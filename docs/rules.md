@@ -34,9 +34,78 @@
 
 ---
 
-## Adding a New Rule
+## Custom Rule Packs
 
-Adding a rule requires the rule logic, its metadata JSON, and registration in the language `embed.go` file.
+Custom Rule Packs are the easiest way to add project or organization-specific checks without writing Go code or rebuilding Ollanta. They are declarative JSON/YAML documents that extend the rule catalog once they are valid and published.
+
+Supported custom engines:
+
+| Engine | Use case | Runtime |
+|--------|----------|---------|
+| `text` | Regular expression matches over source text | Server validation and scanner execution |
+| `go-ast` | Common Go AST patterns such as forbidden calls/imports | Server validation and scanner execution |
+| `tree-sitter` | Syntax queries for parser-backed languages | Scanner/local validation and execution |
+
+Example pack:
+
+```yaml
+version: 1
+pack:
+  name: Team Rules
+  namespace: team
+rules:
+  - key: no-debug-print
+    name: Debug prints should not be committed
+    language: go
+    type: code_smell
+    severity: major
+    engine: go-ast
+    engine_config:
+      pattern: forbidden_call
+      target: fmt.Println
+    message: Remove debug printing before committing.
+    examples:
+      - name: compliant
+        code: |
+          package main
+          func main() { println("ok") }
+        compliant: true
+      - name: noncompliant
+        code: |
+          package main
+          import "fmt"
+          func main() { fmt.Println("debug") }
+        compliant: false
+```
+
+Local scans load rule packs from `.ollanta/rules/*.yaml`, `.ollanta/rules/*.yml`, and `.ollanta/rules/*.json` before analysis. Server-managed scans fetch the published custom catalog from `ollantaweb` at scan start. A scan uses that immutable snapshot until it finishes, and reports include custom catalog/profile hashes for auditability.
+
+Custom rules still run through Quality Profiles. A published rule must be activated in a compatible profile before the scanner executes it. With local profile-as-code, activate it by key:
+
+```yaml
+version: 1
+profiles:
+  - language: go
+    name: Team Go
+    rules:
+      - key: team:no-debug-print
+        severity: critical
+```
+
+In the server UI, use Rule Studio to create a draft, validate examples, publish it, and add it to a profile. Rule Studio can also generate an editable draft from an AI model and intent. Local Ollama models are discovered as local/no-key options, while OpenAI, Anthropic Claude, Kimi K2, and Qwen providers are configured server-side. The built-in OpenAI defaults track the GPT-5 family and use the Responses API for OpenAI's own endpoint. Anthropic Claude uses `ANTHROPIC_API_KEY` and defaults to `claude-opus-4-7`, `claude-sonnet-4-6`, and `claude-haiku-4-5`; Kimi uses `MOONSHOT_API_KEY` or `KIMI_API_KEY` and defaults to `kimi-k2.6`; Qwen uses `DASHSCOPE_API_KEY` or `QWEN_API_KEY` and defaults to `qwen3.6-max-preview`. Use each provider's `OLLANTA_AI_<PROVIDER>_MODELS`, `OLLANTA_AI_<PROVIDER>_MODEL`, or `OLLANTA_AI_<PROVIDER>_BASE_URL` variables to override the list or endpoint. AI output is never published automatically; drafts still need example validation and profile activation. Draft, invalid, disabled, and deprecated custom rules are not exposed through scanner/profile catalog endpoints.
+
+To exercise the full lifecycle against a running server stack, run the smoke script with an admin password in the environment:
+
+```powershell
+$env:OLLANTA_ADMIN_PASSWORD = '<admin-password>'
+.\scripts\smoke-custom-rules.ps1
+```
+
+The smoke test creates a custom rule pack, validates, previews, publishes, activates it in a profile, runs the scanner with server profiles, pushes the report, and verifies the issue through the server API.
+
+## Adding a Native Analyzer Rule
+
+Native analyzer rules are compiled into Ollanta. Use this path when a rule needs arbitrary Go logic, deeper semantic analysis, or behavior that cannot be expressed safely as a Custom Rule Pack. Adding one requires the rule logic, its metadata JSON, and registration in the language `embed.go` file.
 
 **1. Create the rule logic** in the appropriate language package:
 

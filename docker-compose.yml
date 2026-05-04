@@ -20,7 +20,7 @@
 # Server usage:
 #
 #   # Start PostgreSQL + ZincSearch + ollantaweb API + workers
-#   # Set PG_PASSWORD in your shell or .env before starting the server profile.
+#   # Optional: set PG_PASSWORD in your shell or .env to override the local dev password.
 #   docker compose --profile server up -d
 #
 #   # Start the local observability stack alongside the server profile
@@ -33,6 +33,14 @@
 # Background roles: compute, index projection, webhook delivery
 
 name: ollanta
+
+x-ollanta-db-env: &ollanta-db-env
+  OLLANTA_POSTGRES_HOST: postgres
+  OLLANTA_POSTGRES_PORT: "5432"
+  OLLANTA_POSTGRES_DB: ollanta
+  OLLANTA_POSTGRES_USER: ollanta
+  OLLANTA_POSTGRES_PASSWORD: "${PG_PASSWORD:-ollanta_dev}"
+  OLLANTA_POSTGRES_SSLMODE: disable
 
 services:
 
@@ -54,6 +62,7 @@ services:
       - OLLANTA_AI_ENABLE_MOCK=${OLLANTA_AI_ENABLE_MOCK:-}
       - OLLANTA_AI_AGENTS=${OLLANTA_AI_AGENTS:-}
       - OLLANTA_AI_OPENAI_MODEL=${OLLANTA_AI_OPENAI_MODEL:-}
+      - OLLANTA_AI_OPENAI_API=${OLLANTA_AI_OPENAI_API:-}
       - OLLANTA_AI_OPENAI_BASE_URL=${OLLANTA_AI_OPENAI_BASE_URL:-}
       - OLLANTA_AI_OPENAI_LABEL=${OLLANTA_AI_OPENAI_LABEL:-}
       - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-http://jaeger:4318}
@@ -160,8 +169,8 @@ services:
       zincsearch:
         condition: service_started
     environment:
+      <<: *ollanta-db-env
       OLLANTA_ADDR: ":8080"
-      OLLANTA_DATABASE_URL: "postgres://ollanta:${PG_PASSWORD:-ollanta_dev}@postgres:5432/ollanta?sslmode=disable"
       OLLANTA_ZINCSEARCH_URL: "http://zincsearch:4080"
       OLLANTA_ZINCSEARCH_USER: "${ZINC_USER:-admin}"
       OLLANTA_ZINCSEARCH_PASSWORD: "${ZINC_PASSWORD:-ollanta_dev}"
@@ -177,6 +186,34 @@ services:
       OTEL_EXPORTER_OTLP_ENDPOINT: "${OTEL_EXPORTER_OTLP_ENDPOINT:-http://jaeger:4318}"
       OLLANTA_SCANNER_TOKEN: "${OLLANTA_SCANNER_TOKEN:-ollanta-dev-scanner-token}"
       OLLANTA_OBSERVABILITY_LINKS: "${OLLANTA_OBSERVABILITY_LINKS:-}"
+      OLLANTA_AI_ENABLE_MOCK: "${OLLANTA_AI_ENABLE_MOCK:-}"
+      OLLANTA_AI_OPENAI_MODEL: "${OLLANTA_AI_OPENAI_MODEL:-gpt-5.5}"
+      OLLANTA_AI_OPENAI_MODELS: "${OLLANTA_AI_OPENAI_MODELS:-gpt-5.5,gpt-5.4,gpt-5.4-mini,gpt-5.4-nano}"
+      OLLANTA_AI_OPENAI_API: "${OLLANTA_AI_OPENAI_API:-responses}"
+      OLLANTA_AI_OPENAI_BASE_URL: "${OLLANTA_AI_OPENAI_BASE_URL:-https://api.openai.com/v1}"
+      OLLANTA_AI_OPENAI_LABEL: "${OLLANTA_AI_OPENAI_LABEL:-OpenAI}"
+      OLLANTA_AI_ANTHROPIC_MODEL: "${OLLANTA_AI_ANTHROPIC_MODEL:-claude-sonnet-4-6}"
+      OLLANTA_AI_ANTHROPIC_MODELS: "${OLLANTA_AI_ANTHROPIC_MODELS:-claude-opus-4-7,claude-sonnet-4-6,claude-haiku-4-5}"
+      OLLANTA_AI_ANTHROPIC_BASE_URL: "${OLLANTA_AI_ANTHROPIC_BASE_URL:-https://api.anthropic.com/v1}"
+      OLLANTA_AI_ANTHROPIC_LABEL: "${OLLANTA_AI_ANTHROPIC_LABEL:-Anthropic Claude}"
+      OLLANTA_AI_ANTHROPIC_VERSION: "${OLLANTA_AI_ANTHROPIC_VERSION:-2023-06-01}"
+      OLLANTA_AI_KIMI_MODEL: "${OLLANTA_AI_KIMI_MODEL:-kimi-k2.6}"
+      OLLANTA_AI_KIMI_MODELS: "${OLLANTA_AI_KIMI_MODELS:-kimi-k2.6,kimi-k2.5,kimi-k2-0905-preview,kimi-k2-turbo-preview,kimi-k2-thinking}"
+      OLLANTA_AI_KIMI_BASE_URL: "${OLLANTA_AI_KIMI_BASE_URL:-https://api.moonshot.ai/v1}"
+      OLLANTA_AI_KIMI_LABEL: "${OLLANTA_AI_KIMI_LABEL:-Kimi K2}"
+      OLLANTA_AI_QWEN_MODEL: "${OLLANTA_AI_QWEN_MODEL:-qwen3.6-max-preview}"
+      OLLANTA_AI_QWEN_MODELS: "${OLLANTA_AI_QWEN_MODELS:-qwen3.6-max-preview,qwen3.6-plus,qwen3.6-flash,qwen3-coder-plus,qwen3.6-35b-a3b}"
+      OLLANTA_AI_QWEN_BASE_URL: "${OLLANTA_AI_QWEN_BASE_URL:-https://dashscope-intl.aliyuncs.com/compatible-mode/v1}"
+      OLLANTA_AI_QWEN_LABEL: "${OLLANTA_AI_QWEN_LABEL:-Qwen}"
+      OLLANTA_AI_OLLAMA_BASE_URL: "${OLLANTA_AI_OLLAMA_BASE_URL:-http://host.docker.internal:11434}"
+      OLLANTA_AI_OLLAMA_LABEL: "${OLLANTA_AI_OLLAMA_LABEL:-Ollama}"
+      OLLANTA_AI_OLLAMA_MODEL: "${OLLANTA_AI_OLLAMA_MODEL:-}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+      MOONSHOT_API_KEY: "${MOONSHOT_API_KEY:-}"
+      KIMI_API_KEY: "${KIMI_API_KEY:-}"
+      DASHSCOPE_API_KEY: "${DASHSCOPE_API_KEY:-}"
+      QWEN_API_KEY: "${QWEN_API_KEY:-}"
     ports:
       - "8080:8080"
     restart: unless-stopped
@@ -195,8 +232,8 @@ services:
       zincsearch:
         condition: service_started
     environment:
+      <<: *ollanta-db-env
       OLLANTA_ADMIN_ADDR: ":9090"
-      OLLANTA_DATABASE_URL: "postgres://ollanta:${PG_PASSWORD:-ollanta_dev}@postgres:5432/ollanta?sslmode=disable"
       OLLANTA_LOG_LEVEL: "info"
       OLLANTA_JWT_SECRET: "${OLLANTA_JWT_SECRET:-ollanta-dev-jwt-secret-change-me}"
       OLLANTA_AUTO_MIGRATE: "${OLLANTA_AUTO_MIGRATE:-true}"
@@ -220,8 +257,8 @@ services:
       zincsearch:
         condition: service_started
     environment:
+      <<: *ollanta-db-env
       OLLANTA_ADMIN_ADDR: ":9090"
-      OLLANTA_DATABASE_URL: "postgres://ollanta:${PG_PASSWORD:-ollanta_dev}@postgres:5432/ollanta?sslmode=disable"
       OLLANTA_ZINCSEARCH_URL: "http://zincsearch:4080"
       OLLANTA_ZINCSEARCH_USER: "${ZINC_USER:-admin}"
       OLLANTA_ZINCSEARCH_PASSWORD: "${ZINC_PASSWORD:-ollanta_dev}"
@@ -246,8 +283,8 @@ services:
       postgres:
         condition: service_healthy
     environment:
+      <<: *ollanta-db-env
       OLLANTA_ADMIN_ADDR: ":9090"
-      OLLANTA_DATABASE_URL: "postgres://ollanta:${PG_PASSWORD:-ollanta_dev}@postgres:5432/ollanta?sslmode=disable"
       OLLANTA_LOG_LEVEL: "info"
       OLLANTA_JWT_SECRET: "${OLLANTA_JWT_SECRET:-ollanta-dev-jwt-secret-change-me}"
       OLLANTA_AUTO_MIGRATE: "${OLLANTA_AUTO_MIGRATE:-true}"
@@ -269,7 +306,7 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      OLLANTA_DATABASE_URL: "postgres://ollanta:${PG_PASSWORD:-ollanta_dev}@postgres:5432/ollanta?sslmode=disable"
+      <<: *ollanta-db-env
       OLLANTA_LOG_LEVEL: "info"
       OLLANTA_JWT_SECRET: "${OLLANTA_JWT_SECRET:-ollanta-dev-jwt-secret-change-me}"
     restart: "no"

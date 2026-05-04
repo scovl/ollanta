@@ -1109,8 +1109,10 @@ docker compose --profile scanner up local-ui
 docker compose --profile server up -d
 
 # Want to scan and push to the server?
-PROJECT_DIR=/path/to/code docker compose run --rm push
+docker compose --profile push run --rm push
 ```
+
+The compose defaults scan the current checkout and use local development credentials. Set `PROJECT_DIR`, `PROJECT_KEY`, and stronger secrets in `.env` for another project or shared environment.
 
 ### Environment variables
 
@@ -1119,10 +1121,11 @@ The most important ones for configuring the server:
 | Variable | Default | What it does |
 |----------|---------|--------------|
 | `OLLANTA_DATABASE_URL` | *(required)* | PostgreSQL connection string |
+| `OLLANTA_POSTGRES_HOST` / `USER` / `PASSWORD` | *(empty)* | Alternative PostgreSQL connection fields when `OLLANTA_DATABASE_URL` is not set |
 | `OLLANTA_ADDR` | `:8080` | Address the server listens on |
 | `OLLANTA_CONFIG_FILE` | *(empty)* | Explicit path to `config.toml` for scanner or server binaries |
 | `OLLANTA_SEARCH_BACKEND` | `zincsearch` | Search backend (`zincsearch` or `postgres`) |
-| `OLLANTA_SCANNER_TOKEN` | *(empty)* | Shared token accepted for scanner pushes to `POST /api/v1/scans` |
+| `OLLANTA_SCANNER_TOKEN` | *(empty outside compose)* | Shared token accepted for scanner pushes to `POST /api/v1/scans`; local compose defaults to `ollanta-dev-scanner-token` |
 | `OLLANTA_JWT_SECRET` | *(auto-generated)* | Secret for signing JWTs |
 | `OLLANTA_JWT_EXPIRY` | `15m` | Access token lifetime |
 | `OLLANTA_ZINCSEARCH_URL` | `http://localhost:4080` | ZincSearch URL |

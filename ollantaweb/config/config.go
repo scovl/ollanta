@@ -460,6 +460,9 @@ func buildSearchURL(file searchFileConfig) string {
 
 func applyServerEnvOverrides(cfg *Config) error {
 	applyAddressEnvOverrides(cfg)
+	if err := applyDatabaseEnvOverrides(cfg); err != nil {
+		return err
+	}
 	if err := applySecurityEnvOverrides(cfg); err != nil {
 		return err
 	}
@@ -495,6 +498,40 @@ func applyAddressEnvOverrides(cfg *Config) {
 	applyEnvStringValue(&cfg.GoogleClientID, "OLLANTA_GOOGLE_CLIENT_ID")
 	applyEnvStringValue(&cfg.GoogleClientSecret, "OLLANTA_GOOGLE_CLIENT_SECRET")
 	applyEnvStringValue(&cfg.ScannerToken, "OLLANTA_SCANNER_TOKEN")
+}
+
+func applyDatabaseEnvOverrides(cfg *Config) error {
+	if strings.TrimSpace(os.Getenv("OLLANTA_DATABASE_URL")) != "" {
+		return nil
+	}
+	file := databaseFileConfig{
+		Host:     strings.TrimSpace(os.Getenv("OLLANTA_POSTGRES_HOST")),
+		Name:     strings.TrimSpace(os.Getenv("OLLANTA_POSTGRES_DB")),
+		User:     strings.TrimSpace(os.Getenv("OLLANTA_POSTGRES_USER")),
+		Password: strings.TrimSpace(os.Getenv("OLLANTA_POSTGRES_PASSWORD")),
+		SSLMode:  strings.TrimSpace(os.Getenv("OLLANTA_POSTGRES_SSLMODE")),
+	}
+	if value := strings.TrimSpace(os.Getenv("OLLANTA_POSTGRES_PORT")); value != "" {
+		port, err := strconv.Atoi(value)
+		if err != nil {
+			return errors.New("invalid OLLANTA_POSTGRES_PORT")
+		}
+		file.Port = port
+	}
+	if !hasDatabaseParts(file) {
+		return nil
+	}
+	if file.Host == "" {
+		file.Host = "localhost"
+	}
+	if file.Name == "" {
+		file.Name = "ollanta"
+	}
+	if file.User == "" {
+		file.User = "ollanta"
+	}
+	cfg.DatabaseURL = buildDatabaseURL(file)
+	return nil
 }
 
 func applySecurityEnvOverrides(cfg *Config) error {

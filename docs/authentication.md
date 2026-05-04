@@ -8,6 +8,8 @@ The server supports three authentication mechanisms:
 | **OAuth**    | GitHub, GitLab, or Google — configure via environment variables below; users are auto-provisioned on first login |
 | **API tokens** | Generate via `POST /api/v1/tokens`; prefix `olt_`; use as `Authorization: Bearer olt_…` in CI scripts |
 
+Local Docker Compose seeds a development administrator as `admin` / `admin`. Change that password before using the server outside a private local machine.
+
 ## OAuth Environment Variables
 
 | Variable | Description |
