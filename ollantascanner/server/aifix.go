@@ -692,9 +692,8 @@ func buildUnifiedSnippetDiff(original, replacement string, startLine int) string
 	originalLines := strings.Split(original, "\n")
 	replacementLines := strings.Split(replacement, "\n")
 	var builder strings.Builder
-	// strings.Builder.Write* methods never return an error, so the result is
-	// safely ignored.
-	builder.WriteString(fmt.Sprintf("@@ lines %d-%d @@\n", startLine, startLine+len(originalLines)-1))
+	// strings.Builder never returns a write error; fmt.Fprintf is used per QF1012.
+	fmt.Fprintf(&builder, "@@ lines %d-%d @@\n", startLine, startLine+len(originalLines)-1)
 	for _, line := range originalLines {
 		builder.WriteString("- ")
 		builder.WriteString(line)
@@ -940,21 +939,21 @@ func responsesOutputText(body []byte) (string, error) {
 
 func buildAIFixPrompt(request aiProviderRequest) string {
 	var builder strings.Builder
-	// strings.Builder.Write* methods never return an error.
+	// strings.Builder never returns a write error; fmt.Fprintf is used per QF1012.
 	builder.WriteString("Fix the following static-analysis issue in the provided code snippet.\n")
 	builder.WriteString("Return JSON with keys summary, explanation, replacement.\n\n")
 	builder.WriteString("Issue\n")
-	builder.WriteString(fmt.Sprintf("- rule_key: %s\n", request.Issue.RuleKey))
-	builder.WriteString(fmt.Sprintf("- severity: %s\n", request.Issue.Severity))
-	builder.WriteString(fmt.Sprintf("- message: %s\n", request.Issue.Message))
-	builder.WriteString(fmt.Sprintf("- file_path: %s\n", request.FilePath))
-	builder.WriteString(fmt.Sprintf("- line_range: %d-%d\n", request.StartLine, request.EndLine))
+	fmt.Fprintf(&builder, "- rule_key: %s\n", request.Issue.RuleKey)
+	fmt.Fprintf(&builder, "- severity: %s\n", request.Issue.Severity)
+	fmt.Fprintf(&builder, "- message: %s\n", request.Issue.Message)
+	fmt.Fprintf(&builder, "- file_path: %s\n", request.FilePath)
+	fmt.Fprintf(&builder, "- line_range: %d-%d\n", request.StartLine, request.EndLine)
 	if request.Rule != nil {
 		if request.Rule.Description != "" {
-			builder.WriteString(fmt.Sprintf("- rule_description: %s\n", request.Rule.Description))
+			fmt.Fprintf(&builder, "- rule_description: %s\n", request.Rule.Description)
 		}
 		if request.Rule.Rationale != "" {
-			builder.WriteString(fmt.Sprintf("- rule_rationale: %s\n", request.Rule.Rationale))
+			fmt.Fprintf(&builder, "- rule_rationale: %s\n", request.Rule.Rationale)
 		}
 	}
 	builder.WriteString("\nContext\n")
