@@ -292,7 +292,9 @@ function renderGateHero(gate, measures) {
       const value = gateMeasures[condition.metric];
       const violated = value !== undefined && violatesGateCondition(condition, value);
       if (!violated) return null;
-      return gateReasonMessage(condition.metric, value);
+      const metricLabel = overviewMetricLabel(condition.metric);
+      const opLabel = overviewOperatorLabel(condition.operator);
+      return `${metricLabel} ${opLabel} ${condition.threshold} (actual: ${value})`;
     }).filter(Boolean);
     if (reasons.length) {
       const reasonItems = reasons.map(reason => `<li>${reason}</li>`).join('');
@@ -310,6 +312,16 @@ function renderGateHero(gate, measures) {
     </div>
     ${reasonsHtml}
   </div>`;
+}
+
+function overviewMetricLabel(metric) {
+  const labels = { bugs: 'Bugs', vulnerabilities: 'Vulnerabilities', code_smells: 'Code Smells', coverage: 'Coverage', new_bugs: 'New Bugs', new_vulnerabilities: 'New Vulnerabilities', new_code_smells: 'New Code Smells', new_coverage: 'Coverage on New Code', duplicated_lines_density: 'Duplicated Lines', new_duplicated_lines_density: 'Duplicated Lines on New Code' };
+  return labels[metric] || metric;
+}
+
+function overviewOperatorLabel(op) {
+  const labels = { GT: 'is greater than', LT: 'is less than', GTE: 'is greater than or equal', LTE: 'is less than or equal', EQ: 'equals', NE: 'is not equal' };
+  return labels[op] || op;
 }
 
 function summaryHeroClass(status) {

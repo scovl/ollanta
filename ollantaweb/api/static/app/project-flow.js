@@ -205,7 +205,7 @@ const projectTabLoaders = {
     load: loadProfilesData,
   },
   'custom-rules': {
-    shouldLoad: () => state.customRulesData === null || state.customRuleEngines === null || state.profilesData === null,
+    shouldLoad: () => state.customRulesData === null || state.customRuleEngines === null,
     load: loadCustomRulesData,
   },
   'ai-providers': {
