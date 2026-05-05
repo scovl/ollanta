@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/scovl/ollanta/application/analysis"
 	appingest "github.com/scovl/ollanta/application/ingest"
 	"github.com/scovl/ollanta/domain/model"
 	"github.com/scovl/ollanta/ollantastore/postgres"
@@ -52,11 +53,7 @@ type Pipeline struct {
 // NewPipeline creates an ingest pipeline backed by application/ingest.
 // enqueuer may be nil to disable async search indexing.
 func NewPipeline(
-	projects *postgres.ProjectRepository,
-	scans *postgres.ScanRepository,
-	issues *postgres.IssueRepository,
-	measures *postgres.MeasureRepository,
-	snapshots *postgres.CodeSnapshotRepository,
+	repos IngestRepositories,
 	enqueuer IndexEnqueuer,
 ) *Pipeline {
 	var searchEnqueuer appingest.ISearchEnqueuer
@@ -64,17 +61,29 @@ func NewPipeline(
 		searchEnqueuer = searchEnqueuerAdapter{inner: enqueuer}
 	}
 
+	ingestUC := appingest.NewIngestUseCase(
+		&projectRepoAdapter{inner: repos.Projects},
+		&scanRepoAdapter{inner: repos.Scans},
+		&issueRepoAdapter{inner: repos.Issues},
+		&measureRepoAdapter{inner: repos.Measures},
+		&codeSnapshotRepoAdapter{inner: repos.Snapshots},
+		searchEnqueuer,
+		nil,
+	)
+	wireGateEvaluator(ingestUC, repos.Gates)
+	ingestUC.SetProfileSnapshotRepo(repos.Profiles)
+	ingestUC.SetTagCatalogRepo(repos.Tags)
+
 	return &Pipeline{
-		inner: appingest.NewIngestUseCase(
-			&projectRepoAdapter{inner: projects},
-			&scanRepoAdapter{inner: scans},
-			&issueRepoAdapter{inner: issues},
-			&measureRepoAdapter{inner: measures},
-			&codeSnapshotRepoAdapter{inner: snapshots},
-			searchEnqueuer,
-			nil,
-		),
+		inner: ingestUC,
 	}
+}
+
+func wireGateEvaluator(ingestUC *appingest.IngestUseCase, gateRepo *postgres.GateRepository) {
+	if gateRepo == nil {
+		return
+	}
+	ingestUC.SetGateEvaluator(analysis.NewEvaluateGateUseCase(&gateRepoAdapter{inner: gateRepo}))
 }
 
 // Ingest persists a scan report and returns a summary of the results.
