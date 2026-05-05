@@ -1550,3 +1550,17 @@ stateDiagram-v2
 ```
 
 Issues are matched first by **rule key + line hash** (content-based), then by **file path + line number** as a fallback. This means reformatting code without changing logic won't produce spurious closed/reopened transitions.
+
+## Frontend: Activity tab interactions
+
+The Activity tab lives in `ollantaweb/api/static/app/features/activity.js` and is a thin client over `GET /api/v1/projects/{key}/activity`.
+
+The view is built from a single payload and three cooperating client-side concerns:
+
+- **Local filtering.** The category multi-select (Quality Gate, Issue Spike, Version, First Analysis, Analysis) and the time-window control (7d / 30d / 90d / all) are evaluated entirely in the browser by `applyActivityFilters(items, filters)`. Filters are stored on `state.activityFilters` and reset whenever the user switches projects.
+- **Pagination.** The first request asks for 60 entries; clicking "Load more" issues another request with `offset=N` and concatenates the new items into `state.activityData.items`. The button disappears when `items.length === total`.
+- **Drill-down.** Chart points, Notable Events rows, and the primary cell of each Recent Analyses row call `openScanInIssues(scanId)`, which sets `state.issueFilter.scanId` and switches to the Issues tab. The Issues tab forwards the value as `?scan_id=` and renders a clearable chip in the toolbar so the user can see (and undo) the narrowing.
+- **Compare two scans.** Recent Analyses has a leading checkbox column bound to `state.activityCompareSelection`. Selection is capped at two; selecting a third replaces the oldest (FIFO). Cross-branch selection is rejected with a tooltip. When two scans are selected, an inline compare panel is rendered below the table with per-scan totals and absolute deltas.
+
+Because all interactions are handled with client-side state plus the existing scoped REST endpoints, no new backend routes were required.
+

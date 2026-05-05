@@ -153,6 +153,7 @@ test('render shows API docs and only configured observability links in the globa
   const html = elements.get('app').innerHTML;
   assert.match(html, /aria-label="Admin shortcuts"/);
   assert.match(html, /id="apiDocsBtn"/);
+  assert.match(html, /id="tagsBtn"/);
   assert.match(html, /id="backgroundTasksBtn"/);
   assert.doesNotMatch(html, /href="\/api\/v1\/system\/info"/);
   assert.match(html, /href="\/metrics"/);
@@ -177,8 +178,49 @@ test('renderApiDocsPage documents Ollanta API groups', () => {
   assert.match(html, /project_key/);
   assert.match(html, /\/api\/v1\/auth\/login/);
   assert.match(html, /\/api\/v1\/projects\/{key}\/issues/);
+  assert.match(html, /Tag Governance/);
+  assert.match(html, /\/api\/v1\/tags\/bulk\/preview/);
+  assert.match(html, /\/api\/v1\/saved-filters/);
   assert.match(html, /\/api\/v1\/system\/info/);
   assert.match(html, /\/metrics/);
+});
+
+test('renderTagsPage shows catalog, tag detail, bulk edit and saved filters', () => {
+  const { app: harnessApp } = createHarness();
+
+  harnessApp.state.tagCatalogData = {
+    total: 1,
+    items: [{ key: 'team-api', display_name: 'Team API', color: '#0ea5e9', description: 'API ownership', owner_name: 'Platform', status: 'active', usage: { issue_count: 2 } }],
+  };
+  harnessApp.state.selectedTagKey = 'team-api';
+  harnessApp.state.tagDetailData = {
+    tag: {
+      key: 'team-api',
+      display_name: 'Team API',
+      color: '#0ea5e9',
+      description: 'API ownership',
+      owner_name: 'Platform',
+      status: 'active',
+      aliases: [{ alias: 'api' }],
+      usage: { issue_count: 2, project_count: 1, rule_count: 0, custom_rule_count: 1, saved_filter_count: 1 },
+    },
+    audit: [{ action: 'created', created_at: '2026-05-01T12:00:00Z' }],
+  };
+  harnessApp.state.savedFiltersData = { items: [{ id: 7, name: 'API review', criteria: { tag: 'team-api', severity: 'critical' } }] };
+  harnessApp.state.tagBulkPreview = { target_count: 2, changes: [{ target_key: 'ISSUE-1', before: ['legacy'], after: ['team-api'] }] };
+
+  const html = harnessApp.renderTagsPage();
+
+  assert.match(html, /Create Tag/);
+  assert.match(html, /Catalog/);
+  assert.match(html, /Team API/);
+  assert.match(html, /tag-swatch/);
+  assert.match(html, /tag-status-active/);
+  assert.match(html, /Bulk Edit/);
+  assert.match(html, /ISSUE-1/);
+  assert.match(html, /Saved Filters/);
+  assert.match(html, /API review/);
+  assert.match(html, /Open issues/);
 });
 
 test('renderScopeToolbar shows the real default branch name in the branch selector', () => {
@@ -229,7 +271,10 @@ test('renderProjectDetail does not duplicate Background Tasks in project tabs', 
   harnessApp.state.view = 'project';
   harnessApp.state.projectTab = 'overview';
   harnessApp.state.overviewData = { last_scan: { total_issues: 0 } };
-  harnessApp.state.branchesData = [];
+  harnessApp.state.branchesData = [
+    { name: 'main', is_default: true },
+    { name: 'release', is_default: false },
+  ];
   harnessApp.state.pullRequestsData = [];
 
   harnessApp.render();
@@ -860,4 +905,58 @@ test('renderOverviewTab shows the empty state when there is no overview data', (
 
   const html = harnessApp.renderOverviewTab();
   assert.match(html, /No scans yet for this project/);
+});
+
+const activityModuleUrl = pathToFileURL(path.join(__dirname, 'app/features/activity.js')).href;
+const activity = await import(activityModuleUrl);
+
+test('pickTestSignal prioritises failing tests', () => {
+  const signal = activity.pickTestSignal({ test_failures: 2, test_errors: 1, coverage: 90 });
+  assert.equal(signal.kind, 'failing');
+  assert.equal(signal.value, 3);
+});
+
+test('pickTestSignal falls back to mutation score when no failures', () => {
+  const signal = activity.pickTestSignal({ mutation_score: 76.5 });
+  assert.equal(signal.kind, 'mutation');
+});
+
+test('pickTestSignal falls back to coverage when only coverage present', () => {
+  const signal = activity.pickTestSignal({ coverage: 64 });
+  assert.equal(signal.kind, 'coverage');
+});
+
+test('pickTestSignal returns none when no test data is available', () => {
+  const signal = activity.pickTestSignal({});
+  assert.equal(signal.kind, 'none');
+});
+
+test('applyActivityFilters returns all entries when no filter is set', () => {
+  const items = [
+    { analysis_date: new Date().toISOString(), events: [{ category: 'ANALYSIS', name: 'a' }] },
+    { analysis_date: new Date().toISOString(), events: [{ category: 'QUALITY_GATE', name: 'b' }] },
+  ];
+  assert.equal(activity.applyActivityFilters(items, { categories: [], window: 'all' }).length, 2);
+});
+
+test('applyActivityFilters keeps entries matching a selected category', () => {
+  const items = [
+    { analysis_date: new Date().toISOString(), events: [{ category: 'QUALITY_GATE', name: 'gate change' }] },
+    { analysis_date: new Date().toISOString(), events: [{ category: 'VERSION', name: 'v1.2' }] },
+    { analysis_date: new Date().toISOString(), events: [] },
+  ];
+  const filtered = activity.applyActivityFilters(items, { categories: ['QUALITY_GATE', 'ANALYSIS'], window: 'all' });
+  assert.equal(filtered.length, 2);
+});
+
+test('applyActivityFilters drops entries outside the time window', () => {
+  const old = new Date(Date.now() - 100 * 24 * 60 * 60 * 1000).toISOString();
+  const fresh = new Date().toISOString();
+  const items = [
+    { analysis_date: old, events: [] },
+    { analysis_date: fresh, events: [] },
+  ];
+  const filtered = activity.applyActivityFilters(items, { categories: [], window: '7d' });
+  assert.equal(filtered.length, 1);
+  assert.equal(filtered[0].analysis_date, fresh);
 });

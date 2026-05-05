@@ -25,7 +25,7 @@ Local Docker Compose seeds a development administrator as `admin` / `admin`. Cha
 
 | Method | Endpoint                        | Description |
 |--------|---------------------------------|-------------|
-| POST   | `/api/v1/auth/login`            | Email+password login → JWT + refresh token |
+| POST   | `/api/v1/auth/login`            | Local login with `{ "login": "...", "password": "..." }` → JWT + refresh token |
 | POST   | `/api/v1/auth/refresh`          | Refresh access token |
 | POST   | `/api/v1/auth/logout`           | Invalidate refresh token |
 | GET    | `/api/v1/auth/github`           | Start GitHub OAuth flow |

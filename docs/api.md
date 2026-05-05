@@ -25,7 +25,7 @@ Database and search settings can be expressed either as a full `url` or as expli
 
 | Method | Endpoint                        | Description |
 |--------|---------------------------------|-------------|
-| POST   | `/api/v1/auth/login`            | Email+password login → JWT + refresh token |
+| POST   | `/api/v1/auth/login`            | Local login with `{ "login": "...", "password": "..." }` → JWT + refresh token |
 | POST   | `/api/v1/auth/refresh`          | Refresh access token |
 | POST   | `/api/v1/auth/logout`           | Invalidate refresh token |
 | GET    | `/api/v1/auth/github`           | Start GitHub OAuth flow |
@@ -64,6 +64,21 @@ Database and search settings can be expressed either as a full `url` or as expli
 | POST   | `/api/v1/projects/{key}/issues/backfill-tracking-state` | Backfill legacy `tracking_state` values for the project's issue history |
 | GET    | `/api/v1/projects/{key}/measures/trend`   | Metric trend over time |
 | GET    | `/api/v1/search`                          | Full-text search (ZincSearch / Postgres FTS) |
+| GET    | `/api/v1/tags`                            | List governed and discovered tags with usage metadata |
+| POST   | `/api/v1/tags`                            | Create a governed tag catalog entry |
+| GET    | `/api/v1/tags/{key}`                      | Read a tag page with metadata, usage, aliases, and audit summary |
+| PUT    | `/api/v1/tags/{key}`                      | Update tag metadata and ownership |
+| GET    | `/api/v1/tags/{key}/audit`                | List audit entries for a tag |
+| POST   | `/api/v1/tags/{key}/deprecate`            | Deprecate a tag, optionally with a replacement key |
+| POST   | `/api/v1/tags/{key}/merge`                | Merge one tag into another and keep the old key as an alias |
+| POST   | `/api/v1/tags/bulk/preview`               | Preview a bulk tag edit across issues, projects, rules, or custom rules |
+| POST   | `/api/v1/tags/bulk/apply`                 | Apply a validated bulk tag edit and write audit entries |
+| GET    | `/api/v1/saved-filters`                   | List saved filters by visibility and filter type |
+| POST   | `/api/v1/saved-filters`                   | Create a private or shared saved filter |
+| GET    | `/api/v1/saved-filters/{id}`              | Get a saved filter |
+| PUT    | `/api/v1/saved-filters/{id}`              | Update a saved filter |
+| DELETE | `/api/v1/saved-filters/{id}`              | Delete a saved filter |
+| POST   | `/api/v1/saved-filters/{id}/apply`        | Resolve a saved filter into criteria, including tag aliases |
 | GET    | `/api/v1/admin/index-jobs`                | List durable search-index jobs |
 | POST   | `/api/v1/admin/index-jobs/{id}/retry`     | Retry a failed search-index job |
 | GET    | `/api/v1/admin/webhook-jobs`              | List durable webhook delivery jobs |
@@ -149,6 +164,48 @@ Common filters:
 `GET /api/v1/issues/facets` returns maps named `by_quality`, `by_severity`, `by_lifecycle`, `by_type`, `by_status`, `by_language`, `by_rule`, `by_tags`, `by_security_category`, `by_directory`, `by_file`, and `by_engine_id`.
 
 Quality domains and languages are derived during report generation and API reads, so older reports remain queryable. Testability is selected by tags such as `testability`, `coverage-gap`, `mutation`, `survived-mutant`, `failing-test`, or `flaky-test`.
+
+### Tag catalog and saved filters
+
+The tag catalog governs labels used across issues, projects, built-in rules, and custom rules. Existing report tags remain compatible: ingestion discovers unknown issue tags and inserts them into the catalog as `discovered` entries.
+
+Common tag request fields:
+
+| Field | Meaning |
+|-------|---------|
+| `key` | Stable normalized key, such as `team-api` or `owasp-a01`. |
+| `display_name` | Human-friendly name shown in the UI. |
+| `description` | Catalog description for the vocabulary entry. |
+| `color` | Hex color used by tag chips and swatches. |
+| `owner_type`, `owner_id`, `owner_name` | Optional owner metadata for governance. |
+| `scope` | Optional vocabulary scope, such as a team, domain, or project grouping. |
+
+Bulk edits use this request shape:
+
+```json
+{
+  "target_type": "issue",
+  "target_ids": [101, 102],
+  "target_keys": [],
+  "add_tags": ["team-api"],
+  "remove_tags": ["legacy"]
+}
+```
+
+`target_type` accepts `issue`, `project`, `rule`, or `custom_rule`. Preview returns the affected targets and before/after tag arrays; apply persists the same change and records audit entries.
+
+Saved filters store reusable criteria for issue and governance workflows:
+
+```json
+{
+  "name": "API security review",
+  "visibility": "shared",
+  "filter_type": "issues",
+  "criteria": { "tag": "team-api", "severity": "critical" }
+}
+```
+
+Applying a saved filter resolves tag aliases before returning criteria to the caller.
 
 ### Asynchronous scan intake
 
@@ -347,3 +404,18 @@ Single-language documents can also place `language`, `name`, and `rules` at the 
 | PUT    | `/api/v1/projects/{key}/webhooks/{id}`    | Update webhook |
 | DELETE | `/api/v1/projects/{key}/webhooks/{id}`    | Delete webhook |
 | GET    | `/api/v1/projects/{key}/webhooks/{id}/deliveries` | List recent deliveries |
+
+## Activity timeline contract
+
+`GET /api/v1/projects/{key}/activity` powers the project Activity tab. The response is paginated and supports `limit` and `offset` query parameters; the Activity UI fetches 60 entries per page and sends `offset=N` when the user clicks "Load more".
+
+The `events[].category` enum is part of the public contract — the UI uses it to drive client-side filtering and event styling. Current values:
+
+- `QUALITY_GATE` — gate status changed since the previous scan.
+- `ISSUE_SPIKE` — significant rise in total issues.
+- `FIRST_ANALYSIS` — first scan recorded for the project.
+- `VERSION` — synthetic event derived from the scan's `project_version` field.
+- `ANALYSIS` — default category for an analysis with no other notable signals.
+
+The Activity tab also issues `GET /api/v1/issues?scan_id={id}` for drill-down navigation; `scan_id` is already supported by the issues endpoint.
+

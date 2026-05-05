@@ -1,4 +1,4 @@
-.PHONY: build test lint fmt clean run smoke-local
+.PHONY: build test lint fmt clean run smoke-local up down recreate logs
 
 PKGS := \
 	github.com/scovl/ollanta/ollantacore/... \
@@ -50,3 +50,22 @@ SMOKE_BACKEND_PORT ?= 18080
 
 smoke-local:
 	powershell -ExecutionPolicy Bypass -File scripts/smoke-local.ps1 -BackendPort $(SMOKE_BACKEND_PORT)
+
+# Docker compose helpers for the server stack (postgres + zincsearch + ollantaweb).
+COMPOSE_PROFILE ?= server
+
+up:
+	docker compose --profile $(COMPOSE_PROFILE) up -d
+
+down:
+	docker compose --profile $(COMPOSE_PROFILE) down
+
+# Full rebuild: stop everything, rebuild images without cache, recreate containers.
+recreate:
+	docker compose --profile $(COMPOSE_PROFILE) down --remove-orphans
+	docker compose --profile $(COMPOSE_PROFILE) build --no-cache
+	docker compose --profile $(COMPOSE_PROFILE) up -d --force-recreate
+	docker compose --profile $(COMPOSE_PROFILE) ps
+
+logs:
+	docker compose --profile $(COMPOSE_PROFILE) logs -f --tail=100
