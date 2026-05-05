@@ -23,17 +23,20 @@ export async function loadGateData() {
 export function renderGateTab() {
   const gates = state.gateData;
   if (gates === null) return `<div class="loading-state"><div class="spinner"></div></div>`;
-  if (!gates.length) return `<div class="empty-state" style="padding:40px 0"><p>No quality gates configured.</p></div>`;
 
-  const rows = gates.map(gate => `
+  const rows = (gates || []).map(gate => `
     <div class="gate-card">
       <div class="gate-header">
         <div>
           <span class="gate-name">${escHtml(gate.name)}</span>
           ${gate.is_default ? `<span class="badge badge-ok" style="font-size:11px;margin-left:8px">Default</span>` : ''}
+          ${gate.is_builtin ? `<span class="badge badge-warn" style="font-size:11px;margin-left:8px">Built-in</span>` : ''}
         </div>
         <div class="gate-actions">
           <button class="btn-sm btn-outline assign-gate-btn" data-gate-id="${gate.id}" data-gate-name="${escAttr(gate.name)}">Assign to project</button>
+          ${gate.is_builtin ? '' : `<button class="btn-sm btn-ghost set-default-gate-btn" data-gate-id="${gate.id}" data-gate-name="${escAttr(gate.name)}">Set default</button>`}
+          <button class="btn-sm btn-ghost copy-gate-btn" data-gate-id="${gate.id}" data-gate-name="${escAttr(gate.name)}">Copy</button>
+          ${gate.is_builtin ? '' : `<button class="btn-sm btn-danger del-gate-btn" data-gate-id="${gate.id}" data-gate-name="${escAttr(gate.name)}">Delete</button>`}
           <button class="btn-sm btn-ghost expand-gate-btn" data-gate-id="${gate.id}">Conditions \u25BE</button>
         </div>
       </div>
@@ -42,10 +45,19 @@ export function renderGateTab() {
       </div>
     </div>`).join('');
 
+  const emptyMsg = (gates || []).length ? '' : `<div class="empty-state" style="padding:20px 0"><p>No quality gates configured.</p></div>`;
+
   return `<div class="tab-section">
     <p class="section-title" style="margin-top:24px">Quality Gates</p>
     <p style="color:var(--text-muted);font-size:13px;margin-bottom:16px">Conditions that must pass for a project analysis to be considered successful.</p>
-    <div class="gate-list">${rows}</div>
+    <div class="create-form" style="margin-bottom:20px">
+      <div class="form-row">
+        <input id="newGateName" class="filter-input" placeholder="Gate name" style="width:250px">
+        <button class="btn btn-primary" id="createGateBtn" style="width:auto;padding:6px 18px;margin-top:0">Create gate</button>
+      </div>
+    </div>
+    <div class="gate-list">${rows || ''}</div>
+    ${emptyMsg}
   </div>`;
 }
 
@@ -203,19 +215,14 @@ export function renderProfilesTab() {
 
 export async function loadCustomRulesData() {
   try {
-    const [rulesData, enginesData, aiData, profilesData] = await Promise.all([
+    const [rulesData, enginesData, aiData] = await Promise.all([
       apiFetch('/custom-rules'),
       apiFetch('/rule-engines'),
       apiFetch('/custom-rules/ai/models'),
-      apiFetch('/profiles'),
     ]);
     state.customRulesData = rulesData.items || (Array.isArray(rulesData) ? rulesData : []);
     state.customRuleEngines = Array.isArray(enginesData) ? enginesData : [];
     state.customRuleAIProviders = aiData.providers || aiData.items || [];
-    state.profilesData = {
-      ...(state.profilesData && !Array.isArray(state.profilesData) ? state.profilesData : {}),
-      profiles: profilesData.items || (Array.isArray(profilesData) ? profilesData : []),
-    };
   } catch {
     state.customRulesData = [];
     state.customRuleEngines = [];
@@ -280,95 +287,75 @@ export function renderCustomRulesTab() {
   if (rules === null) return `<div class="loading-state"><div class="spinner"></div></div>`;
   const engines = state.customRuleEngines || [];
   const aiProviders = state.customRuleAIProviders || [];
-  const profiles = Array.isArray(state.profilesData) ? [] : (state.profilesData?.profiles || []);
   const filters = state.customRuleFilters || { search: '', lifecycle: 'all' };
   const allRules = rules || [];
   const visibleRules = allRules.filter(rule => customRuleMatchesFilters(rule, filters));
-  const stats = customRuleStats(allRules);
-  const emptyRulesMessage = allRules.length ? 'No custom rules match the current filters.' : 'No custom rules yet.';
-  const rows = visibleRules.length
-    ? visibleRules.map(rule => renderCustomRuleRow(rule, profiles)).join('')
-    : renderRuleStudioEmpty(emptyRulesMessage, allRules.length === 0);
+  const editingId = state.editingCustomRuleId;
+  const editingRule = editingId ? allRules.find(rule => rule.id === editingId) : null;
+  const builderOpen = editingId != null || state.builderOpen;
 
-  return `<div class="tab-section rule-studio">
-    <div class="rule-studio-hero">
-      <div class="rule-studio-title-block">
-        <span class="rule-studio-eyebrow">Custom rules</span>
-        <div class="rule-studio-title-row">
-          <p class="section-title">Rule Studio</p>
-          <span>${fmtNum(visibleRules.length)} shown</span>
-        </div>
-      </div>
-      <div class="rule-studio-summary">
-        ${ruleStudioStat('Total', stats.total)}
-        ${ruleStudioStat('Published', stats.published, 'ok')}
-        ${ruleStudioStat('Drafts', stats.draft)}
-        ${ruleStudioStat('Validation', stats.needsValidation, stats.needsValidation ? 'warn' : '')}
-      </div>
+  return `<div class="tab-section">
+    <p class="section-title" style="margin-top:24px">Rule Studio</p>
+    <p style="color:var(--text-muted);font-size:13px;margin-bottom:16px">Create custom rules to enforce project-specific patterns.</p>
+    ${renderCustomRuleBuilder(engines, aiProviders, editingRule, builderOpen)}
+    <div class="rule-studio-toolbar" style="display:flex;gap:10px;align-items:center;margin-bottom:16px;flex-wrap:wrap">
+      <span style="font-weight:600;font-size:13px">${fmtNum(visibleRules.length)} of ${fmtNum(allRules.length)} rules</span>
+      <input id="customRuleSearch" class="filter-input" placeholder="Search rules" value="${escAttr(filters.search || '')}" style="width:200px">
+      <select id="customRuleLifecycleFilter" class="filter-sel">
+        ${customRuleLifecycleOptions(filters.lifecycle || 'all')}
+      </select>
       <button class="btn-sm btn-outline" id="refreshCustomRulesBtn" type="button">Refresh</button>
     </div>
-    <div class="rule-studio-layout">
-      <section class="rule-studio-catalog">
-        <div class="rule-studio-catalog-head">
-          <div>
-            <p class="rule-studio-panel-title">Rule catalog</p>
-            <span>${fmtNum(allRules.length)} total</span>
-          </div>
-          <div class="rule-studio-toolbar">
-            <input id="customRuleSearch" class="filter-input" placeholder="Search rules" value="${escAttr(filters.search || '')}">
-            <select id="customRuleLifecycleFilter" class="filter-sel">
-              ${customRuleLifecycleOptions(filters.lifecycle || 'all')}
-            </select>
-          </div>
-        </div>
-        <div class="rule-studio-list">
-          ${visibleRules.length ? `<div class="custom-rule-list-head"><span>Rule</span><span>State</span><span>Actions</span></div>` : ''}
-          ${rows}
-        </div>
-      </section>
-      <aside class="rule-studio-builder">
-        ${renderCustomRuleForm(engines, aiProviders)}
-        ${renderCustomRuleImport()}
-      </aside>
+    ${visibleRules.length ? visibleRules.map(rule => renderCustomRuleRow(rule)).join('') : renderRuleStudioEmpty(allRules.length)}
+  </div>`;
+}
+
+function renderRuleStudioEmpty(hasRules) {
+  if (hasRules) return '<p style="color:var(--text-muted);padding:20px 0">No rules match the current filters.</p>';
+  return `<div class="empty-state" style="padding:40px 0">
+    <p>No custom rules yet.</p>
+    <button class="btn-sm btn-outline" id="focusRuleBuilderBtn" type="button">Create your first rule</button>
+  </div>`;
+}
+
+function renderCustomRuleRow(rule) {
+  const lifecycle = rule.lifecycle || 'draft';
+  const status = rule.validation_status || 'none';
+  const expanded = state.expandedCustomRuleId === rule.id;
+  const editing = state.editingCustomRuleId === rule.id;
+  return `<article class="custom-rule-row${expanded ? ' expanded' : ''}${editing ? ' editing' : ''}" data-rule-id="${rule.id}">
+    <div class="custom-rule-row-header">
+      <button type="button" class="custom-rule-row-toggle" data-rule-id="${rule.id}" aria-expanded="${expanded ? 'true' : 'false'}">
+        <span class="custom-rule-row-chevron" aria-hidden="true">${expanded ? '\u25BE' : '\u25B8'}</span>
+        <span class="custom-rule-name">${escHtml(rule.name || rule.key)}</span>
+        <span class="mono" style="font-size:11px;color:var(--text-muted)">${escHtml(rule.key)}</span>
+      </button>
+      <div class="custom-rule-badges">
+        <span>${escHtml(rule.language || '-')}</span>
+        <span class="badge ${customRuleLifecycleClass(lifecycle)}">${escHtml(lifecycle)}</span>
+        <span class="badge ${customRuleStatusClass(status)}">${escHtml(status)}</span>
+      </div>
+      <div class="custom-rule-row-actions">
+        <button class="btn-sm btn-outline edit-custom-rule-btn" data-rule-id="${rule.id}"${editing ? ' disabled' : ''}>Edit</button>
+        ${lifecycle === 'draft' && status === 'passed' ? `<button class="btn-sm btn-primary publish-custom-rule-btn" data-rule-id="${rule.id}">Publish</button>` : ''}
+        ${expanded ? `<button class="btn-sm btn-ghost disable-custom-rule-btn" data-rule-id="${rule.id}">Disable</button>` : ''}
+      </div>
     </div>
-  </div>`;
-}
-
-function renderRuleStudioEmpty(message, canCreate) {
-  const action = canCreate ? `<button class="btn-sm btn-outline focus-rule-builder-btn" type="button">New draft</button>` : '';
-  return `<div class="rule-studio-empty">
-    <div class="rule-studio-empty-mark">+</div>
-    <p>${escHtml(message)}</p>
-    ${action}
-  </div>`;
-}
-
-function ruleStudioStat(label, value, tone = '') {
-  return `<div class="rule-studio-stat ${tone}"><span>${escHtml(label)}</span><strong>${fmtNum(value)}</strong></div>`;
-}
-
-function customRuleStats(rules) {
-  return rules.reduce((stats, rule) => {
-    const lifecycle = rule.lifecycle || 'draft';
-    const status = rule.validation_status || 'none';
-    stats.total++;
-    if (lifecycle === 'published') stats.published++;
-    if (lifecycle === 'draft') stats.draft++;
-    if (status !== 'passed' && lifecycle !== 'disabled' && lifecycle !== 'deprecated') stats.needsValidation++;
-    return stats;
-  }, { total: 0, published: 0, draft: 0, needsValidation: 0 });
+    ${expanded ? renderCustomRuleDetails(rule) : ''}
+  </article>`;
 }
 
 function customRuleLifecycleOptions(selected) {
   return [
-    ['all', 'All states'],
+    ['all', 'All'],
     ['published', 'Published'],
     ['draft', 'Draft'],
-    ['valid', 'Valid'],
-    ['invalid', 'Invalid'],
     ['disabled', 'Disabled'],
-    ['deprecated', 'Deprecated'],
   ].map(([value, label]) => `<option value="${escAttr(value)}"${selected === value ? ' selected' : ''}>${escHtml(label)}</option>`).join('');
+}
+
+function ruleStudioStat(label, value, tone = '') {
+  return `<div class="rule-studio-stat ${tone}"><span>${escHtml(label)}</span><strong>${fmtNum(value)}</strong></div>`;
 }
 
 function customRuleMatchesFilters(rule, filters) {
@@ -383,56 +370,6 @@ function customRuleMatchesFilters(rule, filters) {
   return [rule.key, rule.name, rule.language, rule.engine, rule.type, rule.severity, rule.pack_name]
     .filter(Boolean)
     .some(value => String(value).toLowerCase().includes(query));
-}
-
-function renderCustomRuleRow(rule, profiles) {
-  const lifecycle = rule.lifecycle || 'draft';
-  const status = rule.validation_status || 'none';
-  const compatibleProfiles = profiles.filter(profile => profile.language === rule.language || rule.language === '*');
-  const profileSelect = lifecycle === 'published' && compatibleProfiles.length
-    ? `<select class="filter-sel custom-rule-profile" id="custom-rule-profile-${rule.id}">
-        ${compatibleProfiles.map(profile => `<option value="${profile.id}">${escHtml(profile.language)} / ${escHtml(profile.name)}</option>`).join('')}
-      </select>
-      <button class="btn-sm btn-outline add-custom-rule-profile-btn" data-rule-id="${rule.id}" data-rule-key="${escAttr(rule.key)}">Add to profile</button>`
-    : '';
-  const diagnostics = rule.validation_result?.diagnostics || [];
-  const diagnosticBlock = diagnostics.length
-    ? `<div class="custom-rule-diagnostics">${diagnostics.map(renderCustomRuleDiagnostic).join('')}</div>`
-    : '';
-  const expanded = state.expandedCustomRuleId === rule.id;
-  const editing = state.editingCustomRuleId === rule.id;
-  const detailBlock = expanded ? renderCustomRuleDetails(rule) : '';
-  return `<article class="custom-rule-row${expanded ? ' expanded' : ''}${editing ? ' editing' : ''}" data-rule-id="${rule.id}">
-    <button type="button" class="custom-rule-row-toggle" data-rule-id="${rule.id}" aria-expanded="${expanded ? 'true' : 'false'}" aria-label="${expanded ? 'Collapse' : 'Expand'} rule details">
-      <div class="custom-rule-main">
-        <div class="custom-rule-title">
-          <strong>${escHtml(rule.name || rule.key)}</strong>
-          <span class="mono">${escHtml(rule.key)}</span>
-        </div>
-        <div class="custom-rule-meta">
-          <span>${escHtml(rule.language || '-')}</span>
-          <span>${escHtml(rule.engine || 'auto')}</span>
-          <span>${escHtml(rule.type || '-')}</span>
-          <span>${escHtml(rule.severity || '-')}</span>
-        </div>
-        ${diagnosticBlock}
-      </div>
-      <div class="custom-rule-state">
-        <span class="badge ${customRuleLifecycleClass(lifecycle)}">${escHtml(lifecycle)}</span>
-        <span class="badge ${customRuleStatusClass(status)}">${escHtml(status)}</span>
-        <span class="custom-rule-row-chevron" aria-hidden="true">${expanded ? '▾' : '▸'}</span>
-      </div>
-    </button>
-    <div class="custom-rule-actions">
-      <button class="btn-sm btn-outline edit-custom-rule-btn" data-rule-id="${rule.id}"${editing ? ' disabled' : ''}>${editing ? 'Editing' : 'Edit'}</button>
-      <button class="btn-sm btn-outline validate-custom-rule-btn" data-rule-id="${rule.id}">Validate</button>
-      <button class="btn-sm btn-primary publish-custom-rule-btn" data-rule-id="${rule.id}"${status === 'passed' ? '' : ' disabled'}>Publish</button>
-      <button class="btn-sm btn-outline export-custom-rule-btn" data-rule-id="${rule.id}">Export</button>
-      <button class="btn-sm btn-outline disable-custom-rule-btn" data-rule-id="${rule.id}">Disable</button>
-      ${profileSelect}
-    </div>
-    ${detailBlock}
-  </article>`;
 }
 
 function renderCustomRuleDetails(rule) {
@@ -475,81 +412,72 @@ function renderCustomRuleDiagnostic(item) {
   return `<div class="custom-rule-diagnostic ${escAttr(item.level)}"><span>${escHtml(item.code)}</span>${escHtml(item.message)}</div>`;
 }
 
-function renderCustomRuleForm(engines, aiProviders = []) {
-  const engineList = engines.length ? engines : [{ engine: 'text', name: 'Text pattern' }, { engine: 'go-ast', name: 'Go AST pattern' }, { engine: 'tree-sitter', name: 'Tree-sitter query' }];
-  const selectedEngine = customRuleDefaultEngine(engineList);
+function renderCustomRuleBuilder(engines, aiProviders, editingRule, open) {
+  const engineList = engines.length ? engines : [
+    { engine: 'text', name: 'Text pattern' },
+    { engine: 'go-ast', name: 'Go AST pattern' },
+    { engine: 'tree-sitter', name: 'Tree-sitter query' },
+  ];
+  const selectedEngine = editingRule?.engine || customRuleDefaultEngine(engineList);
   const engineOptions = engineList
     .map(item => `<option value="${escAttr(item.engine)}"${item.engine === selectedEngine ? ' selected' : ''}>${escHtml(item.name || item.engine)}</option>`).join('');
-  const editingId = state.editingCustomRuleId;
-  const editingRule = editingId ? (state.customRulesData || []).find(rule => rule.id === editingId) : null;
   const headerTitle = editingRule ? 'Edit rule' : 'New rule';
-  const headerEyebrow = editingRule ? `Editing ${editingRule.key}` : 'Builder';
   const submitLabel = editingRule ? 'Save changes' : 'Create draft';
-  const cancelButton = editingRule ? `<button class="btn-sm btn-outline" id="cancelEditCustomRuleBtn" type="button">Cancel edit</button>` : '';
-  return `<div class="rule-builder-card custom-rule-create${editingRule ? ' editing' : ''}" id="customRuleBuilder">
-    <div class="rule-builder-head">
-      <span>${escHtml(headerEyebrow)}</span>
-      <h4>${escHtml(headerTitle)}</h4>
-    </div>
-    ${renderCustomRuleAIAssist(aiProviders)}
-    <div class="rule-builder-section">
-      <p>Identity</p>
+  const cancelButton = editingRule ? `<button class="btn-sm btn-outline" id="cancelEditCustomRuleBtn" type="button">Cancel</button>` : '';
+  const prefill = editingRule || {};
+
+  return `<details class="rule-builder-details" id="customRuleBuilder"${open ? ' open' : ''}>
+    <summary class="rule-builder-summary"><h4>${escHtml(headerTitle)}</h4></summary>
+    <div class="rule-builder-body">
       <div class="custom-rule-form-grid">
-        <label class="custom-rule-field"><span>Pack</span><input id="customRulePack" class="filter-input" placeholder="Pack" value="Rule Studio"></label>
-        <label class="custom-rule-field"><span>Namespace</span><input id="customRuleNamespace" class="filter-input" placeholder="Namespace" value="custom"></label>
-        <label class="custom-rule-field"><span>Rule ID</span><input id="customRuleKey" class="filter-input" placeholder="no-console-log"><small class="custom-rule-field-hint">Full key: <code id="customRuleKeyPreview">custom:&lt;rule-id&gt;</code></small></label>
-        <label class="custom-rule-field"><span>Name</span><input id="customRuleName" class="filter-input" placeholder="Name"></label>
-      </div>
-    </div>
-    <div class="rule-builder-section">
-      <p>Classification</p>
-      <div class="custom-rule-form-grid">
+        <label class="custom-rule-field"><span>Name</span><input id="customRuleName" class="filter-input" placeholder="Rule name" value="${escAttr(prefill.name || '')}"></label>
+        <label class="custom-rule-field"><span>Rule key</span><input id="customRuleKey" class="filter-input" placeholder="no-console-log" value="${escAttr(prefill.rule_id || '')}"></label>
+        <label class="custom-rule-field"><span>Namespace</span><input id="customRuleNamespace" class="filter-input" value="${escAttr(prefill.namespace || 'custom')}"></label>
         <label class="custom-rule-field"><span>Language</span><select id="customRuleLanguage" class="filter-sel">
-          <option value="go">Go</option>
-          <option value="javascript">JavaScript</option>
-          <option value="typescript">TypeScript</option>
-          <option value="python">Python</option>
-          <option value="rust">Rust</option>
+          <option value="go"${(prefill.language || 'go') === 'go' ? ' selected' : ''}>Go</option>
+          <option value="javascript"${prefill.language === 'javascript' ? ' selected' : ''}>JavaScript</option>
+          <option value="typescript"${prefill.language === 'typescript' ? ' selected' : ''}>TypeScript</option>
+          <option value="python"${prefill.language === 'python' ? ' selected' : ''}>Python</option>
+          <option value="rust"${prefill.language === 'rust' ? ' selected' : ''}>Rust</option>
         </select></label>
         <label class="custom-rule-field"><span>Type</span><select id="customRuleType" class="filter-sel">
-          <option value="code_smell">Code Smell</option>
-          <option value="bug">Bug</option>
-          <option value="vulnerability">Vulnerability</option>
-          <option value="security_hotspot">Security Hotspot</option>
+          <option value="code_smell"${(prefill.type || 'code_smell') === 'code_smell' ? ' selected' : ''}>Code Smell</option>
+          <option value="bug"${prefill.type === 'bug' ? ' selected' : ''}>Bug</option>
+          <option value="vulnerability"${prefill.type === 'vulnerability' ? ' selected' : ''}>Vulnerability</option>
         </select></label>
         <label class="custom-rule-field"><span>Severity</span><select id="customRuleSeverity" class="filter-sel">
-          <option value="major">Major</option>
-          <option value="critical">Critical</option>
-          <option value="minor">Minor</option>
-          <option value="info">Info</option>
-          <option value="blocker">Blocker</option>
+          <option value="major"${(prefill.severity || 'major') === 'major' ? ' selected' : ''}>Major</option>
+          <option value="critical"${prefill.severity === 'critical' ? ' selected' : ''}>Critical</option>
+          <option value="minor"${prefill.severity === 'minor' ? ' selected' : ''}>Minor</option>
+          <option value="info"${prefill.severity === 'info' ? ' selected' : ''}>Info</option>
         </select></label>
         <label class="custom-rule-field"><span>Engine</span><select id="customRuleEngine" class="filter-sel">${engineOptions}</select></label>
+        <label class="custom-rule-field full"><span>Message</span><input id="customRuleMessage" class="filter-input" placeholder="Issue message" value="${escAttr(prefill.message || '')}"></label>
       </div>
-      <p class="custom-rule-field-hint" id="customRuleLanguageHint" hidden>Go AST rules run only on Go, so the language is fixed while this engine is selected.</p>
-    </div>
-    <div class="rule-builder-section">
-      <p>Matcher</p>
-      <div class="custom-rule-engine-guide" id="customRuleEngineGuide">Use a regular expression against source text.</div>
+      <p class="custom-rule-field-hint" id="customRuleLanguageHint" hidden>Go AST rules are Go-only.</p>
+      <div class="rule-section-label">Pattern</div>
+      <div class="custom-rule-engine-guide" id="customRuleEngineGuide">Regular expression against source text.</div>
       <div class="custom-rule-form-grid">
-        <label class="custom-rule-field full" data-engine-field="text"${selectedEngine === 'text' ? '' : ' hidden'}><span>Text regexp</span><input id="customRuleTextPattern" class="filter-input" placeholder="debugger|TODO|panic"><small class="custom-rule-field-hint">Matches the source file text.</small></label>
-        <label class="custom-rule-field" data-engine-field="go-ast"${selectedEngine === 'go-ast' ? '' : ' hidden'}><span>Go AST check</span><select id="customRuleGoASTPattern" class="filter-sel">
+        <label class="custom-rule-field full" data-engine-field="text"${selectedEngine === 'text' ? '' : ' hidden'}><input id="customRuleTextPattern" class="filter-input" placeholder="debugger|TODO|panic" value="${escAttr((prefill.engine_config || prefill).text_pattern || (prefill.engine_config || {}).pattern || '')}"></label>
+        <label class="custom-rule-field" data-engine-field="go-ast"${selectedEngine === 'go-ast' ? '' : ' hidden'}><select id="customRuleGoASTPattern" class="filter-sel">
           <option value="forbidden_call">Forbidden call</option>
           <option value="forbidden_import">Forbidden import</option>
         </select></label>
-        <label class="custom-rule-field" data-engine-field="go-ast"${selectedEngine === 'go-ast' ? '' : ' hidden'}><span>Target</span><input id="customRuleTarget" class="filter-input" placeholder="fmt.Println or net/http"><small class="custom-rule-field-hint">Exact call or import to flag.</small></label>
-        <label class="custom-rule-field full" data-engine-field="tree-sitter"${selectedEngine === 'tree-sitter' ? '' : ' hidden'}><span>Tree-sitter query</span><textarea id="customRuleQuery" class="filter-input custom-rule-textarea" placeholder="(call_expression function: (identifier) @name)"></textarea><small class="custom-rule-field-hint">Advanced structural query validated by scanner-capable runtimes.</small></label>
+        <label class="custom-rule-field full" data-engine-field="go-ast"${selectedEngine === 'go-ast' ? '' : ' hidden'}><input id="customRuleTarget" class="filter-input" placeholder="fmt.Println or net/http"></label>
+        <label class="custom-rule-field full" data-engine-field="tree-sitter"${selectedEngine === 'tree-sitter' ? '' : ' hidden'}><textarea id="customRuleQuery" class="filter-input" style="min-height:80px" placeholder="(call_expression function: (identifier) @name)"></textarea></label>
+      </div>
+      <div class="rule-section-label">Examples</div>
+      <div class="custom-rule-form-grid">
+        <label class="custom-rule-field full"><span>Noncompliant code</span><textarea id="customRuleExample" class="filter-input" style="min-height:60px" placeholder="code that should produce an issue">${escHtml((prefill.examples || []).find(e => !e?.compliant)?.code || prefill.noncompliant_example || '')}</textarea></label>
+        <label class="custom-rule-field full"><span>Compliant code</span><textarea id="customRuleCompliantExample" class="filter-input" style="min-height:60px" placeholder="code that should pass">${escHtml((prefill.examples || []).find(e => e?.compliant)?.code || prefill.compliant_example || '')}</textarea></label>
+      </div>
+      <div class="rule-builder-actions">
+        <button class="btn btn-primary" id="createCustomRuleBtn" type="button">${escHtml(submitLabel)}</button>
+        ${cancelButton}
+        ${!editingRule ? `<button class="btn-sm btn-ghost" id="closeRuleBuilderBtn" type="button">Close</button>` : ''}
       </div>
     </div>
-    <div class="rule-builder-section">
-      <p>Rule tests</p>
-      <label class="custom-rule-field full"><span>Compliant example</span><textarea id="customRuleCompliantExample" class="filter-input custom-rule-textarea" placeholder="code that should pass without an issue"></textarea><small class="custom-rule-field-hint">This snippet must not match the rule.</small></label>
-      <label class="custom-rule-field full"><span>Noncompliant example</span><textarea id="customRuleExample" class="filter-input custom-rule-textarea" placeholder="code that should produce an issue"></textarea><small class="custom-rule-field-hint">This snippet must produce the expected issue.</small></label>
-      <label class="custom-rule-field full"><span>Expected issue message</span><input id="customRuleMessage" class="filter-input" placeholder="Issue message"></label>
-    </div>
-    <button class="btn btn-primary custom-rule-create-btn" id="createCustomRuleBtn" type="button">${escHtml(submitLabel)}</button>
-    ${cancelButton}
-  </div>`;
+  </details>`;
 }
 
 function renderCustomRuleAIAssist(providers) {
@@ -836,23 +764,22 @@ function prefillCustomRuleBuilder(rule) {
   const separator = fullKey.indexOf(':');
   const namespace = separator >= 0 ? fullKey.slice(0, separator) : 'custom';
   const ruleID = separator >= 0 ? fullKey.slice(separator + 1) : fullKey;
-  forceInputValue('customRulePack', rule.pack_name || 'Rule Studio');
-  forceInputValue('customRuleNamespace', namespace);
-  forceInputValue('customRuleKey', ruleID);
-  forceInputValue('customRuleName', rule.name || '');
-  forceInputValue('customRuleType', rule.type || 'code_smell');
-  forceInputValue('customRuleSeverity', rule.severity || 'major');
-  forceInputValue('customRuleEngine', rule.engine || 'text');
-  forceInputValue('customRuleLanguage', rule.language || 'go');
+  setInputValue('customRuleNamespace', namespace);
+  setInputValue('customRuleKey', ruleID);
+  setInputValue('customRuleName', rule.name || '');
+  setInputValue('customRuleType', rule.type || 'code_smell');
+  setInputValue('customRuleSeverity', rule.severity || 'major');
+  setInputValue('customRuleEngine', rule.engine || 'text');
+  setInputValue('customRuleLanguage', rule.language || 'go');
+  setInputValue('customRuleMessage', rule.message || '');
   const cfg = rule.engine_config || {};
-  forceInputValue('customRuleTextPattern', cfg.pattern || '');
-  forceInputValue('customRuleGoASTPattern', cfg.pattern || 'forbidden_call');
-  forceInputValue('customRuleTarget', cfg.target || '');
-  forceInputValue('customRuleQuery', cfg.query || '');
+  setInputValue('customRuleTextPattern', cfg.pattern || '');
+  setInputValue('customRuleGoASTPattern', cfg.pattern || 'forbidden_call');
+  setInputValue('customRuleTarget', cfg.target || '');
+  setInputValue('customRuleQuery', cfg.query || '');
   const examples = Array.isArray(rule.examples) ? rule.examples : [];
-  forceInputValue('customRuleExample', examples.find(ex => !ex.compliant)?.code || '');
-  forceInputValue('customRuleCompliantExample', examples.find(ex => ex.compliant)?.code || '');
-  forceInputValue('customRuleMessage', rule.message || '');
+  setInputValue('customRuleExample', examples.find(ex => !ex.compliant)?.code || '');
+  setInputValue('customRuleCompliantExample', examples.find(ex => ex.compliant)?.code || '');
   syncCustomRuleBuilder();
 }
 
@@ -1246,6 +1173,90 @@ function formatSeconds(value) {
   return Math.floor(seconds / 86400) + 'd';
 }
 
+function operatorLabel(op) {
+  const labels = { GT: 'is greater than', LT: 'is less than', GTE: 'is greater than or equal', LTE: 'is less than or equal', EQ: 'equals', NE: 'is not equal' };
+  return labels[op] || op;
+}
+
+function gateConditionLabel(metric) {
+  const labels = { bugs: 'Bugs', vulnerabilities: 'Vulnerabilities', code_smells: 'Code Smells', coverage: 'Coverage', new_bugs: 'New Bugs', new_vulnerabilities: 'New Vulnerabilities', new_code_smells: 'New Code Smells', new_coverage: 'Coverage on New Code', duplicated_lines_density: 'Duplicated Lines (%)', new_duplicated_lines_density: 'Duplicated Lines on New Code (%)', new_security_hotspots_reviewed: 'Security Hotspots Reviewed', new_maintainability_rating: 'Maintainability Rating on New Code', new_reliability_rating: 'Reliability Rating on New Code', new_security_rating: 'Security Rating on New Code', security_hotspots_reviewed: 'Security Hotspots Reviewed', security_review_rating: 'Security Review Rating', reliability_remediation_effort: 'Reliability Remediation Effort', security_remediation_effort: 'Security Remediation Effort' };
+  return labels[metric] || metric;
+}
+
+function conditionMetricSuffix(value, metric) {
+  const pctMetrics = ['coverage', 'new_coverage', 'duplicated_lines_density', 'new_duplicated_lines_density'];
+  if (pctMetrics.includes(metric)) return value + '%';
+  const ratingMetrics = ['new_maintainability_rating', 'new_reliability_rating', 'new_security_rating', 'security_review_rating'];
+  if (ratingMetrics.includes(metric)) return String(value);
+  return String(value);
+}
+
+function gateMetricOptions() {
+  return [
+    ['bugs', 'Bugs'],
+    ['vulnerabilities', 'Vulnerabilities'],
+    ['code_smells', 'Code Smells'],
+    ['coverage', 'Coverage'],
+    ['new_bugs', 'New Bugs'],
+    ['new_vulnerabilities', 'New Vulnerabilities'],
+    ['new_code_smells', 'New Code Smells'],
+    ['new_coverage', 'Coverage on New Code'],
+    ['duplicated_lines_density', 'Duplicated Lines (%)'],
+    ['new_duplicated_lines_density', 'Duplicated Lines on New Code (%)'],
+  ].map(([value, label]) => `<option value="${escAttr(value)}">${escHtml(label)}</option>`).join('');
+}
+
+async function reloadGateConditions(gateId, box) {
+  box.innerHTML = '<div class="loading-inline">Loading\u2026</div>';
+  box.classList.remove('hidden');
+  const expandBtn = document.querySelector('.expand-gate-btn[data-gate-id="' + gateId + '"]');
+  if (expandBtn) expandBtn.textContent = 'Conditions \u25B4';
+  try {
+    const gate = await apiFetch('/quality-gates/' + gateId);
+    const conds = gate.conditions || [];
+    if (conds.length) {
+      box.innerHTML = `<table class="conditions-table">
+        <thead><tr><th>Metric</th><th>Operator</th><th>Value</th><th>Warning</th><th>New Code</th><th></th></tr></thead>
+        <tbody>${conds.map(condition => `<tr>
+          <td>${gateConditionLabel(condition.metric)}</td>
+          <td>${escHtml(operatorLabel(condition.operator))}</td>
+          <td class="mono">${conditionMetricSuffix(condition.threshold, condition.metric)}</td>
+          <td class="mono">${condition.warning_threshold != null ? conditionMetricSuffix(condition.warning_threshold, condition.metric) : '\u2014'}</td>
+          <td>${condition.on_new_code ? '\u2713' : ''}</td>
+          <td><button class="btn-sm btn-danger del-cond-btn" data-cond-id="${condition.id}" data-gate-id="${gateId}">Remove</button></td>
+        </tr>`).join('')}</tbody>
+      </table>`;
+    } else {
+      box.innerHTML = '<p style="color:var(--text-muted);padding:8px 0;font-size:13px">No conditions defined.</p>';
+    }
+    box.innerHTML += renderAddConditionForm(gateId);
+  } catch {
+    box.innerHTML = '<p style="color:var(--danger);font-size:13px">Failed to reload conditions.</p>';
+  }
+}
+
+function renderAddConditionForm(gateId) {
+  return `<div class="create-form" style="padding-top:12px;border-top:1px solid var(--border)">
+    <div class="form-row" style="gap:6px;flex-wrap:wrap">
+      <select class="filter-sel add-cond-metric" data-gate-id="${gateId}" style="width:160px">
+        ${gateMetricOptions()}
+      </select>
+      <select class="filter-sel add-cond-op" data-gate-id="${gateId}">
+        <option value="LT">is less than</option>
+        <option value="GT">is greater than</option>
+        <option value="GTE">is greater than or equal</option>
+        <option value="LTE">is less than or equal</option>
+        <option value="EQ">equals</option>
+        <option value="NE">is not equal</option>
+      </select>
+      <input class="filter-input add-cond-threshold" placeholder="value" type="number" step="any" style="width:80px" data-gate-id="${gateId}">
+      <input class="filter-input add-cond-warning" placeholder="warning (opt)" type="number" step="any" style="width:110px" data-gate-id="${gateId}">
+      <label style="font-size:12px;white-space:nowrap"><input type="checkbox" class="add-cond-newcode" data-gate-id="${gateId}"> On new code</label>
+      <button class="btn-sm btn-primary add-cond-btn" data-gate-id="${gateId}">Add condition</button>
+    </div>
+  </div>`;
+}
+
 export function bindAdminTabContent() {
   const project = state.currentProject;
   bindBackgroundTasksContent();
@@ -1268,17 +1279,20 @@ export function bindAdminTabContent() {
           const conds = gate.conditions || [];
           if (conds.length) {
             box.innerHTML = `<table class="conditions-table">
-              <thead><tr><th>Metric</th><th>Operator</th><th>Threshold</th><th>New Code Only</th></tr></thead>
+              <thead><tr><th>Metric</th><th>Operator</th><th>Value</th><th>Warning</th><th>New Code</th><th></th></tr></thead>
               <tbody>${conds.map(condition => `<tr>
-                <td>${escHtml(condition.metric)}</td>
-                <td>${escHtml(condition.operator)}</td>
-                <td class="mono">${escHtml(String(condition.value))}</td>
+                <td>${gateConditionLabel(condition.metric)}</td>
+                <td>${escHtml(operatorLabel(condition.operator))}</td>
+                <td class="mono">${conditionMetricSuffix(condition.threshold, condition.metric)}</td>
+                <td class="mono">${condition.warning_threshold != null ? conditionMetricSuffix(condition.warning_threshold, condition.metric) : '\u2014'}</td>
                 <td>${condition.on_new_code ? '\u2713' : ''}</td>
+                <td><button class="btn-sm btn-danger del-cond-btn" data-cond-id="${condition.id}" data-gate-id="${id}">Remove</button></td>
               </tr>`).join('')}</tbody>
             </table>`;
           } else {
             box.innerHTML = '<p style="color:var(--text-muted);padding:8px 0;font-size:13px">No conditions defined.</p>';
           }
+          box.innerHTML += renderAddConditionForm(id);
         } catch {
           box.innerHTML = '<p style="color:var(--danger);font-size:13px">Failed to load conditions.</p>';
         }
@@ -1302,6 +1316,127 @@ export function bindAdminTabContent() {
       }
       btn.disabled = false;
     });
+  });
+
+  document.getElementById('createGateBtn')?.addEventListener('click', async () => {
+    const name = document.getElementById('newGateName')?.value.trim();
+    if (!name) { showToastMessage('Gate name is required.', 'error'); return; }
+    try {
+      await apiFetch('/quality-gates', {
+        method: 'POST',
+        body: JSON.stringify({ name, small_changeset_lines: 20 }),
+      });
+      showToastMessage('Gate "' + name + '" created.');
+      state.gateData = null;
+      await loadGateData();
+    } catch (err) {
+      showToastMessage(err.message, 'error');
+    }
+  });
+
+  document.querySelectorAll('.del-gate-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const name = btn.dataset.gateName;
+      if (!confirm('Delete quality gate "' + name + '" and all its conditions?')) return;
+      btn.disabled = true;
+      try {
+        await apiFetch('/quality-gates/' + btn.dataset.gateId, { method: 'DELETE' });
+        showToastMessage('Gate "' + name + '" deleted.');
+        state.gateData = null;
+        await loadGateData();
+      } catch (err) {
+        showToastMessage(err.message, 'error');
+        btn.disabled = false;
+      }
+    });
+  });
+
+  document.querySelectorAll('.set-default-gate-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      try {
+        await apiFetch('/quality-gates/' + btn.dataset.gateId + '/set-default', { method: 'POST' });
+        showToastMessage('Default gate set.');
+        state.gateData = null;
+        await loadGateData();
+      } catch (err) {
+        showToastMessage(err.message, 'error');
+        btn.disabled = false;
+      }
+    });
+  });
+
+  document.querySelectorAll('.copy-gate-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const newName = prompt('Copy "' + btn.dataset.gateName + '" as:');
+      if (!newName) return;
+      btn.disabled = true;
+      try {
+        await apiFetch('/quality-gates/' + btn.dataset.gateId + '/copy', {
+          method: 'POST',
+          body: JSON.stringify({ name: newName }),
+        });
+        showToastMessage('Gate copied as "' + newName + '".');
+        state.gateData = null;
+        await loadGateData();
+      } catch (err) {
+        showToastMessage(err.message, 'error');
+        btn.disabled = false;
+      }
+    });
+  });
+
+  // Add condition and remove condition — delegated because they are inside expandable containers
+  document.addEventListener('click', async event => {
+    const addBtn = event.target.closest('.add-cond-btn');
+    if (addBtn) {
+      const gateId = addBtn.dataset.gateId;
+      const box = document.getElementById('gate-cond-' + gateId);
+      const metric = box?.querySelector('.add-cond-metric')?.value;
+      const op = box?.querySelector('.add-cond-op')?.value || 'GT';
+      const thresholdStr = box?.querySelector('.add-cond-threshold')?.value.trim();
+      const warningStr = box?.querySelector('.add-cond-warning')?.value.trim();
+      const onNewCode = box?.querySelector('.add-cond-newcode')?.checked || false;
+      if (!metric) { showToastMessage('Metric is required.', 'error'); return; }
+      if (!thresholdStr) { showToastMessage('Value is required.', 'error'); return; }
+      const threshold = Number.parseFloat(thresholdStr);
+      if (Number.isNaN(threshold)) { showToastMessage('Value must be a number.', 'error'); return; }
+      let warningThreshold = undefined;
+      if (warningStr) {
+        const w = Number.parseFloat(warningStr);
+        if (!Number.isNaN(w)) warningThreshold = w;
+      }
+      addBtn.disabled = true;
+      try {
+        await apiFetch('/quality-gates/' + gateId + '/conditions', {
+          method: 'POST',
+          body: JSON.stringify({ metric, operator: op, threshold, warning_threshold: warningThreshold, on_new_code: onNewCode }),
+        });
+        showToastMessage('Condition added.');
+        await reloadGateConditions(gateId, box);
+      } catch (err) {
+        showToastMessage(err.message, 'error');
+        addBtn.disabled = false;
+      }
+      return;
+    }
+    const delBtn = event.target.closest('.del-cond-btn');
+    if (delBtn) {
+      const gateId = delBtn.dataset.gateId;
+      const condId = delBtn.dataset.condId;
+      if (!confirm('Remove this condition?')) return;
+      delBtn.disabled = true;
+      try {
+        await apiFetch('/quality-gates/' + gateId + '/conditions/' + condId, { method: 'DELETE' });
+        showToastMessage('Condition removed.');
+        const box = document.getElementById('gate-cond-' + gateId);
+        if (box) await reloadGateConditions(gateId, box);
+      } catch (err) {
+        showToastMessage(err.message, 'error');
+        delBtn.disabled = false;
+      }
+      return;
+    }
   });
 
   document.getElementById('addWhBtn')?.addEventListener('click', async () => {
@@ -1413,8 +1548,16 @@ export function bindAdminTabContent() {
     document.querySelector('.tab-btn[data-tab="custom-rules"]')?.click();
   });
 
-  document.querySelectorAll('.focus-rule-builder-btn').forEach(btn => {
-    btn.addEventListener('click', () => document.getElementById('customRuleKey')?.focus());
+  document.getElementById('focusRuleBuilderBtn')?.addEventListener('click', () => {
+    state.builderOpen = true;
+    renderView();
+    document.getElementById('customRuleBuilder')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+
+  document.getElementById('closeRuleBuilderBtn')?.addEventListener('click', () => {
+    state.builderOpen = false;
+    state.editingCustomRuleId = null;
+    renderView();
   });
 
   document.getElementById('customRuleSearch')?.addEventListener('input', event => {
@@ -1451,6 +1594,7 @@ export function bindAdminTabContent() {
       if (!rule) return;
       state.editingCustomRuleId = ruleId;
       state.expandedCustomRuleId = ruleId;
+      state.builderOpen = true;
       renderView();
       requestAnimationFrame(() => {
         prefillCustomRuleBuilder(rule);
@@ -1461,6 +1605,7 @@ export function bindAdminTabContent() {
 
   document.getElementById('cancelEditCustomRuleBtn')?.addEventListener('click', () => {
     state.editingCustomRuleId = null;
+    state.builderOpen = false;
     renderView();
   });
 
@@ -1522,39 +1667,31 @@ export function bindAdminTabContent() {
     const example = document.getElementById('customRuleExample')?.value || '';
     const compliantExample = document.getElementById('customRuleCompliantExample')?.value || '';
     const message = document.getElementById('customRuleMessage')?.value.trim();
-    if (!key || !name || !compliantExample || !example) {
-      showToastMessage('Rule ID, name, compliant example, and noncompliant example are required.', 'error');
+    if (!key || !name || !example) {
+      showToastMessage('Rule key, name, and noncompliant example are required.', 'error');
       return;
     }
     if (engine === 'text' && !textPattern) {
-      showToastMessage('Text pattern rules need a regexp pattern.', 'error');
+      showToastMessage('A regexp pattern is required.', 'error');
       return;
     }
     if (engine === 'go-ast' && !target) {
-      showToastMessage('Go AST rules need a target such as fmt.Println or net/http.', 'error');
+      showToastMessage('A target (e.g. fmt.Println) is required.', 'error');
       return;
     }
     if (engine === 'tree-sitter' && !query) {
-      showToastMessage('Tree-sitter rules need a query.', 'error');
+      showToastMessage('A tree-sitter query is required.', 'error');
       return;
     }
     const engineConfig = {};
     if (engine === 'tree-sitter') engineConfig.query = query;
-    if (engine === 'go-ast') {
-      engineConfig.pattern = goASTPattern;
-      engineConfig.target = target;
-    }
+    if (engine === 'go-ast') { engineConfig.pattern = goASTPattern; engineConfig.target = target; }
     if (engine === 'text') engineConfig.pattern = textPattern;
     const doc = {
       version: 1,
       pack: { name: packName, namespace },
       rules: [{
-        key,
-        name,
-        language,
-        type,
-        severity,
-        engine,
+        key, name, language, type, severity, engine,
         engine_config: engineConfig,
         message: message || name,
         examples: [
@@ -1572,11 +1709,13 @@ export function bindAdminTabContent() {
           method: 'PUT',
           body: JSON.stringify({ ...draftRule, key: fullKey, pack_name: packName }),
         });
-        showToastMessage('Custom rule updated. Re-validate before publishing.');
+        showToastMessage('Rule updated.');
         state.editingCustomRuleId = null;
+        state.builderOpen = false;
       } else {
         await apiFetch('/custom-rules', { method: 'POST', body: JSON.stringify(doc) });
-        showToastMessage('Custom rule draft created.');
+        showToastMessage('Draft created.');
+        state.builderOpen = false;
       }
       await loadCustomRulesData();
     } catch (err) {
