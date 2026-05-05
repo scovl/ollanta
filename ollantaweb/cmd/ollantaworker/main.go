@@ -56,6 +56,7 @@ func main() {
 	snapshotRepo := postgres.NewCodeSnapshotRepository(db)
 	profileSnapshotRepo := postgres.NewProfileSnapshotRepository(db)
 	tagRepo := postgres.NewTagRepository(db)
+	gateRepo := postgres.NewGateRepository(db)
 	webhookRepo := postgres.NewWebhookRepository(db)
 	webhookJobRepo := postgres.NewWebhookJobRepository(db)
 
@@ -86,6 +87,7 @@ func main() {
 			Snapshots: snapshotRepo,
 			Profiles:  profileSnapshotRepo,
 			Tags:      tagRepo,
+			Gates:     gateRepo,
 		},
 		indexEnqueuer,
 		webhookDispatcher,

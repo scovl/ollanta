@@ -1,5 +1,6 @@
 'use strict';
 
+import { API_DOC_SECTIONS } from './core/api-docs.js';
 import { apiFetch, setUnauthorizedHandler } from './core/api.js';
 import { parseProjectRoute } from './core/scope.js';
 import { createInitialState, replaceState, resetProjectState, state } from './core/state.js';
@@ -14,78 +15,6 @@ const BRAND_MARK_PATH = '/branding/ollanta-mark.png';
 
 const CORE_OBSERVABILITY_LINKS = [
   { label: 'Metrics', href: '/metrics' },
-];
-
-const API_DOC_SECTIONS = [
-  {
-    title: 'Authentication',
-    endpoints: [
-      { method: 'POST', path: '/api/v1/auth/login', permission: 'Public', description: 'Exchange local credentials for an access token and refresh token.' },
-      { method: 'POST', path: '/api/v1/auth/refresh', permission: 'Public', description: 'Refresh an access token from a valid refresh token.' },
-      { method: 'POST', path: '/api/v1/auth/logout', permission: 'Authenticated', description: 'Invalidate the current session.' },
-      { method: 'GET', path: '/api/v1/users/me', permission: 'Authenticated', description: 'Read the current user profile.' },
-      { method: 'GET', path: '/api/v1/users/me/tokens', permission: 'Authenticated', description: 'List personal API tokens.' },
-      { method: 'POST', path: '/api/v1/users/me/tokens', permission: 'Authenticated', description: 'Create a personal API token.' },
-    ],
-  },
-  {
-    title: 'Projects And Scans',
-    endpoints: [
-      { method: 'GET', path: '/api/v1/projects', permission: 'Authenticated', description: 'List projects visible to the current user.' },
-      { method: 'POST', path: '/api/v1/projects', permission: 'create_project', description: 'Create or register a project.' },
-      { method: 'GET', path: '/api/v1/projects/{key}', permission: 'Authenticated', description: 'Read project metadata.' },
-      { method: 'POST', path: '/api/v1/scans', permission: 'Scanner token or execute_analysis', description: 'Ingest a scanner report into the server.' },
-      { method: 'GET', path: '/api/v1/projects/{key}/overview', permission: 'Authenticated', description: 'Read overview metrics, gate status, review summary, and issue signals.' },
-      { method: 'GET', path: '/api/v1/projects/{key}/activity', permission: 'Authenticated', description: 'Read project activity over scans.' },
-    ],
-  },
-  {
-    title: 'Issues, Code, And Measures',
-    endpoints: [
-      { method: 'GET', path: '/api/v1/projects/{key}/issues', permission: 'Authenticated', description: 'Search and filter issues by quality, severity, status, lifecycle, language, rule, tag, directory, and file.' },
-      { method: 'GET', path: '/api/v1/projects/{key}/code/tree', permission: 'Authenticated', description: 'Browse the indexed source tree for a project scope.' },
-      { method: 'GET', path: '/api/v1/projects/{key}/code/file', permission: 'Authenticated', description: 'Read stored source file content with inline issue metadata.' },
-      { method: 'GET', path: '/api/v1/projects/{key}/measures/trend', permission: 'Authenticated', description: 'Read time-series measure trends.' },
-      { method: 'GET', path: '/api/v1/search', permission: 'Authenticated', description: 'Search indexed source and issue content.' },
-    ],
-  },
-  {
-    title: 'Tag Governance',
-    endpoints: [
-      { method: 'GET', path: '/api/v1/tags', permission: 'Authenticated', description: 'List governed and discovered tags with usage metadata.' },
-      { method: 'POST', path: '/api/v1/tags', permission: 'admin', description: 'Create a governed catalog tag with description, color, owner, and scope.' },
-      { method: 'GET', path: '/api/v1/tags/{key}', permission: 'Authenticated', description: 'Read a tag page with aliases, usage, and audit history.', examplePath: '/api/v1/tags/team-api' },
-      { method: 'PUT', path: '/api/v1/tags/{key}', permission: 'admin or owner', description: 'Update tag metadata and ownership.', examplePath: '/api/v1/tags/team-api' },
-      { method: 'POST', path: '/api/v1/tags/{key}/deprecate', permission: 'admin or owner', description: 'Deprecate a tag and optionally point users to a replacement.', examplePath: '/api/v1/tags/legacy/deprecate' },
-      { method: 'POST', path: '/api/v1/tags/{key}/merge', permission: 'admin or owner', description: 'Merge one tag into another while preserving an alias.', examplePath: '/api/v1/tags/legacy/merge' },
-      { method: 'POST', path: '/api/v1/tags/bulk/preview', permission: 'Authenticated', description: 'Preview bulk tag edits across issues, projects, rules, or custom rules.' },
-      { method: 'POST', path: '/api/v1/tags/bulk/apply', permission: 'Authenticated', description: 'Apply a validated bulk tag edit and write audit entries.' },
-      { method: 'GET', path: '/api/v1/saved-filters', permission: 'Authenticated', description: 'List saved filters for repeatable issue and governance views.' },
-      { method: 'POST', path: '/api/v1/saved-filters', permission: 'Authenticated', description: 'Create a private or shared saved filter.' },
-      { method: 'POST', path: '/api/v1/saved-filters/{id}/apply', permission: 'Authenticated', description: 'Resolve a saved filter, including tag aliases, into criteria.', examplePath: '/api/v1/saved-filters/1/apply' },
-    ],
-  },
-  {
-    title: 'Administration',
-    endpoints: [
-      { method: 'GET', path: '/api/v1/system/info', permission: 'admin', description: 'Read runtime metadata and system counts.' },
-      { method: 'GET', path: '/api/v1/permissions/global', permission: 'admin', description: 'List global permission grants.' },
-      { method: 'GET', path: '/api/v1/projects/{key}/permissions', permission: 'admin', description: 'List project permission grants.' },
-      { method: 'GET', path: '/api/v1/admin/index-jobs', permission: 'admin', description: 'Inspect durable index projection jobs.' },
-      { method: 'GET', path: '/api/v1/admin/webhook-jobs', permission: 'admin', description: 'Inspect durable webhook delivery jobs.' },
-      { method: 'GET', path: '/api/v1/admin/background-tasks', permission: 'admin', description: 'List normalized scan, index, and webhook background tasks with operational filters.' },
-      { method: 'GET', path: '/api/v1/admin/background-tasks/summary', permission: 'admin', description: 'Read queue depth, stale, retry, failure, and worker lag indicators.' },
-      { method: 'GET', path: '/api/v1/ui/settings', permission: 'Authenticated', description: 'Read UI settings such as optional external observability links.' },
-    ],
-  },
-  {
-    title: 'Public Health And Observability',
-    endpoints: [
-      { method: 'GET', path: '/healthz', permission: 'Public', description: 'Liveness probe.' },
-      { method: 'GET', path: '/readyz', permission: 'Public', description: 'Readiness probe with database and search checks.' },
-      { method: 'GET', path: '/metrics', permission: 'Public', description: 'Prometheus-compatible metrics endpoint.' },
-    ],
-  },
 ];
 
 setUnauthorizedHandler(logout);

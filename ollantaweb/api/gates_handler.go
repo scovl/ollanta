@@ -67,7 +67,20 @@ func (h *GatesHandler) Create(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	// Auto-add default conditions (equivalent to SonarQube CAYC)
+	for _, c := range defaultGateConditions(g.ID) {
+		_ = h.gates.AddCondition(r.Context(), c)
+	}
 	jsonOK(w, http.StatusCreated, g)
+}
+
+func defaultGateConditions(gateID int64) []*postgres.GateCondition {
+	return []*postgres.GateCondition{
+		{GateID: gateID, Metric: "bugs", Operator: "GT", Threshold: 0, OnNewCode: false},
+		{GateID: gateID, Metric: "vulnerabilities", Operator: "GT", Threshold: 0, OnNewCode: false},
+		{GateID: gateID, Metric: "new_bugs", Operator: "GT", Threshold: 0, OnNewCode: true},
+		{GateID: gateID, Metric: "new_vulnerabilities", Operator: "GT", Threshold: 0, OnNewCode: true},
+	}
 }
 
 // Update handles PUT /api/v1/quality-gates/{id}

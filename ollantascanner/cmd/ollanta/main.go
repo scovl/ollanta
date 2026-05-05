@@ -47,11 +47,26 @@ func printRunPlan(opts *scan.ScanOptions) {
 }
 
 type serverScanResult struct {
-	ID           int64  `json:"id"`
-	Status       string `json:"status"`
-	GateStatus   string `json:"gate_status"`
-	NewIssues    int    `json:"new_issues"`
-	ClosedIssues int    `json:"closed_issues"`
+	ID           int64              `json:"id"`
+	Status       string             `json:"status"`
+	GateStatus   string             `json:"gate_status"`
+	GateResult   *gateResultSummary `json:"gate_result,omitempty"`
+	NewIssues    int                `json:"new_issues"`
+	ClosedIssues int                `json:"closed_issues"`
+}
+
+type gateResultSummary struct {
+	Status     string               `json:"status"`
+	Conditions []gateConditionEval  `json:"conditions"`
+}
+
+type gateConditionEval struct {
+	Metric    string  `json:"metric"`
+	Operator  string  `json:"operator"`
+	Threshold float64 `json:"threshold"`
+	Actual    float64 `json:"actual"`
+	HasValue  bool    `json:"has_value"`
+	Status    string  `json:"status"`
 }
 
 func main() {
@@ -158,6 +173,7 @@ func handleServerPush(opts *scan.ScanOptions, r *scan.Report) {
 			"new_issues", responseInt(result, "new_issues"),
 			"closed_issues", responseInt(result, "closed_issues"),
 		)
+		logGateConditions(result)
 		if gs == "ERROR" {
 			os.Exit(1)
 		}
@@ -190,6 +206,9 @@ func handleServerPush(opts *scan.ScanOptions, r *scan.Report) {
 		"new_issues", finalScan.NewIssues,
 		"closed_issues", finalScan.ClosedIssues,
 	)
+	if finalScan.GateResult != nil {
+		logGateConditionsSummary(finalScan.GateResult)
+	}
 	if finalScan.GateStatus == "ERROR" {
 		os.Exit(1)
 	}
@@ -412,4 +431,58 @@ func authorizedRequest(method, url, token string, body *bytes.Reader) (*http.Req
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 	return req, nil
+}
+
+func logGateConditions(result map[string]interface{}) {
+	gr, ok := result["gate_result"]
+	if !ok {
+		return
+	}
+	grMap, ok := gr.(map[string]interface{})
+	if !ok {
+		return
+	}
+	conditions, ok := grMap["conditions"].([]interface{})
+	if !ok {
+		return
+	}
+	for _, c := range conditions {
+		cm, ok := c.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		status, _ := cm["status"].(string)
+		if status == "OK" {
+			continue
+		}
+		metric, _ := cm["metric"].(string)
+		operator, _ := cm["operator"].(string)
+		threshold, _ := cm["threshold"].(float64)
+		actual, _ := cm["actual"].(float64)
+		slog.Warn("gate condition",
+			"metric", metric,
+			"operator", operator,
+			"threshold", threshold,
+			"actual", actual,
+			"status", status,
+		)
+	}
+}
+
+func logGateConditionsSummary(gr *gateResultSummary) {
+	if gr == nil {
+		return
+	}
+	for _, c := range gr.Conditions {
+		if c.Status == "OK" {
+			continue
+		}
+		slog.Warn("gate condition",
+			"metric", c.Metric,
+			"operator", c.Operator,
+			"threshold", c.Threshold,
+			"actual", c.Actual,
+			"status", c.Status,
+		)
+	}
 }

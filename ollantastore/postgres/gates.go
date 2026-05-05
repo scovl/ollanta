@@ -22,12 +22,13 @@ type QualityGate struct {
 
 // GateCondition is a single metric threshold condition attached to a gate.
 type GateCondition struct {
-	ID         int64   `json:"id"`
-	GateID     int64   `json:"gate_id"`
-	Metric     string  `json:"metric"`
-	Operator   string  `json:"operator"` // GT, LT, GTE, LTE, EQ, NE
-	Threshold  float64 `json:"threshold"`
-	OnNewCode  bool    `json:"on_new_code"`
+	ID               int64    `json:"id"`
+	GateID           int64    `json:"gate_id"`
+	Metric           string   `json:"metric"`
+	Operator         string   `json:"operator"` // GT, LT, GTE, LTE, EQ, NE
+	Threshold        float64  `json:"threshold"`
+	WarningThreshold *float64 `json:"warning_threshold,omitempty"`
+	OnNewCode        bool     `json:"on_new_code"`
 }
 
 // GateRepository provides CRUD access to quality_gates and related tables.
@@ -104,7 +105,7 @@ func (r *GateRepository) Delete(ctx context.Context, id int64) error {
 // Conditions returns all conditions for a gate.
 func (r *GateRepository) Conditions(ctx context.Context, gateID int64) ([]*GateCondition, error) {
 	rows, err := r.db.Pool.Query(ctx, `
-		SELECT id, gate_id, metric, operator, threshold, on_new_code
+		SELECT id, gate_id, metric, operator, threshold, warning_threshold, on_new_code
 		FROM gate_conditions WHERE gate_id = $1 ORDER BY metric`, gateID)
 	if err != nil {
 		return nil, err
@@ -116,10 +117,10 @@ func (r *GateRepository) Conditions(ctx context.Context, gateID int64) ([]*GateC
 // AddCondition inserts a new condition to a gate.
 func (r *GateRepository) AddCondition(ctx context.Context, c *GateCondition) error {
 	return r.db.Pool.QueryRow(ctx, `
-		INSERT INTO gate_conditions (gate_id, metric, operator, threshold, on_new_code)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO gate_conditions (gate_id, metric, operator, threshold, warning_threshold, on_new_code)
+		VALUES ($1, $2, $3, $4, $5, $6)
 		RETURNING id`,
-		c.GateID, c.Metric, c.Operator, c.Threshold, c.OnNewCode,
+		c.GateID, c.Metric, c.Operator, c.Threshold, c.WarningThreshold, c.OnNewCode,
 	).Scan(&c.ID)
 }
 
@@ -133,9 +134,9 @@ func (r *GateRepository) RemoveCondition(ctx context.Context, conditionID int64)
 func (r *GateRepository) UpdateCondition(ctx context.Context, c *GateCondition) error {
 	tag, err := r.db.Pool.Exec(ctx, `
 		UPDATE gate_conditions
-		SET metric = $1, operator = $2, threshold = $3, on_new_code = $4
-		WHERE id = $5`,
-		c.Metric, c.Operator, c.Threshold, c.OnNewCode, c.ID)
+		SET metric = $1, operator = $2, threshold = $3, warning_threshold = $4, on_new_code = $5
+		WHERE id = $6`,
+		c.Metric, c.Operator, c.Threshold, c.WarningThreshold, c.OnNewCode, c.ID)
 	if err != nil {
 		return err
 	}
@@ -164,11 +165,12 @@ func (r *GateRepository) Copy(ctx context.Context, sourceID int64, newName strin
 	}
 	for _, c := range conditions {
 		dup := &GateCondition{
-			GateID:    newGate.ID,
-			Metric:    c.Metric,
-			Operator:  c.Operator,
-			Threshold: c.Threshold,
-			OnNewCode: c.OnNewCode,
+			GateID:           newGate.ID,
+			Metric:           c.Metric,
+			Operator:         c.Operator,
+			Threshold:        c.Threshold,
+			WarningThreshold: c.WarningThreshold,
+			OnNewCode:        c.OnNewCode,
 		}
 		if err := r.AddCondition(ctx, dup); err != nil {
 			return nil, fmt.Errorf("copy condition: %w", err)
@@ -243,7 +245,7 @@ func scanConditions(rows pgx.Rows) ([]*GateCondition, error) {
 	var out []*GateCondition
 	for rows.Next() {
 		c := &GateCondition{}
-		if err := rows.Scan(&c.ID, &c.GateID, &c.Metric, &c.Operator, &c.Threshold, &c.OnNewCode); err != nil {
+		if err := rows.Scan(&c.ID, &c.GateID, &c.Metric, &c.Operator, &c.Threshold, &c.WarningThreshold, &c.OnNewCode); err != nil {
 			return nil, err
 		}
 		out = append(out, c)
