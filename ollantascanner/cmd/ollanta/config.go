@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -41,6 +42,8 @@ type scannerConfig struct {
 	ProfileFile         string   `toml:"profile_file"`
 	ProfileStrict       *bool    `toml:"profile_strict"`
 	ProfileFetchTimeout string   `toml:"profile_fetch_timeout"`
+	Proxy               string   `toml:"proxy"`
+	Skip                *bool    `toml:"skip"`
 }
 
 type testsConfig struct {
@@ -140,7 +143,7 @@ type mutationsModuleConfig struct {
 }
 
 func parseOptions(args []string) (*appscan.ScanOptions, error) {
-	filteredArgs, configPath, err := extractConfigPath(args)
+	filteredArgs, configPath, globalConfigPath, err := extractConfigPaths(args)
 	if err != nil {
 		return nil, err
 	}
@@ -156,6 +159,9 @@ func parseOptions(args []string) (*appscan.ScanOptions, error) {
 		return nil, err
 	} else if found {
 		opts.ConfigPath = configPath
+		if err := resolvePlaceholders(&cfg); err != nil {
+			return nil, fmt.Errorf("config interpolation: %w", err)
+		}
 		if err := applyScannerConfig(opts, cfg.Scanner, provided); err != nil {
 			return nil, err
 		}
@@ -164,6 +170,20 @@ func parseOptions(args []string) (*appscan.ScanOptions, error) {
 		}
 		if err := applyMutationsConfig(opts, cfg.Mutations, provided); err != nil {
 			return nil, err
+		}
+	}
+
+	if globalConfigPath != "" {
+		var globalCfg rootConfig
+		if _, found, err := configfile.Load(globalConfigPath, &globalCfg); err != nil {
+			if !errors.Is(err, os.ErrNotExist) {
+				return nil, err
+			}
+		} else if found {
+			if err := resolvePlaceholders(&globalCfg); err != nil {
+				return nil, fmt.Errorf("global config interpolation: %w", err)
+			}
+			applyGlobalConfig(opts, globalCfg.Scanner, provided)
 		}
 	}
 
@@ -260,16 +280,16 @@ func toAppMutationModule(module mutationsModuleConfig) (appscan.MutationModuleCo
 	return appModule, nil
 }
 
-func extractConfigPath(args []string) ([]string, string, error) {
+func extractConfigPaths(args []string) ([]string, string, string, error) {
 	filtered := make([]string, 0, len(args))
-	var configPath string
+	var configPath, globalConfigPath string
 
 	for index := 0; index < len(args); index++ {
 		arg := args[index]
 		switch {
 		case arg == "-config" || arg == "--config":
 			if index+1 >= len(args) {
-				return nil, "", fmt.Errorf("missing value for %s", arg)
+				return nil, "", "", fmt.Errorf("missing value for %s", arg)
 			}
 			configPath = args[index+1]
 			index++
@@ -277,6 +297,16 @@ func extractConfigPath(args []string) ([]string, string, error) {
 			configPath = strings.TrimPrefix(arg, "-config=")
 		case strings.HasPrefix(arg, "--config="):
 			configPath = strings.TrimPrefix(arg, "--config=")
+		case arg == "-global-config" || arg == "--global-config":
+			if index+1 >= len(args) {
+				return nil, "", "", fmt.Errorf("missing value for %s", arg)
+			}
+			globalConfigPath = args[index+1]
+			index++
+		case strings.HasPrefix(arg, "-global-config="):
+			globalConfigPath = strings.TrimPrefix(arg, "-global-config=")
+		case strings.HasPrefix(arg, "--global-config="):
+			globalConfigPath = strings.TrimPrefix(arg, "--global-config=")
 		default:
 			filtered = append(filtered, arg)
 		}
@@ -285,7 +315,18 @@ func extractConfigPath(args []string) ([]string, string, error) {
 	if configPath == "" {
 		configPath = os.Getenv("OLLANTA_CONFIG_FILE")
 	}
-	return filtered, configPath, nil
+	if globalConfigPath == "" {
+		globalConfigPath = defaultGlobalConfigPath()
+	}
+	return filtered, configPath, globalConfigPath, nil
+}
+
+func defaultGlobalConfigPath() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".ollanta", "config.toml")
 }
 
 func providedFlags(args []string) map[string]bool {
@@ -338,7 +379,108 @@ func applyScannerConfig(opts *appscan.ScanOptions, cfg scannerConfig, provided m
 	if err := applyDurationFlag(&opts.Profiles.FetchTimeout, cfg.ProfileFetchTimeout, provided, "profile-fetch-timeout", "scanner.profile_fetch_timeout"); err != nil {
 		return err
 	}
+	applyStringFlag(&opts.Proxy, cfg.Proxy, provided, "proxy")
+	applyBoolFlag(&opts.Skip, cfg.Skip, provided, "skip")
 	return nil
+}
+
+func applyGlobalConfig(opts *appscan.ScanOptions, globalCfg scannerConfig, provided map[string]bool) {
+	if !provided["server"] {
+		applyStringFlagNoOverride(&opts.Server, globalCfg.ServerURL)
+	}
+	if !provided["server-token"] {
+		applyStringFlagNoOverride(&opts.ServerToken, globalCfg.ServerToken)
+	}
+	if !provided["proxy"] {
+		applyStringFlagNoOverride(&opts.Proxy, globalCfg.Proxy)
+	}
+}
+
+func applyStringFlagNoOverride(dst *string, value string) {
+	if value != "" && *dst == "" {
+		*dst = value
+	}
+}
+
+// ── placeholder interpolation ────────────────────────────────────────────────
+
+func resolvePlaceholders(cfg *rootConfig) error {
+	env := envMap()
+	resolveScannerPlaceholders(&cfg.Scanner, env)
+	resolveTestPlaceholders(&cfg.Tests, env)
+	resolveMutationPlaceholders(&cfg.Mutations, env)
+	return nil
+}
+
+func resolveScannerPlaceholders(cfg *scannerConfig, env map[string]string) {
+	cfg.ProjectDir = expandValue(cfg.ProjectDir, env)
+	cfg.ProjectKey = expandValue(cfg.ProjectKey, env)
+	cfg.ServerURL = expandValue(cfg.ServerURL, env)
+	cfg.ServerToken = expandValue(cfg.ServerToken, env)
+	cfg.Proxy = expandValue(cfg.Proxy, env)
+	cfg.Branch = expandValue(cfg.Branch, env)
+	cfg.CommitSHA = expandValue(cfg.CommitSHA, env)
+	cfg.Bind = expandValue(cfg.Bind, env)
+	for i, s := range cfg.Sources {
+		cfg.Sources[i] = expandValue(s, env)
+	}
+	for i, e := range cfg.Exclusions {
+		cfg.Exclusions[i] = expandValue(e, env)
+	}
+}
+
+func resolveTestPlaceholders(cfg *testsConfig, env map[string]string) {
+	for i, m := range cfg.Modules {
+		cfg.Modules[i].Root = expandValue(m.Root, env)
+		cfg.Modules[i].Command = expandValue(m.Command, env)
+	}
+}
+
+func resolveMutationPlaceholders(cfg *mutationsConfig, env map[string]string) {
+	for i, m := range cfg.Modules {
+		cfg.Modules[i].Root = expandValue(m.Root, env)
+		cfg.Modules[i].Command = expandValue(m.Command, env)
+	}
+}
+
+func expandValue(value string, env map[string]string) string {
+	return os.Expand(value, func(key string) string {
+		if key == "" {
+			return "$"
+		}
+		if strings.HasPrefix(key, "env.") {
+			k := strings.TrimPrefix(key, "env.")
+			if idx := strings.Index(k, ":-"); idx >= 0 {
+				name := k[:idx]
+				def := k[idx+2:]
+				if v, ok := env[name]; ok {
+					return v
+				}
+				return def
+			}
+			return env[k]
+		}
+		if idx := strings.Index(key, ":-"); idx >= 0 {
+			name := key[:idx]
+			def := key[idx+2:]
+			if v, ok := env[name]; ok {
+				return v
+			}
+			return def
+		}
+		return env[key]
+	})
+}
+
+func envMap() map[string]string {
+	raw := os.Environ()
+	m := make(map[string]string, len(raw))
+	for _, pair := range raw {
+		if idx := strings.IndexByte(pair, '='); idx >= 0 {
+			m[pair[:idx]] = pair[idx+1:]
+		}
+	}
+	return m
 }
 
 func applyTestsConfig(opts *appscan.ScanOptions, cfg testsConfig, provided map[string]bool) error {
