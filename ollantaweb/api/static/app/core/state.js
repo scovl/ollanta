@@ -66,7 +66,7 @@ export function createInitialState() {
     issueFacets: null,
     issuesTotal: 0,
     issueOffset: 0,
-    issueFilter: { quality: 'all', severity: 'all', type: 'all', status: 'all', trackingState: 'all', language: 'all', rule: 'all', tag: 'all', securityCategory: 'all', directory: 'all', file: 'all', search: '' },
+    issueFilter: { quality: 'all', severity: 'all', type: 'all', status: 'all', trackingState: 'all', language: 'all', rule: 'all', tag: 'all', securityCategory: 'all', directory: 'all', file: 'all', search: '', scanId: '' },
     issueFacetExpanded: {},
     issueFacetSearch: {},
     loading: false,
@@ -80,7 +80,12 @@ export function createInitialState() {
     customRuleAIProviders: null,
     customRuleAISetupProvider: '',
     customRuleFilters: { search: '', lifecycle: 'all' },
+    expandedCustomRuleId: null,
+    editingCustomRuleId: null,
     activityData: null,
+    activityFilters: { categories: [], window: 'all' },
+    activityPage: { offset: 0, hasMore: false },
+    activityCompareSelection: [],
     branchesData: null,
     pullRequestsData: null,
     projectInfoData: null,
@@ -96,6 +101,22 @@ export function createInitialState() {
     loadingBackgroundTasks: false,
     loadingBackgroundTaskDetail: false,
     backgroundTaskError: '',
+    tagCatalogData: null,
+    tagDetailData: null,
+    selectedTagKey: '',
+    savedFiltersData: null,
+    loadingTags: false,
+    tagSearch: '',
+    tagBulkPreview: null,
+    tagsTab: 'catalog',
+    tagCreatorOpen: false,
+    tagSourceFilter: 'all',
+    projectFilter: '',
+    paletteOpen: false,
+    paletteQuery: '',
+    paletteResults: null,
+    paletteLoading: false,
+    paletteIndex: 0,
   };
 }
 
@@ -116,7 +137,7 @@ export function resetProjectState() {
   state.issueFacets = null;
   state.issuesTotal = 0;
   state.issueOffset = 0;
-  state.issueFilter = { quality: 'all', severity: 'all', type: 'all', status: 'all', trackingState: 'all', language: 'all', rule: 'all', tag: 'all', securityCategory: 'all', directory: 'all', file: 'all', search: '' };
+  state.issueFilter = { quality: 'all', severity: 'all', type: 'all', status: 'all', trackingState: 'all', language: 'all', rule: 'all', tag: 'all', securityCategory: 'all', directory: 'all', file: 'all', search: '', scanId: '' };
   state.issueFacetExpanded = {};
   state.issueFacetSearch = {};
   state.projectTab = 'overview';
@@ -128,7 +149,12 @@ export function resetProjectState() {
   state.customRuleAIProviders = null;
   state.customRuleAISetupProvider = '';
   state.customRuleFilters = { search: '', lifecycle: 'all' };
+  state.expandedCustomRuleId = null;
+  state.editingCustomRuleId = null;
   state.activityData = null;
+  state.activityFilters = { categories: [], window: 'all' };
+  state.activityPage = { offset: 0, hasMore: false };
+  state.activityCompareSelection = [];
   state.branchesData = null;
   state.pullRequestsData = null;
   state.projectInfoData = null;
@@ -144,4 +170,6 @@ export function resetProjectState() {
   state.loadingBackgroundTasks = false;
   state.loadingBackgroundTaskDetail = false;
   state.backgroundTaskError = '';
+  state.tagDetailData = null;
+  state.selectedTagKey = '';
 }

@@ -7,6 +7,7 @@ import { clearStorage, getToken, loadUser, saveToken, saveUser } from './core/st
 import { badgeClassForGateStatus, cardClassForGateStatus, escAttr, escHtml, fmtDate } from './core/utils.js';
 import { closeIssueDetail } from './features/issues.js';
 import { bindBackgroundTasksContent, loadBackgroundTasksData, renderBackgroundTasksPage } from './features/admin.js';
+import { bindTagsPage, loadTagsData, renderTagsPage } from './features/tags.js';
 import { bindProjectViewControls, loadProject, renderProjectDetail } from './project-flow.js';
 
 const BRAND_MARK_PATH = '/branding/ollanta-mark.png';
@@ -49,6 +50,22 @@ const API_DOC_SECTIONS = [
     ],
   },
   {
+    title: 'Tag Governance',
+    endpoints: [
+      { method: 'GET', path: '/api/v1/tags', permission: 'Authenticated', description: 'List governed and discovered tags with usage metadata.' },
+      { method: 'POST', path: '/api/v1/tags', permission: 'admin', description: 'Create a governed catalog tag with description, color, owner, and scope.' },
+      { method: 'GET', path: '/api/v1/tags/{key}', permission: 'Authenticated', description: 'Read a tag page with aliases, usage, and audit history.', examplePath: '/api/v1/tags/team-api' },
+      { method: 'PUT', path: '/api/v1/tags/{key}', permission: 'admin or owner', description: 'Update tag metadata and ownership.', examplePath: '/api/v1/tags/team-api' },
+      { method: 'POST', path: '/api/v1/tags/{key}/deprecate', permission: 'admin or owner', description: 'Deprecate a tag and optionally point users to a replacement.', examplePath: '/api/v1/tags/legacy/deprecate' },
+      { method: 'POST', path: '/api/v1/tags/{key}/merge', permission: 'admin or owner', description: 'Merge one tag into another while preserving an alias.', examplePath: '/api/v1/tags/legacy/merge' },
+      { method: 'POST', path: '/api/v1/tags/bulk/preview', permission: 'Authenticated', description: 'Preview bulk tag edits across issues, projects, rules, or custom rules.' },
+      { method: 'POST', path: '/api/v1/tags/bulk/apply', permission: 'Authenticated', description: 'Apply a validated bulk tag edit and write audit entries.' },
+      { method: 'GET', path: '/api/v1/saved-filters', permission: 'Authenticated', description: 'List saved filters for repeatable issue and governance views.' },
+      { method: 'POST', path: '/api/v1/saved-filters', permission: 'Authenticated', description: 'Create a private or shared saved filter.' },
+      { method: 'POST', path: '/api/v1/saved-filters/{id}/apply', permission: 'Authenticated', description: 'Resolve a saved filter, including tag aliases, into criteria.', examplePath: '/api/v1/saved-filters/1/apply' },
+    ],
+  },
+  {
     title: 'Administration',
     endpoints: [
       { method: 'GET', path: '/api/v1/system/info', permission: 'admin', description: 'Read runtime metadata and system counts.' },
@@ -80,7 +97,7 @@ export function render() {
     bindLogin();
     return;
   }
-  app.innerHTML = renderNav() + '<main>' + renderContent() + '</main>';
+  app.innerHTML = renderNav() + '<main>' + renderContent() + '</main>' + renderCommandPalette();
   bindMain();
 }
 
@@ -91,6 +108,11 @@ function renderNav() {
     ${renderBrandLockup()}
     ${renderAdminNavLinks()}
     <span class="spacer"></span>
+    <button class="nav-search-btn" id="openPaletteBtn" type="button" title="Search (Ctrl+K)">
+      <span class="nav-search-icon">⌕</span>
+      <span class="nav-search-label">Search…</span>
+      <kbd class="nav-search-kbd">Ctrl K</kbd>
+    </button>
     <span class="user-info">${escHtml(name)}</span>
     <button class="logout-btn" id="logoutBtn">Sign out</button>
   </nav>`;
@@ -101,6 +123,7 @@ function renderAdminNavLinks() {
   const links = CORE_OBSERVABILITY_LINKS.concat(configuredLinks);
   return `<div class="admin-nav-links" aria-label="Admin shortcuts">
     <button class="admin-nav-link" type="button" id="apiDocsBtn">API</button>
+    <button class="admin-nav-link" type="button" id="tagsBtn">Tags</button>
     <button class="admin-nav-link" type="button" id="backgroundTasksBtn">Background Tasks</button>
     ${links.map(renderAdminNavLink).join('')}
   </div>`;
@@ -122,6 +145,7 @@ function renderContent() {
   if (state.view === 'projects') return renderDashboard();
   if (state.view === 'project') return renderProjectDetail();
   if (state.view === 'api-docs') return renderApiDocsPage();
+  if (state.view === 'tags') return renderTagsPage();
   if (state.view === 'background-tasks') return renderBackgroundTasksPage();
   return '';
 }
@@ -198,6 +222,13 @@ function defaultExampleBody(endpoint) {
   if (endpoint.path === '/api/v1/auth/logout') return {};
   if (endpoint.path === '/api/v1/users/me/tokens') return { name: 'ci-token', expires_at: '2026-12-31T23:59:59Z' };
   if (endpoint.path === '/api/v1/projects') return { key: 'demo', name: 'Demo Project' };
+  if (endpoint.path === '/api/v1/tags') return { key: 'team-api', display_name: 'Team API', color: '#0ea5e9', owner_name: 'Platform Team', description: 'Issues owned by the API team.' };
+  if (endpoint.path === '/api/v1/tags/{key}') return { display_name: 'Team API', color: '#0ea5e9', owner_name: 'Platform Team', description: 'Issues owned by the API team.' };
+  if (endpoint.path === '/api/v1/tags/{key}/deprecate') return { replacement_key: 'team-platform' };
+  if (endpoint.path === '/api/v1/tags/{key}/merge') return { target_key: 'team-platform' };
+  if (endpoint.path === '/api/v1/tags/bulk/preview' || endpoint.path === '/api/v1/tags/bulk/apply') return { target_type: 'issue', target_ids: [101, 102], add_tags: ['team-api'], remove_tags: ['legacy'] };
+  if (endpoint.path === '/api/v1/saved-filters') return { name: 'API security review', visibility: 'shared', filter_type: 'issues', criteria: { tag: 'team-api', severity: 'critical' } };
+  if (endpoint.path === '/api/v1/saved-filters/{id}/apply') return {};
   if (endpoint.path === '/api/v1/scans') {
     return {
       project_key: 'demo',
@@ -251,7 +282,7 @@ function renderLogin() {
           <label for="loginPass">Password</label>
           <input id="loginPass" type="password" placeholder="\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022" autocomplete="current-password">
         </div>
-        <button class="btn btn-primary" id="loginBtn">Sign in</button>
+        <button class="btn btn-primary btn-block" id="loginBtn">Sign in</button>
         <div id="loginError" class="error-msg"></div>
       </div>
     </div>
@@ -304,8 +335,6 @@ export async function loadProjects() {
   history.replaceState({}, '', globalThis.location.pathname);
   render();
 
-  await loadUISettings();
-
   try {
     const data = await apiFetch('/projects?limit=100');
     state.projects = data.items || [];
@@ -339,20 +368,37 @@ function renderDashboard() {
   }
 
   const projects = state.projects;
+  const filter = (state.projectFilter || '').toLowerCase();
+  const visible = filter
+    ? projects.filter(project => {
+        const haystack = [project.key, project.name, ...(project.tags || [])].filter(Boolean).join(' ').toLowerCase();
+        return haystack.includes(filter);
+      })
+    : projects;
   const count = projects.length;
+  const visibleCount = visible.length;
 
-  return `
-    <div class="page-header">
-      <h2>Projects <span style="font-size:14px;color:var(--text-muted);font-weight:400">(${count})</span></h2>
-      <p>All projects registered on this platform</p>
-    </div>
-    ${count === 0
-      ? `<div class="empty-state">
-           <div class="empty-icon">\uD83D\uDCC2</div>
-           <p>No projects yet. Run a scan to register the first project.</p>
-         </div>`
-      : `<div class="projects-grid">${projects.map(renderProjectCard).join('')}</div>`
-    }`;
+  const header = `
+    <div class="page-header dashboard-header">
+      <div>
+        <h2>Projects <span class="tags-count">${visibleCount === count ? count : visibleCount + ' / ' + count}</span></h2>
+        <p>All projects registered on this platform. Press <kbd>Ctrl</kbd>+<kbd>K</kbd> to jump anywhere.</p>
+      </div>
+      ${count > 0 ? `<input id="projectFilterInput" class="filter-input dashboard-filter" type="search" placeholder="Filter by name, key or tag\u2026" value="${escAttr(state.projectFilter || '')}" autocomplete="off">` : ''}
+    </div>`;
+
+  if (count === 0) {
+    return header + `<div class="empty-state">
+      <div class="empty-icon">\uD83D\uDCC2</div>
+      <p>No projects yet. Run a scan to register the first project.</p>
+    </div>`;
+  }
+
+  if (visibleCount === 0) {
+    return header + `<div class="empty-state compact"><p>No projects match \u201C${escHtml(state.projectFilter)}\u201D.</p></div>`;
+  }
+
+  return header + `<div class="projects-grid">${visible.map(renderProjectCard).join('')}</div>`;
 }
 
 function renderProjectCard(project) {
@@ -388,12 +434,320 @@ export function showToast(msg, type = 'success') {
   }, 3500);
 }
 
+const STATIC_PALETTE_PAGES = [
+  { title: 'Projects', subtitle: 'Dashboard with all projects', kind: 'page', action: 'projects' },
+  { title: 'Tags', subtitle: 'Tag governance center', kind: 'page', action: 'tags' },
+  { title: 'Background Tasks', subtitle: 'Queue, retries, failures', kind: 'page', action: 'background-tasks' },
+  { title: 'API Docs', subtitle: 'HTTP API reference', kind: 'page', action: 'api-docs' },
+];
+
+function openPalette() {
+  state.paletteOpen = true;
+  state.paletteQuery = '';
+  state.paletteResults = null;
+  state.paletteIndex = 0;
+  render();
+  setTimeout(() => document.getElementById('paletteInput')?.focus(), 0);
+}
+
+function closePalette() {
+  state.paletteOpen = false;
+  render();
+}
+
+function renderCommandPalette() {
+  if (!state.paletteOpen) return '';
+  return `<div class="palette-overlay" id="paletteOverlay">
+    <div class="palette" role="dialog" aria-label="Command palette">
+      <div class="palette-input-row">
+        <span class="palette-icon">\u2315</span>
+        <input id="paletteInput" class="palette-input" type="text" autocomplete="off" placeholder="Jump to project, issue, rule, tag\u2026 (try p:web or i:auth)" value="${escAttr(state.paletteQuery || '')}">
+        <kbd class="palette-hint">Esc</kbd>
+      </div>
+      <div class="palette-results" id="paletteResults">${renderPaletteResults()}</div>
+      <div class="palette-footer">
+        <span><kbd>\u2191</kbd><kbd>\u2193</kbd> navigate</span>
+        <span><kbd>Enter</kbd> open</span>
+        <span><kbd>p:</kbd> projects \u00B7 <kbd>i:</kbd> issues \u00B7 <kbd>r:</kbd> rules \u00B7 <kbd>t:</kbd> tags</span>
+      </div>
+    </div>
+  </div>`;
+}
+
+function paletteFlatResults() {
+  const groups = state.paletteResults || palettePagesGroup(state.paletteQuery || '');
+  const flat = [];
+  for (const group of groups) {
+    for (const item of group.items) flat.push(item);
+  }
+  return flat;
+}
+
+function palettePagesGroup(query) {
+  const q = (query || '').toLowerCase().trim();
+  const items = STATIC_PALETTE_PAGES.filter(page => !q || page.title.toLowerCase().includes(q) || page.subtitle.toLowerCase().includes(q));
+  if (!items.length) return [];
+  return [{ title: 'Pages', items }];
+}
+
+function renderPaletteResults() {
+  if (state.paletteLoading) return '<div class="palette-loading"><div class="spinner"></div></div>';
+  const groups = state.paletteResults;
+  if (!groups) {
+    return renderPaletteGroups(palettePagesGroup(state.paletteQuery || ''));
+  }
+  if (!groups.length) {
+    return `<div class="palette-empty">No matches for \u201C${escHtml(state.paletteQuery)}\u201D.</div>`;
+  }
+  return renderPaletteGroups(groups);
+}
+
+function renderPaletteGroups(groups) {
+  let index = 0;
+  return groups.map(group => `<div class="palette-group">
+    <div class="palette-group-title">${escHtml(group.title)}</div>
+    ${group.items.map(item => {
+      const active = index === state.paletteIndex;
+      const html = `<button class="palette-item${active ? ' is-active' : ''}" data-palette-index="${index}" type="button">
+        <span class="palette-item-kind">${escHtml(item.kind)}</span>
+        <span class="palette-item-title">${escHtml(item.title)}</span>
+        <span class="palette-item-subtitle">${escHtml(item.subtitle || '')}</span>
+      </button>`;
+      index++;
+      return html;
+    }).join('')}
+  </div>`).join('');
+}
+
+let paletteSearchToken = 0;
+
+async function runPaletteSearch(query) {
+  const trimmed = (query || '').trim();
+  state.paletteIndex = 0;
+  if (!trimmed) {
+    state.paletteResults = null;
+    state.paletteLoading = false;
+    refreshPaletteResults();
+    return;
+  }
+
+  let scope = '';
+  let q = trimmed;
+  const prefixMatch = trimmed.match(/^([pirt]):\s*(.*)$/i);
+  if (prefixMatch) {
+    scope = prefixMatch[1].toLowerCase();
+    q = prefixMatch[2];
+  }
+
+  state.paletteLoading = true;
+  refreshPaletteResults();
+
+  const token = ++paletteSearchToken;
+  const groups = [];
+
+  // Local groups
+  if (!scope || scope === 'p') {
+    const local = (state.projects || []).filter(project => {
+      const hay = [project.key, project.name, ...(project.tags || [])].filter(Boolean).join(' ').toLowerCase();
+      return !q || hay.includes(q.toLowerCase());
+    }).slice(0, 6).map(project => ({
+      kind: 'project',
+      title: project.name || project.key,
+      subtitle: project.key,
+      action: 'open-project',
+      payload: { key: project.key },
+    }));
+    if (local.length) groups.push({ title: 'Projects (local)', items: local });
+  }
+  if (!scope || scope === 't') {
+    const tags = ((state.tagCatalogData?.items) || []).filter(tag => {
+      const hay = [tag.key, tag.display_name, tag.owner_name].filter(Boolean).join(' ').toLowerCase();
+      return !q || hay.includes(q.toLowerCase());
+    }).slice(0, 6).map(tag => ({
+      kind: 'tag',
+      title: tag.display_name || tag.key,
+      subtitle: tag.owner_name || tag.description || tag.key,
+      action: 'open-tag',
+      payload: { key: tag.key },
+    }));
+    if (tags.length) groups.push({ title: 'Tags', items: tags });
+  }
+  if (!scope) {
+    const pages = palettePagesGroup(q);
+    if (pages.length) groups.push(...pages);
+  }
+
+  // Remote search for issues/projects when query has substance
+  if (q && q.length >= 2 && (!scope || scope === 'i' || scope === 'p')) {
+    try {
+      const indexes = [];
+      if (!scope || scope === 'i') indexes.push('issues');
+      if (scope === 'p') indexes.push('projects');
+      const results = await Promise.all(indexes.map(index => apiFetch('/search?index=' + index + '&q=' + encodeURIComponent(q) + '&limit=6').catch(() => null)));
+      if (token !== paletteSearchToken) return;
+      results.forEach((result, i) => {
+        const items = (result?.hits || []).slice(0, 6).map(hit => paletteHitFromSearch(indexes[i], hit));
+        if (items.length) groups.push({ title: indexes[i] === 'issues' ? 'Issues' : 'Projects (server)', items });
+      });
+    } catch {
+      /* swallow */
+    }
+  }
+
+  if (token !== paletteSearchToken) return;
+  state.paletteLoading = false;
+  state.paletteResults = groups;
+  refreshPaletteResults();
+}
+
+function paletteHitFromSearch(index, hit) {
+  const source = hit.source || hit;
+  if (index === 'issues') {
+    return {
+      kind: 'issue',
+      title: source.message || source.rule_key || ('Issue ' + (source.key || hit.id || '')),
+      subtitle: [source.project_key, source.rule_key, source.severity].filter(Boolean).join(' \u00B7 '),
+      action: 'open-issue',
+      payload: { projectKey: source.project_key || source.project, issueKey: source.key || hit.id },
+    };
+  }
+  return {
+    kind: 'project',
+    title: source.name || source.key,
+    subtitle: source.key,
+    action: 'open-project',
+    payload: { key: source.key },
+  };
+}
+
+function refreshPaletteResults() {
+  const node = document.getElementById('paletteResults');
+  if (node) node.innerHTML = renderPaletteResults();
+  bindPaletteItems();
+}
+
+function bindPaletteItems() {
+  document.querySelectorAll('[data-palette-index]').forEach(node => {
+    node.addEventListener('click', () => {
+      state.paletteIndex = Number.parseInt(node.dataset.paletteIndex, 10) || 0;
+      activatePaletteItem();
+    });
+    node.addEventListener('mousemove', () => {
+      const idx = Number.parseInt(node.dataset.paletteIndex, 10) || 0;
+      if (idx !== state.paletteIndex) {
+        state.paletteIndex = idx;
+        document.querySelectorAll('[data-palette-index].is-active').forEach(el => el.classList.remove('is-active'));
+        node.classList.add('is-active');
+      }
+    });
+  });
+}
+
+function bindCommandPalette() {
+  if (!state.paletteOpen) return;
+  const overlay = document.getElementById('paletteOverlay');
+  overlay?.addEventListener('click', event => {
+    if (event.target === overlay) closePalette();
+  });
+  const input = document.getElementById('paletteInput');
+  input?.addEventListener('input', event => {
+    state.paletteQuery = event.target.value;
+    runPaletteSearch(state.paletteQuery);
+  });
+  input?.addEventListener('keydown', event => {
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      movePaletteSelection(1);
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      movePaletteSelection(-1);
+    } else if (event.key === 'Enter') {
+      event.preventDefault();
+      activatePaletteItem();
+    }
+  });
+  bindPaletteItems();
+}
+
+function movePaletteSelection(delta) {
+  const flat = paletteFlatResults();
+  if (!flat.length) return;
+  const next = (state.paletteIndex + delta + flat.length) % flat.length;
+  state.paletteIndex = next;
+  document.querySelectorAll('[data-palette-index]').forEach(node => {
+    const idx = Number.parseInt(node.dataset.paletteIndex, 10) || 0;
+    node.classList.toggle('is-active', idx === next);
+    if (idx === next) node.scrollIntoView({ block: 'nearest' });
+  });
+}
+
+function activatePaletteItem() {
+  const flat = paletteFlatResults();
+  const item = flat[state.paletteIndex];
+  if (!item) return;
+  closePalette();
+  switch (item.action) {
+    case 'projects': loadProjects(); break;
+    case 'tags': loadTagsData(); break;
+    case 'background-tasks':
+      resetProjectState();
+      state.view = 'background-tasks';
+      render();
+      loadBackgroundTasksData({ projectKey: '' });
+      break;
+    case 'api-docs':
+      state.view = 'api-docs';
+      render();
+      break;
+    case 'open-project':
+      loadProject(item.payload.key, { project: item.payload.key, tab: 'overview', branch: '', pullRequest: '' });
+      break;
+    case 'open-tag':
+      loadTagsData();
+      break;
+    case 'open-issue':
+      if (item.payload.projectKey) {
+        loadProject(item.payload.projectKey, { project: item.payload.projectKey, tab: 'issues', branch: '', pullRequest: '' });
+      }
+      break;
+    default: break;
+  }
+}
+
+function bindDashboardFilter() {
+  const input = document.getElementById('projectFilterInput');
+  if (!input) return;
+  input.addEventListener('input', event => {
+    state.projectFilter = event.target.value;
+    const grid = document.querySelector('.projects-grid');
+    const main = document.querySelector('main');
+    if (!grid || !main) {
+      render();
+      return;
+    }
+    // Lightweight rerender of just the dashboard area to keep focus
+    const focusPos = input.selectionStart;
+    const view = renderDashboard();
+    main.innerHTML = view;
+    bindMain();
+    const refocused = document.getElementById('projectFilterInput');
+    if (refocused) {
+      refocused.focus();
+      refocused.setSelectionRange(focusPos, focusPos);
+    }
+  });
+}
+
 function bindMain() {
   document.getElementById('logoutBtn')?.addEventListener('click', logout);
+  document.getElementById('openPaletteBtn')?.addEventListener('click', openPalette);
+  bindCommandPalette();
+  bindDashboardFilter();
   document.getElementById('apiDocsBtn')?.addEventListener('click', () => {
     state.view = 'api-docs';
     render();
   });
+  document.getElementById('tagsBtn')?.addEventListener('click', () => loadTagsData());
   document.getElementById('backgroundTasksBtn')?.addEventListener('click', async () => {
     resetProjectState();
     state.view = 'background-tasks';
@@ -402,6 +756,7 @@ function bindMain() {
   });
   document.getElementById('backgroundTasksBackBtn')?.addEventListener('click', () => loadProjects());
   document.getElementById('apiDocsBackBtn')?.addEventListener('click', () => loadProjects());
+  document.getElementById('tagsBackBtn')?.addEventListener('click', () => loadProjects());
   document.getElementById('backBtn')?.addEventListener('click', () => loadProjects());
   document.querySelectorAll('.project-card').forEach(card => {
     card.addEventListener('click', () => loadProject(card.dataset.key, { project: card.dataset.key, tab: 'overview', branch: '', pullRequest: '' }));
@@ -411,6 +766,9 @@ function bindMain() {
   }
   if (state.view === 'background-tasks') {
     bindBackgroundTasksContent();
+  }
+  if (state.view === 'tags') {
+    bindTagsPage();
   }
 }
 
@@ -422,8 +780,20 @@ export function logout() {
 }
 
 function handleGlobalKeydown(event) {
-  if (event.key === 'Escape' && state.selectedIssue) {
-    closeIssueDetail();
+  const isModK = (event.key === 'k' || event.key === 'K') && (event.ctrlKey || event.metaKey);
+  if (isModK) {
+    event.preventDefault();
+    if (state.paletteOpen) closePalette(); else openPalette();
+    return;
+  }
+  if (event.key === 'Escape') {
+    if (state.paletteOpen) {
+      closePalette();
+      return;
+    }
+    if (state.selectedIssue) {
+      closeIssueDetail();
+    }
   }
 }
 
@@ -442,6 +812,10 @@ export async function init() {
   if (token) {
     state.user = loadUser();
     await loadUISettings();
+    if (!getToken()) {
+      // Session expired: unauthorized handler cleared storage; stop the cascade.
+      return;
+    }
     const route = parseProjectRoute();
     if (route.project) {
       await loadProject(route.project, route);
