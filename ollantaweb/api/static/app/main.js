@@ -5,6 +5,7 @@ import { configureActivityFeature } from './features/activity.js';
 import { configureCodeFeature } from './features/code.js';
 import { configureIssuesFeature } from './features/issues.js';
 import { configureProjectInformationFeature } from './features/project-information.js';
+import { configureTagsFeature } from './features/tags.js';
 import { configureProjectFlowFeature } from './project-flow.js';
 import { render, showToast } from './shell.js';
 
@@ -14,12 +15,14 @@ configureCodeFeature({ render });
 configureProjectInformationFeature({ render });
 configureAdminFeature({ render, showToast });
 configureIssuesFeature({ showToast });
+configureTagsFeature({ render, showToast });
 
 export { createInitialState, replaceState, state } from './core/state.js';
 export { buildProjectRoute, buildScopeQuery, normalizeScope, parseProjectRoute } from './core/scope.js';
 export { loadCodeTreeData, renderCoverageTab } from './features/code.js';
 export { loadBackgroundTasksData, loadCustomRulesData, renderAdminLinksTab, renderBackgroundTasksPage } from './features/admin.js';
 export { loadIssues, renderIssuesSection } from './features/issues.js';
+export { bindTagsPage, loadTagDetail, loadTagsData, renderTagsPage } from './features/tags.js';
 export { renderOverviewTab } from './features/overview.js';
 export { renderProjectInformationTab } from './features/project-information.js';
 export { changeScope, loadProject, renderScopeToolbar, switchTab } from './project-flow.js';

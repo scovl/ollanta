@@ -13,7 +13,7 @@ import {
 import { resetProjectState, state } from './core/state.js';
 import { badgeClassForGateStatus, escAttr, escHtml, fmtDate, fmtK, fmtNum } from './core/utils.js';
 import { bindAdminTabContent, loadAIProvidersData, loadCustomRulesData, loadGateData, loadProfilesData, loadWebhooksData, renderAIProvidersTab, renderCustomRulesTab, renderGateTab, renderProfilesTab, renderWebhooksTab } from './features/admin.js';
-import { loadActivityData, renderActivityTab } from './features/activity.js';
+import { bindActivityTabContent, loadActivityData, renderActivityTab } from './features/activity.js';
 import { loadCodeFileData, loadCodeTreeData, renderCoverageTab } from './features/code.js';
 import { loadIssues, openIssueDetail, renderIssuesSection } from './features/issues.js';
 import { renderOverviewTab } from './features/overview.js';
@@ -31,6 +31,12 @@ function normalizeProjectTab(tab) {
   return tab === 'code' ? 'coverage' : tab;
 }
 
+function scopesTabHasContent() {
+  const branches = (state.branchesData || []).filter(item => item?.name);
+  const prs = state.pullRequestsData || [];
+  return branches.length > 1 || prs.length > 0;
+}
+
 function renderProjectTabs(activeTab, issueCount) {
   const tabs = ['overview', 'issues', 'coverage', 'activity', 'scopes', 'gate', 'profiles', 'custom-rules', 'ai-providers', 'webhooks'];
   const labels = {
@@ -45,7 +51,9 @@ function renderProjectTabs(activeTab, issueCount) {
     'custom-rules': 'Rule Studio',
     'ai-providers': 'AI Providers',
   };
+  const showScopes = scopesTabHasContent();
   return `<div class="proj-tabs">${tabs.map(tab => {
+    if (tab === 'scopes' && !showScopes) return '';
     const badge = tab === 'issues' && issueCount !== '' ? `<span class="tab-badge">${fmtK(issueCount)}</span>` : '';
     const active = tab === activeTab ? ' active' : '';
     return `<button class="tab-btn${active}" data-tab="${tab}">${labels[tab]}${badge}</button>`;
@@ -366,15 +374,22 @@ function renderScopesTab() {
   if (state.branchesData === null || state.pullRequestsData === null) {
     return `<div class="loading-state"><div class="spinner"></div></div>`;
   }
+  if (!scopesTabHasContent()) {
+    state.projectTab = 'overview';
+    return renderOverviewTab();
+  }
+
+  const branches = (state.branchesData || []).filter(item => item?.name);
+  const prs = state.pullRequestsData || [];
 
   return `<div class="scope-catalog">
-    <section class="scope-catalog-section">
-      <p class="section-title">Branches</p>
-      ${renderBranchScopeGrid(state.branchesData || [])}
+    <section class="scope-catalog-section panel-surface">
+      <p class="section-title">Branches <span class="section-count">${branches.length}</span></p>
+      ${renderBranchScopeGrid(branches)}
     </section>
-    <section class="scope-catalog-section">
-      <p class="section-title">Pull Requests</p>
-      ${renderPullRequestScopeGrid(state.pullRequestsData || [])}
+    <section class="scope-catalog-section panel-surface">
+      <p class="section-title">Pull Requests <span class="section-count">${prs.length}</span></p>
+      ${renderPullRequestScopeGrid(prs)}
     </section>
   </div>`;
 }
@@ -452,6 +467,7 @@ function bindTabContent() {
   });
 
   bindAdminTabContent();
+  bindActivityTabContent();
 }
 
 function resetIssueFilters() {
@@ -467,6 +483,7 @@ function resetIssueFilters() {
   state.issueFilter.directory = 'all';
   state.issueFilter.file = 'all';
   state.issueFilter.search = '';
+  state.issueFilter.scanId = '';
   state.issues = [];
   state.issuesTotal = 0;
   state.issueOffset = 0;

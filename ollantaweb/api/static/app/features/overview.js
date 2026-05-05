@@ -52,17 +52,21 @@ function metricSignal(label, value, colorCls, statusCls, typeFilter, action) {
   </button>`;
 }
 
-function metricSignalPct(label, value, statusCls, action) {
-  const displayValue = value == null ? '\u2014' : fmtPct(value);
+function metricSignalPct(label, value, statusCls, action, emptyHint) {
+  const isEmpty = value == null;
+  const displayValue = isEmpty ? '\u2014' : fmtPct(value);
+  const hint = isEmpty && emptyHint ? `<span class="metric-signal-hint">${escHtml(emptyHint)}</span>` : '';
   if (!action) {
     return `<div class="metric-signal ${statusCls}">
       <span class="metric-signal-label">${label}</span>
       <span class="metric-signal-value">${displayValue}</span>
+      ${hint}
     </div>`;
   }
   return `<button class="metric-signal ${statusCls} clickable" data-overview-action="${escAttr(action)}">
     <span class="metric-signal-label">${label}</span>
     <span class="metric-signal-value">${displayValue}</span>
+    ${hint}
   </button>`;
 }
 
@@ -200,33 +204,31 @@ function renderOverviewScanInfo(scan) {
   const commit = scan.commit_sha ? escHtml(scan.commit_sha.slice(0, 8)) : '\u2014';
   const analysisDate = scan.analysis_date ? new Date(scan.analysis_date).toLocaleString() : '\u2014';
   const elapsed = scan.elapsed_ms ? (scan.elapsed_ms / 1000).toFixed(1) + 's' : '\u2014';
+  const status = scan.status || '\u2014';
+  const statusCls = status === 'completed' ? 'success' : status === 'failed' ? 'danger' : 'muted';
 
   return `
     <p class="section-title">Latest Scan</p>
-    <div class="scan-info">
-      <div>
-        <div class="info-label">Version</div>
-        <div class="info-value">${escHtml(scan.version || '\u2014')}</div>
+    <div class="latest-scan">
+      <div class="latest-scan-row">
+        <span class="latest-scan-status ${statusCls}">\u25CF ${escHtml(status)}</span>
+        <span class="latest-scan-version">${escHtml(scan.version || '\u2014')}</span>
       </div>
-      <div>
-        <div class="info-label">Branch</div>
-        <div class="info-value">${escHtml(scan.branch || '\u2014')}</div>
+      <div class="latest-scan-row">
+        <span class="latest-scan-label">Branch</span>
+        <span>${escHtml(scan.branch || '\u2014')}</span>
       </div>
-      <div>
-        <div class="info-label">Commit</div>
-        <div class="info-value mono" style="font-size:12px">${commit}</div>
+      <div class="latest-scan-row">
+        <span class="latest-scan-label">Commit</span>
+        <span class="mono" title="${escAttr(scan.commit_sha || '')}">${commit}</span>
       </div>
-      <div>
-        <div class="info-label">Status</div>
-        <div class="info-value">${escHtml(scan.status || '\u2014')}</div>
+      <div class="latest-scan-row">
+        <span class="latest-scan-label">Analyzed</span>
+        <span>${escHtml(analysisDate)}</span>
       </div>
-      <div>
-        <div class="info-label">Analysis date</div>
-        <div class="info-value">${analysisDate}</div>
-      </div>
-      <div>
-        <div class="info-label">Elapsed</div>
-        <div class="info-value">${elapsed}</div>
+      <div class="latest-scan-row">
+        <span class="latest-scan-label">Elapsed</span>
+        <span>${escHtml(elapsed)}</span>
       </div>
     </div>`;
 }
@@ -362,7 +364,7 @@ function renderSummaryReason(reason) {
   const actual = formatSummaryMetricValue(reason.metric, reason.actual);
   const operator = comparisonSymbol(reason.operator || 'NE');
   const threshold = formatSummaryMetricValue(reason.metric, reason.threshold);
-  return `<li>${escHtml(label)}: ${escHtml(actual)} ${escHtml(operator)} ${escHtml(threshold)}</li>`;
+  return `<li><span class="gate-reason-label">${escHtml(label)}</span><span class="gate-reason-actual">${escHtml(actual)}</span><span class="gate-reason-op">${escHtml(operator)}</span><span class="gate-reason-threshold">${escHtml(threshold)}</span></li>`;
 }
 
 function renderSummaryHero(review) {
@@ -405,10 +407,10 @@ function renderSummaryNewCode(newCode) {
       ${metricSignal('New Bugs', metrics.new_bugs || 0, (metrics.new_bugs || 0) > 0 ? 'danger' : 'success', (metrics.new_bugs || 0) > 0 ? 'card-red' : 'card-green', 'bug')}
       ${metricSignal('New Vulnerabilities', metrics.new_vulnerabilities || 0, (metrics.new_vulnerabilities || 0) > 0 ? 'warning' : 'success', (metrics.new_vulnerabilities || 0) > 0 ? 'card-yellow' : 'card-green', 'vulnerability')}
       ${metricSignal('New Code Smells', metrics.new_code_smells || 0, 'muted', (metrics.new_code_smells || 0) > 0 ? 'card-yellow' : 'card-green', 'code_smell')}
-      ${metricSignalPct('New Coverage', metrics.new_coverage, coverageCardClass(metrics.new_coverage), 'coverage')}
-      ${metricSignalPct('Changed Mutation', metrics.changed_mutation_score, mutationCardClass(metrics.changed_mutation_score))}
+      ${metricSignalPct('New Coverage', metrics.new_coverage, coverageCardClass(metrics.new_coverage), 'coverage', 'No new lines')}
+      ${metricSignalPct('Changed Mutation', metrics.changed_mutation_score, mutationCardClass(metrics.changed_mutation_score), null, 'No mutation report')}
       ${metricSignal('Survived Mutants', metrics.changed_mutants_survived || 0, (metrics.changed_mutants_survived || 0) > 0 ? 'warning' : 'success', (metrics.changed_mutants_survived || 0) > 0 ? 'card-yellow' : 'card-green')}
-      ${metricSignalPct('New Duplication', metrics.new_duplications, duplicationCardClass(metrics.new_duplications))}
+      ${metricSignalPct('New Duplication', metrics.new_duplications, duplicationCardClass(metrics.new_duplications), null, 'No new lines')}
       ${metricSignal('Closed Issues', metrics.closed_issues || 0, 'success', (metrics.closed_issues || 0) > 0 ? 'card-green' : 'card-neutral', null, 'closed-issues')}
     </div>
   </section>`;
@@ -428,16 +430,19 @@ function renderSummaryMustFixNow(items) {
     <p class="section-title">Must Fix Now</p>
     <div class="hotspot-list">
       ${items.map((item, index) => {
-        const short = (item.component_path || '').replaceAll('\\', '/').split('/').slice(-3).join('/');
+        const short = (item.component_path || '').replaceAll('\\', '/').split('/').slice(-2).join('/');
+        const fullPath = item.component_path || '';
         const location = item.line ? `:${fmtNum(item.line)}` : '';
-        return `<button class="hotspot-row" data-overview-issue-index="${index}">
-          <div class="summary-row-main">
-            <div class="summary-row-title">${escHtml(short)}${location ? `<span style="color:var(--text-muted)">${escHtml(location)}</span>` : ''}</div>
-            <div class="summary-row-subtitle">${escHtml(item.message || item.rule_key || '')}</div>
-          </div>
-          <div class="summary-row-meta">
+        const message = item.message || item.rule_key || '';
+        const why = item.why_selected ? `<span class="summary-row-why">${escHtml(item.why_selected)}</span>` : '';
+        return `<button class="hotspot-row mustfix-row" data-overview-issue-index="${index}" title="${escAttr(fullPath + location)}">
+          <div class="mustfix-head">
             ${severityBadge(item.severity)}
-            ${item.why_selected ? `<span class="summary-row-note">${escHtml(item.why_selected)}</span>` : ''}
+            <span class="mustfix-path mono">${escHtml(short)}<span class="mustfix-line">${escHtml(location)}</span></span>
+          </div>
+          <div class="mustfix-body">
+            <span class="mustfix-message">${escHtml(message)}</span>
+            ${why}
           </div>
         </button>`;
       }).join('')}
@@ -482,8 +487,33 @@ function renderSummaryOverall(overall) {
 
   return `<section class="overview-panel summary-section">
     <p class="section-title">Overall Snapshot</p>
-    ${renderOverviewMetrics(metrics)}
+    <div class="metric-signals rail-stack">
+      ${renderOverviewMetricsInner(metrics)}
+    </div>
   </section>`;
+}
+
+function renderOverviewMetricsInner(measures) {
+  const bugs = measures.bugs || 0;
+  const vulns = measures.vulnerabilities || 0;
+  const smells = measures.code_smells || 0;
+  const coverage = measures.coverage;
+  const dupDensity = measures.duplicated_lines_density;
+  const ncloc = measures.ncloc || 0;
+  const bugCardClass = bugs > 0 ? 'card-red' : 'card-green';
+  const bugColorClass = bugs > 0 ? 'danger' : 'success';
+  const vulnCardClass = vulns > 0 ? 'card-yellow' : 'card-green';
+  const vulnColorClass = vulns > 0 ? 'warning' : 'success';
+  const smellCardClass = smells > 20 ? 'card-yellow' : 'card-green';
+
+  return [
+    metricSignal('Bugs', bugs, bugColorClass, bugCardClass, 'bug'),
+    metricSignal('Vulnerabilities', vulns, vulnColorClass, vulnCardClass, 'vulnerability'),
+    metricSignal('Code Smells', smells, 'muted', smellCardClass, 'code_smell'),
+    metricSignalPct('Coverage', coverage, coverageCardClass(coverage), 'coverage'),
+    metricSignalPct('Duplication', dupDensity, duplicationCardClass(dupDensity)),
+    metricSignalK('Lines of Code', ncloc, 'card-neutral'),
+  ].join('');
 }
 
 function renderReviewSummaryTab(overview) {
@@ -496,7 +526,7 @@ function renderReviewSummaryTab(overview) {
     <div class="overview-primary">
       ${renderSummaryHero(summary.review)}
       ${renderSummaryNewCode(summary.new_code)}
-      ${renderMutationSignals(summary.overall_code?.metrics || {})}
+      ${hasMutationMetrics(summary.overall_code?.metrics || {}) ? renderMutationSignals(summary.overall_code?.metrics || {}) : ''}
       <div class="overview-workbench">
         ${renderSummaryMustFixNow(summary.must_fix_now || [])}
         ${renderSummaryImpactedFiles(summary.impacted_files || [])}
