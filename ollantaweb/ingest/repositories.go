@@ -19,6 +19,7 @@ var _ port.IScanJobRepo = (*scanJobRepoAdapter)(nil)
 var _ port.IIssueRepo = (*issueRepoAdapter)(nil)
 var _ port.IMeasureRepo = (*measureRepoAdapter)(nil)
 var _ port.ICodeSnapshotRepo = (*codeSnapshotRepoAdapter)(nil)
+var _ port.IGateRepo = (*gateRepoAdapter)(nil)
 
 type projectRepoAdapter struct {
 	inner *postgres.ProjectRepository
@@ -686,5 +687,145 @@ func toStoreMeasureRow(measure model.MeasureRow) postgres.MeasureRow {
 		ComponentPath: measure.ComponentPath,
 		Value:         measure.Value,
 		CreatedAt:     measure.CreatedAt,
+	}
+}
+
+// ── Gate repository adapter ──────────────────────────────────────────────────
+
+type gateRepoAdapter struct {
+	inner *postgres.GateRepository
+}
+
+func (a *gateRepoAdapter) List(ctx context.Context) ([]*model.QualityGate, error) {
+	gates, err := a.inner.List(ctx)
+	if err != nil {
+		return nil, mapStoreErr(err)
+	}
+	out := make([]*model.QualityGate, len(gates))
+	for i, g := range gates {
+		out[i] = toDomainGate(g)
+	}
+	return out, nil
+}
+
+func (a *gateRepoAdapter) GetByID(ctx context.Context, id int64) (*model.QualityGate, error) {
+	g, err := a.inner.GetByID(ctx, id)
+	if err != nil {
+		return nil, mapStoreErr(err)
+	}
+	return toDomainGate(g), nil
+}
+
+func (a *gateRepoAdapter) Create(ctx context.Context, g *model.QualityGate) error {
+	store := &postgres.QualityGate{
+		Name:                g.Name,
+		IsDefault:           g.IsDefault,
+		SmallChangesetLines: g.SmallChangesetLines,
+	}
+	if err := a.inner.Create(ctx, store); err != nil {
+		return mapStoreErr(err)
+	}
+	g.ID = store.ID
+	g.CreatedAt = store.CreatedAt
+	g.UpdatedAt = store.UpdatedAt
+	return nil
+}
+
+func (a *gateRepoAdapter) Update(ctx context.Context, g *model.QualityGate) error {
+	return mapStoreErr(a.inner.Update(ctx, &postgres.QualityGate{
+		ID:                  g.ID,
+		Name:                g.Name,
+		IsDefault:           g.IsDefault,
+		SmallChangesetLines: g.SmallChangesetLines,
+	}))
+}
+
+func (a *gateRepoAdapter) Delete(ctx context.Context, id int64) error {
+	return mapStoreErr(a.inner.Delete(ctx, id))
+}
+
+func (a *gateRepoAdapter) Conditions(ctx context.Context, gateID int64) ([]model.GateCondition, error) {
+	conds, err := a.inner.Conditions(ctx, gateID)
+	if err != nil {
+		return nil, mapStoreErr(err)
+	}
+	out := make([]model.GateCondition, len(conds))
+	for i, c := range conds {
+		out[i] = model.GateCondition{
+			ID:               c.ID,
+			GateID:           c.GateID,
+			Metric:           c.Metric,
+			Operator:         c.Operator,
+			Threshold:        c.Threshold,
+			WarningThreshold: c.WarningThreshold,
+			OnNewCode:        c.OnNewCode,
+		}
+	}
+	return out, nil
+}
+
+func (a *gateRepoAdapter) AddCondition(ctx context.Context, c *model.GateCondition) error {
+	return mapStoreErr(a.inner.AddCondition(ctx, &postgres.GateCondition{
+		GateID:           c.GateID,
+		Metric:           c.Metric,
+		Operator:         c.Operator,
+		Threshold:        c.Threshold,
+		WarningThreshold: c.WarningThreshold,
+		OnNewCode:        c.OnNewCode,
+	}))
+}
+
+func (a *gateRepoAdapter) UpdateCondition(ctx context.Context, c *model.GateCondition) error {
+	return mapStoreErr(a.inner.UpdateCondition(ctx, &postgres.GateCondition{
+		ID:               c.ID,
+		GateID:           c.GateID,
+		Metric:           c.Metric,
+		Operator:         c.Operator,
+		Threshold:        c.Threshold,
+		WarningThreshold: c.WarningThreshold,
+		OnNewCode:        c.OnNewCode,
+	}))
+}
+
+func (a *gateRepoAdapter) RemoveCondition(ctx context.Context, conditionID int64) error {
+	return mapStoreErr(a.inner.RemoveCondition(ctx, conditionID))
+}
+
+func (a *gateRepoAdapter) Copy(ctx context.Context, sourceID int64, newName string) (*model.QualityGate, error) {
+	g, err := a.inner.Copy(ctx, sourceID, newName)
+	if err != nil {
+		return nil, mapStoreErr(err)
+	}
+	return toDomainGate(g), nil
+}
+
+func (a *gateRepoAdapter) SetDefault(ctx context.Context, id int64) error {
+	return mapStoreErr(a.inner.SetDefault(ctx, id))
+}
+
+func (a *gateRepoAdapter) AssignToProject(ctx context.Context, projectID, gateID int64) error {
+	return mapStoreErr(a.inner.AssignToProject(ctx, projectID, gateID))
+}
+
+func (a *gateRepoAdapter) ForProject(ctx context.Context, projectID int64) (*model.QualityGate, error) {
+	gate, _, err := a.inner.ForProject(ctx, projectID)
+	if err != nil {
+		return nil, mapStoreErr(err)
+	}
+	return toDomainGate(gate), nil
+}
+
+func toDomainGate(g *postgres.QualityGate) *model.QualityGate {
+	if g == nil {
+		return nil
+	}
+	return &model.QualityGate{
+		ID:                  g.ID,
+		Name:                g.Name,
+		IsDefault:           g.IsDefault,
+		IsBuiltin:           g.IsBuiltin,
+		SmallChangesetLines: g.SmallChangesetLines,
+		CreatedAt:           g.CreatedAt,
+		UpdatedAt:           g.UpdatedAt,
 	}
 }

@@ -41,11 +41,11 @@ docker compose --profile scanner up local-ui
 
 Para outro projeto, defina `PROJECT_DIR` e `PROJECT_KEY` antes de rodar o comando.
 
-Exemplo em PowerShell:
+Exemplo em shell:
 
-```powershell
-$env:PROJECT_DIR = 'D:\projects\myapp'
-$env:PROJECT_KEY = 'myapp'
+```sh
+export PROJECT_DIR='D:\projects\myapp'
+export PROJECT_KEY='myapp'
 docker compose --profile scanner up local-ui
 ```
 
@@ -86,10 +86,10 @@ docker compose --profile push run --build --rm push
 
 Defina estes valores ao escanear outro projeto ou quando quiser que o container de push aguarde o processamento no servidor:
 
-```powershell
-$env:PROJECT_DIR = 'D:\projects\myapp'
-$env:PROJECT_KEY = 'myapp'
-$env:OLLANTA_SERVER_WAIT = 'true'
+```sh
+export PROJECT_DIR='D:\projects\myapp'
+export PROJECT_KEY='myapp'
+export OLLANTA_SERVER_WAIT='true'
 docker compose --profile push run --build --rm push
 ```
 

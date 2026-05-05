@@ -52,6 +52,7 @@ type IngestRepositories struct {
 	Snapshots *postgres.CodeSnapshotRepository
 	Profiles  *postgres.ProfileSnapshotRepository
 	Tags      *postgres.TagRepository
+	Gates     *postgres.GateRepository
 }
 
 // NewScanJobProcessor creates a background job processor for the compute role.
@@ -81,6 +82,7 @@ func NewScanJobProcessor(
 		searchEnqueuer,
 		webhookDispatcher,
 	)
+	wireGateEvaluator(ingestUseCase, repos.Gates)
 	ingestUseCase.SetProfileSnapshotRepo(repos.Profiles)
 	ingestUseCase.SetTagCatalogRepo(repos.Tags)
 

@@ -15,6 +15,7 @@ type Scan struct {
 	Status               string    `json:"status"`
 	ElapsedMs            int64     `json:"elapsed_ms"`
 	GateStatus           string    `json:"gate_status"`
+	GateResult           *GateResult `json:"gate_result,omitempty"`
 	AnalysisDate         time.Time `json:"analysis_date"`
 	CreatedAt            time.Time `json:"created_at"`
 	TotalFiles           int       `json:"total_files"`

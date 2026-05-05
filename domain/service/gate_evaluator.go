@@ -33,7 +33,9 @@ type GateStatusValue string
 const (
 	// GateOK means all conditions passed.
 	GateOK GateStatusValue = "OK"
-	// GateError means at least one condition was violated.
+	// GateWarn means at least one condition hit the warning threshold but no condition hit the error threshold.
+	GateWarn GateStatusValue = "WARN"
+	// GateError means at least one condition was violated at the error level.
 	GateError GateStatusValue = "ERROR"
 )
 
@@ -43,7 +45,9 @@ type ConditionStatus string
 const (
 	// ConditionOK means this condition was not violated.
 	ConditionOK ConditionStatus = "OK"
-	// ConditionError means this condition was violated.
+	// ConditionWarn means this condition hit the warning threshold but not the error threshold.
+	ConditionWarn ConditionStatus = "WARN"
+	// ConditionError means this condition was violated at the error level.
 	ConditionError ConditionStatus = "ERROR"
 )
 
@@ -61,8 +65,25 @@ type GateStatus struct {
 	Conditions []ConditionResult `json:"conditions"`
 }
 
-// Passed reports whether the gate verdict is OK (no conditions violated).
-func (g *GateStatus) Passed() bool { return g.Status == GateOK }
+// Passed reports whether the gate verdict is OK or WARN (not blocking).
+func (g *GateStatus) Passed() bool { return g.Status == GateOK || g.Status == GateWarn }
+
+// IsWarning reports whether the gate verdict is WARN.
+func (g *GateStatus) IsWarning() bool { return g.Status == GateWarn }
+
+// Failed reports whether the gate verdict is ERROR (blocking).
+func (g *GateStatus) Failed() bool { return g.Status == GateError }
+
+// FailedConditions returns conditions with ERROR or WARN status.
+func (g *GateStatus) FailedConditions() []ConditionResult {
+	var out []ConditionResult
+	for _, c := range g.Conditions {
+		if c.Status == ConditionError || c.Status == ConditionWarn {
+			out = append(out, c)
+		}
+	}
+	return out
+}
 
 // Evaluate assesses all conditions against the provided measures map and returns
 // the aggregated GateStatus. A missing metric does not cause a failure (HasValue=false).
@@ -130,14 +151,15 @@ func violated(actual float64, op Operator, threshold float64) bool {
 }
 
 // PersistentCondition is a gate condition loaded from the database.
-// It extends the in-memory Condition with on_new_code awareness.
+// It extends the in-memory Condition with on_new_code and warning threshold.
 type PersistentCondition struct {
-	ID        int64    `json:"id"`
-	GateID    int64    `json:"gate_id"`
-	MetricKey string   `json:"metric_key"`
-	Op        Operator `json:"operator"`
-	Threshold float64  `json:"threshold"`
-	OnNewCode bool     `json:"on_new_code"`
+	ID               int64    `json:"id"`
+	GateID           int64    `json:"gate_id"`
+	MetricKey        string   `json:"metric_key"`
+	Op               Operator `json:"operator"`
+	Threshold        float64  `json:"threshold"`
+	WarningThreshold *float64 `json:"warning_threshold,omitempty"`
+	OnNewCode        bool     `json:"on_new_code"`
 }
 
 // EvalRequest carries all data needed for a persistent gate evaluation.
@@ -161,9 +183,11 @@ var smallChangesetExcludes = map[string]bool{
 // EvaluatePersistent assesses a set of database-sourced conditions.
 // Conditions with on_new_code=true use NewMeasures; others use TotalMeasures.
 // Small changeset skips new_coverage and new_duplications automatically.
+// Warning thresholds are evaluated: if warning is violated but error is not, condition is WARN.
 func EvaluatePersistent(conditions []PersistentCondition, req EvalRequest) *GateStatus {
 	results := make([]ConditionResult, 0, len(conditions))
 	anyError := false
+	anyWarn := false
 	isSmall := req.SmallChangesetLines > 0 && req.ChangedLines > 0 &&
 		req.ChangedLines < req.SmallChangesetLines
 
@@ -195,9 +219,14 @@ func EvaluatePersistent(conditions []PersistentCondition, req EvalRequest) *Gate
 			ActualValue: actual,
 			HasValue:    ok,
 		}
-		if ok && violated(actual, pc.Op, pc.Threshold) {
+		if !ok {
+			cr.Status = ConditionOK
+		} else if violated(actual, pc.Op, pc.Threshold) {
 			cr.Status = ConditionError
 			anyError = true
+		} else if pc.WarningThreshold != nil && violated(actual, pc.Op, *pc.WarningThreshold) {
+			cr.Status = ConditionWarn
+			anyWarn = true
 		} else {
 			cr.Status = ConditionOK
 		}
@@ -207,6 +236,8 @@ func EvaluatePersistent(conditions []PersistentCondition, req EvalRequest) *Gate
 	status := GateOK
 	if anyError {
 		status = GateError
+	} else if anyWarn {
+		status = GateWarn
 	}
 	return &GateStatus{Status: status, Conditions: results}
 }

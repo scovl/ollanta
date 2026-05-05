@@ -1,0 +1,51 @@
+# .opencodeignore - diretórios e arquivos que o modelo deve ignorar
+# para economizar tokens e evitar ruído em análises
+
+# Dependências (não contêm código-fonte do projeto)
+node_modules/
+ollantascanner/server/static/node_modules/
+
+# Git
+.git/
+
+# Artefatos de build
+dist/
+ollantascanner/server/static/dist/
+*.exe
+*.out
+*.test
+*.prof
+
+# Relatórios gerados pelo scanner
+.ollanta/
+
+# Go workspace sum (gerado automaticamente)
+go.work.sum
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Rascunhos e notas pessoais
+draft/
+presentation/
+
+# Imagens dos docs
+docs/imgs/
+
+# Deploy
+deploy/
+
+# Arquivos de revisão e review (para não ciclar)
+review.md
+mut-unit-review.md
+profile-review.md
+over.md
+over02.md
+
+# Prompts e skills do GitHub Copilot
+.github/prompts/
+.github/skills/
+CLAUDE.md
