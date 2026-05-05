@@ -284,13 +284,17 @@ Quality Profiles and Quality Gates are separate APIs. Profiles decide which rule
 
 | Method | Endpoint                                           | Description |
 |--------|----------------------------------------------------|-------------|
-| GET    | `/api/v1/gates`                                    | List quality gates |
-| POST   | `/api/v1/gates`                                    | Create quality gate |
-| GET    | `/api/v1/gates/{id}`                               | Get gate details |
-| PUT    | `/api/v1/gates/{id}`                               | Update gate |
-| DELETE | `/api/v1/gates/{id}`                               | Delete gate |
-| POST   | `/api/v1/gates/{id}/conditions`                    | Add condition to gate |
-| DELETE | `/api/v1/gates/{id}/conditions/{condID}`           | Remove condition |
+| GET    | `/api/v1/quality-gates`                            | List quality gates |
+| POST   | `/api/v1/quality-gates`                            | Create quality gate |
+| GET    | `/api/v1/quality-gates/{id}`                       | Get gate details with conditions |
+| PUT    | `/api/v1/quality-gates/{id}`                       | Update gate |
+| DELETE | `/api/v1/quality-gates/{id}`                       | Delete gate |
+| POST   | `/api/v1/quality-gates/{id}/conditions`            | Add condition to gate |
+| PUT    | `/api/v1/quality-gates/{id}/conditions/{cid}`      | Update condition |
+| DELETE | `/api/v1/quality-gates/{id}/conditions/{cid}`      | Remove condition |
+| POST   | `/api/v1/quality-gates/{id}/copy`                  | Copy gate with all conditions |
+| POST   | `/api/v1/quality-gates/{id}/set-default`           | Set gate as global default |
+| POST   | `/api/v1/projects/{key}/quality-gate`              | Assign gate to project |
 | GET    | `/api/v1/profiles`                                 | List quality profiles |
 | POST   | `/api/v1/profiles`                                 | Create quality profile |
 | GET    | `/api/v1/profiles/{id}`                            | Get profile |
