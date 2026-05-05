@@ -3185,14 +3185,12 @@ main { max-width: 1200px; margin: 0 auto; padding: 28px 24px 60px; }
   background: rgba(15,23,42,.52);
   border: 1px solid rgba(148,163,184,.16);
   border-radius: var(--radius);
-  padding: 12px 14px;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 156px minmax(250px, auto);
-  gap: 12px;
-  align-items: center;
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 .custom-rule-row.expanded {
-  grid-template-columns: 1fr;
   background: rgba(15,23,42,.78);
   border-color: rgba(45,212,191,.35);
 }
@@ -3204,6 +3202,13 @@ main { max-width: 1200px; margin: 0 auto; padding: 28px 24px 60px; }
   border-color: rgba(45,212,191,.35);
   background: rgba(15,23,42,.78);
 }
+.custom-rule-row-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
 .custom-rule-row-toggle {
   background: none;
   border: 0;
@@ -3212,19 +3217,62 @@ main { max-width: 1200px; margin: 0 auto; padding: 28px 24px 60px; }
   color: inherit;
   font: inherit;
   text-align: left;
-  display: contents;
-  cursor: pointer;
-}
-.custom-rule-row.expanded .custom-rule-row-toggle {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 180px;
-  gap: 12px;
+  display: flex;
   align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  min-width: 0;
+  flex: 1;
 }
 .custom-rule-row-chevron {
   color: var(--text-muted);
-  font-size: 14px;
-  margin-left: 4px;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+.custom-rule-name {
+  font-weight: 600;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.custom-rule-badges {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.custom-rule-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.rule-builder-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-top: 4px;
+}
+.rule-builder-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(148,163,184,.14);
+}
+.rule-section-label {
+  color: #9fb0ca;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  padding-top: 4px;
+}
+.rule-builder-details[open] .rule-builder-summary {
+  border-bottom: 1px solid rgba(148,163,184,.14);
 }
 .custom-rule-detail {
   border-top: 1px solid rgba(148,163,184,.16);
@@ -3301,15 +3349,56 @@ main { max-width: 1200px; margin: 0 auto; padding: 28px 24px 60px; }
   margin-top: 0;
 }
 .rule-builder-card {
-  display: grid;
-  gap: 14px;
+  background: rgba(17,24,39,.72);
+  border: 1px solid rgba(148,163,184,.18);
+  border-radius: var(--radius);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.025);
   padding: 16px;
 }
 .rule-builder-head {
   border-bottom: 1px solid rgba(148,163,184,.14);
-  display: grid;
-  gap: 3px;
   padding-bottom: 12px;
+  margin-bottom: 14px;
+}
+.rule-builder-head h4 {
+  font-size: 15px;
+  font-weight: 700;
+  margin: 0;
+}
+.rule-builder-head span {
+  color: #9fb0ca;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+}
+
+.rule-builder-details {
+  background: rgba(17,24,39,.72);
+  border: 1px solid rgba(148,163,184,.18);
+  border-radius: var(--radius);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.025);
+  margin-bottom: 20px;
+}
+.rule-builder-summary {
+  display: flex;
+  align-items: center;
+  padding: 14px 16px;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+.rule-builder-summary::-webkit-details-marker { display: none; }
+.rule-builder-summary h4 {
+  font-size: 15px;
+  font-weight: 700;
+  margin: 0;
+}
+.rule-builder-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 0 16px 16px;
 }
 .rule-builder-head span,
 .rule-builder-section > p,
@@ -3504,7 +3593,7 @@ main { max-width: 1200px; margin: 0 auto; padding: 28px 24px 60px; }
   .rule-studio-layout { grid-template-columns: 1fr; }
   .rule-studio-builder { position: static; }
   .custom-rule-list-head { display: none; }
-  .custom-rule-row { grid-template-columns: 1fr; }
+  .custom-rule-row-header { flex-direction: column; align-items: flex-start; }
   .custom-rule-actions { justify-content: flex-start; max-width: none; }
 }
 @media (max-width: 720px) {
