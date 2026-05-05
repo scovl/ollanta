@@ -101,6 +101,7 @@ type IngestUseCase struct {
 	measures  port.IMeasureRepo
 	snapshots port.ICodeSnapshotRepo
 	profiles  port.IProfileSnapshotRepo
+	tags      port.ITagCatalogRepo
 	indexer   ISearchEnqueuer    // optional — nil disables search indexing
 	webhooks  IWebhookDispatcher // optional — nil disables webhook dispatch
 }
@@ -130,6 +131,11 @@ func NewIngestUseCase(
 // SetProfileSnapshotRepo enables persistence for scan-time quality profile snapshots.
 func (uc *IngestUseCase) SetProfileSnapshotRepo(repo port.IProfileSnapshotRepo) {
 	uc.profiles = repo
+}
+
+// SetTagCatalogRepo enables server-side tag discovery during scan ingestion.
+func (uc *IngestUseCase) SetTagCatalogRepo(repo port.ITagCatalogRepo) {
+	uc.tags = repo
 }
 
 func resolveRequestScope(meta IngestMetadata) (model.AnalysisScope, error) {
@@ -274,6 +280,9 @@ func (uc *IngestUseCase) Ingest(ctx context.Context, req *IngestRequest) (*Inges
 	}); err != nil {
 		return nil, fmt.Errorf("bulk insert issues: %w", err)
 	}
+	if err := uc.discoverIssueTags(ctx, req.Issues); err != nil {
+		return nil, fmt.Errorf("discover tags: %w", err)
+	}
 
 	// ── 7. Bulk insert measures ──────────────────────────────────────────────
 	measureRows := buildMeasureRows(req.Measures, req.TestSignals, scan.ID, project.ID)
@@ -318,6 +327,23 @@ func (uc *IngestUseCase) fetchPreviousScan(ctx context.Context, project *model.P
 		return err
 	})
 	return prevScan
+}
+
+func (uc *IngestUseCase) discoverIssueTags(ctx context.Context, issues []*model.Issue) error {
+	if uc.tags == nil || len(issues) == 0 {
+		return nil
+	}
+	var tags []string
+	for _, issue := range issues {
+		if issue == nil {
+			continue
+		}
+		tags = append(tags, issue.Tags...)
+		for _, category := range model.SecurityCategories(issue.Tags) {
+			tags = append(tags, category)
+		}
+	}
+	return uc.tags.DiscoverTags(ctx, tags, model.TagSourceScan)
 }
 
 func (uc *IngestUseCase) persistScanArtifacts(ctx context.Context, projectID, scanID int64, scope model.AnalysisScope, req *IngestRequest) error {

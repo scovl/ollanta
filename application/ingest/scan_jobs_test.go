@@ -201,6 +201,39 @@ func TestScanJobProcessorProcessNextMarksCompleted(t *testing.T) {
 	}
 }
 
+func TestIngestDiscoversIssueTags(t *testing.T) {
+	t.Parallel()
+
+	projectRepo := &fakeProjectRepo{}
+	scanRepo := &fakeScanRepo{}
+	issueRepo := &fakeIssueRepo{}
+	measureRepo := &fakeMeasureRepo{}
+	tagRepo := &fakeTagCatalogRepo{}
+	uc := NewIngestUseCase(projectRepo, scanRepo, issueRepo, measureRepo, nil, nil, nil)
+	uc.SetTagCatalogRepo(tagRepo)
+
+	_, err := uc.Ingest(context.Background(), &IngestRequest{
+		Metadata: IngestMetadata{ProjectKey: "demo"},
+		Measures: IngestMeasures{Files: 1, Lines: 10, Ncloc: 8, Comments: 2},
+		Issues: []*model.Issue{{
+			RuleKey:       "go:test",
+			ComponentPath: "main.go",
+			Type:          model.TypeVulnerability,
+			Severity:      model.SeverityMajor,
+			Tags:          []string{"Security", "cwe-79"},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Ingest() error = %v", err)
+	}
+	if tagRepo.source != model.TagSourceScan {
+		t.Fatalf("tag source = %q, want scan", tagRepo.source)
+	}
+	if !containsIngestTestString(tagRepo.keys, "Security") || !containsIngestTestString(tagRepo.keys, "cwe-79") {
+		t.Fatalf("discovered tags = %#v, want issue tags", tagRepo.keys)
+	}
+}
+
 func TestScanJobProcessorProcessNextMarksFailedOnInvalidPayload(t *testing.T) {
 	t.Parallel()
 
@@ -449,6 +482,62 @@ type fakeCodeSnapshotRepo struct {
 func (r *fakeCodeSnapshotRepo) Replace(_ context.Context, state *model.CodeSnapshotState) error {
 	r.replaced = state
 	return nil
+}
+
+type fakeTagCatalogRepo struct {
+	keys   []string
+	source model.TagSource
+}
+
+func (r *fakeTagCatalogRepo) CreateTag(context.Context, model.TagCatalogEntry) (*model.TagCatalogEntry, error) {
+	return nil, nil
+}
+
+func (r *fakeTagCatalogRepo) UpdateTag(context.Context, string, model.TagUpdate) (*model.TagCatalogEntry, error) {
+	return nil, nil
+}
+
+func (r *fakeTagCatalogRepo) DeprecateTag(context.Context, string, string, int64) (*model.TagCatalogEntry, error) {
+	return nil, nil
+}
+
+func (r *fakeTagCatalogRepo) MergeTag(context.Context, string, string, int64) (*model.TagCatalogEntry, error) {
+	return nil, nil
+}
+
+func (r *fakeTagCatalogRepo) GetTag(context.Context, string) (*model.TagCatalogEntry, error) {
+	return nil, nil
+}
+
+func (r *fakeTagCatalogRepo) ListTags(context.Context, model.TagFilter) ([]model.TagCatalogEntry, int, error) {
+	return nil, 0, nil
+}
+
+func (r *fakeTagCatalogRepo) DiscoverTags(_ context.Context, keys []string, source model.TagSource) error {
+	r.keys = append([]string(nil), keys...)
+	r.source = source
+	return nil
+}
+
+func (r *fakeTagCatalogRepo) ResolveTagKey(_ context.Context, keyOrAlias string) (string, error) {
+	return model.NormalizeTagKey(keyOrAlias), nil
+}
+
+func (r *fakeTagCatalogRepo) TagUsage(context.Context, string) (model.TagUsageSummary, error) {
+	return model.TagUsageSummary{}, nil
+}
+
+func (r *fakeTagCatalogRepo) TagAudit(context.Context, string, int, int) ([]model.TagAuditEntry, int, error) {
+	return nil, 0, nil
+}
+
+func containsIngestTestString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }
 
 func cloneScanJob(job *model.ScanJob) *model.ScanJob {
