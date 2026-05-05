@@ -101,6 +101,7 @@ function buildIssuesQueryParams(filter, initial) {
   if (filter.directory !== 'all') qs.set('directory', filter.directory);
   if (filter.file !== 'all') qs.set('file', filter.file);
   if (filter.file === 'all' && filter.search) qs.set('file', filter.search);
+  if (filter.scanId) qs.set('scan_id', filter.scanId);
   return qs;
 }
 
@@ -125,7 +126,9 @@ function buildIssuesHtml() {
         <span style="font-size:13px;font-weight:400;color:var(--text-muted)">&nbsp;${total.toLocaleString()} total</span>
       </span>
       <div class="issues-filters">
+        ${filter.scanId ? `<button type="button" class="filter-chip filter-chip-removable" id="clearScanFilterChip" title="Clear scan filter">Scan #${escHtml(filter.scanId)} \u00D7</button>` : ''}
         <input id="filterSearch" class="filter-input" type="text" placeholder="Search file or message\u2026" value="${escAttr(filter.search)}">
+        <button class="btn-sm btn-outline" id="saveCurrentIssueFilterBtn">Save filter</button>
       </div>
     </div>`;
 
@@ -269,6 +272,12 @@ function bindIssueControls() {
     state.issueOffset += ISSUE_PAGE;
     loadIssues(true);
   });
+  document.getElementById('saveCurrentIssueFilterBtn')?.addEventListener('click', saveCurrentIssueFilter);
+
+  document.getElementById('clearScanFilterChip')?.addEventListener('click', () => {
+    state.issueFilter.scanId = '';
+    loadIssues();
+  });
 
   document.querySelectorAll('.issues-table tbody tr[data-issue-idx]').forEach(row => {
     row.addEventListener('click', () => {
@@ -373,7 +382,7 @@ export function openIssueDetail(issue) {
       </div>
       ${currentIssue.tags?.length ? `<div class="detail-prop">
         <span class="detail-prop-label">Tags</span>
-        <span class="detail-prop-value">${currentIssue.tags.map(tag => `<span class="tag">${escHtml(tag)}</span>`).join(' ')}</span>
+        <span class="detail-prop-value">${currentIssue.tags.map(tag => `<button class="tag tag-button" data-issue-tag="${escAttr(tag)}">${escHtml(tag)}</button>`).join(' ')}</span>
       </div>` : ''}
     </div>
     ${secondaryHtml}
@@ -388,6 +397,14 @@ export function openIssueDetail(issue) {
 
   document.getElementById('detailClose').addEventListener('click', closeIssueDetail);
   overlay.addEventListener('click', closeIssueDetail);
+  document.querySelectorAll('[data-issue-tag]').forEach(btn => {
+    btn.addEventListener('click', event => {
+      event.stopPropagation();
+      state.issueFilter.tag = btn.dataset.issueTag;
+      closeIssueDetail();
+      loadIssues();
+    });
+  });
 
   if (currentIssue.rule_key) {
     apiFetch(`/rules/${encodeURIComponent(currentIssue.rule_key)}`).then(rule => {
@@ -429,4 +446,34 @@ export function closeIssueDetail() {
     overlay.classList.add('hidden');
   }, 250);
   state.selectedIssue = null;
+}
+
+async function saveCurrentIssueFilter() {
+  const criteria = currentIssueFilterCriteria();
+  const project = state.currentProject?.key || 'project';
+  const tag = criteria.tag ? ' ' + criteria.tag : '';
+  try {
+    await apiFetch('/saved-filters', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: project + tag + ' issues',
+        visibility: 'private',
+        filter_type: 'issues',
+        criteria,
+      }),
+    });
+    showToastMessage('Filter saved');
+  } catch (err) {
+    showToastMessage(err.message, 'error');
+  }
+}
+
+function currentIssueFilterCriteria() {
+  const criteria = {};
+  const filter = state.issueFilter || {};
+  for (const [key, value] of Object.entries(filter)) {
+    if (value && value !== 'all') criteria[key] = value;
+  }
+  if (state.currentProject?.key) criteria.project_key = state.currentProject.key;
+  return criteria;
 }

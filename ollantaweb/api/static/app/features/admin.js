@@ -121,7 +121,7 @@ export function renderWebhooksTab() {
 }
 
 function formatNewCodePeriod(ncp) {
-  if (!ncp) return 'auto (default)';
+  if (!ncp || !ncp.strategy || ncp.scope === 'inherited') return 'auto (default)';
   const value = ncp.value ? ' \u2014 ' + escHtml(ncp.value) : '';
   return escHtml(ncp.strategy) + value;
 }
@@ -399,32 +399,76 @@ function renderCustomRuleRow(rule, profiles) {
   const diagnosticBlock = diagnostics.length
     ? `<div class="custom-rule-diagnostics">${diagnostics.map(renderCustomRuleDiagnostic).join('')}</div>`
     : '';
-  return `<article class="custom-rule-row">
-    <div class="custom-rule-main">
-      <div class="custom-rule-title">
-        <strong>${escHtml(rule.name || rule.key)}</strong>
-        <span class="mono">${escHtml(rule.key)}</span>
+  const expanded = state.expandedCustomRuleId === rule.id;
+  const editing = state.editingCustomRuleId === rule.id;
+  const detailBlock = expanded ? renderCustomRuleDetails(rule) : '';
+  return `<article class="custom-rule-row${expanded ? ' expanded' : ''}${editing ? ' editing' : ''}" data-rule-id="${rule.id}">
+    <button type="button" class="custom-rule-row-toggle" data-rule-id="${rule.id}" aria-expanded="${expanded ? 'true' : 'false'}" aria-label="${expanded ? 'Collapse' : 'Expand'} rule details">
+      <div class="custom-rule-main">
+        <div class="custom-rule-title">
+          <strong>${escHtml(rule.name || rule.key)}</strong>
+          <span class="mono">${escHtml(rule.key)}</span>
+        </div>
+        <div class="custom-rule-meta">
+          <span>${escHtml(rule.language || '-')}</span>
+          <span>${escHtml(rule.engine || 'auto')}</span>
+          <span>${escHtml(rule.type || '-')}</span>
+          <span>${escHtml(rule.severity || '-')}</span>
+        </div>
+        ${diagnosticBlock}
       </div>
-      <div class="custom-rule-meta">
-        <span>${escHtml(rule.language || '-')}</span>
-        <span>${escHtml(rule.engine || 'auto')}</span>
-        <span>${escHtml(rule.type || '-')}</span>
-        <span>${escHtml(rule.severity || '-')}</span>
+      <div class="custom-rule-state">
+        <span class="badge ${customRuleLifecycleClass(lifecycle)}">${escHtml(lifecycle)}</span>
+        <span class="badge ${customRuleStatusClass(status)}">${escHtml(status)}</span>
+        <span class="custom-rule-row-chevron" aria-hidden="true">${expanded ? '▾' : '▸'}</span>
       </div>
-      ${diagnosticBlock}
-    </div>
-    <div class="custom-rule-state">
-      <span class="badge ${customRuleLifecycleClass(lifecycle)}">${escHtml(lifecycle)}</span>
-      <span class="badge ${customRuleStatusClass(status)}">${escHtml(status)}</span>
-    </div>
+    </button>
     <div class="custom-rule-actions">
+      <button class="btn-sm btn-outline edit-custom-rule-btn" data-rule-id="${rule.id}"${editing ? ' disabled' : ''}>${editing ? 'Editing' : 'Edit'}</button>
       <button class="btn-sm btn-outline validate-custom-rule-btn" data-rule-id="${rule.id}">Validate</button>
       <button class="btn-sm btn-primary publish-custom-rule-btn" data-rule-id="${rule.id}"${status === 'passed' ? '' : ' disabled'}>Publish</button>
       <button class="btn-sm btn-outline export-custom-rule-btn" data-rule-id="${rule.id}">Export</button>
       <button class="btn-sm btn-outline disable-custom-rule-btn" data-rule-id="${rule.id}">Disable</button>
       ${profileSelect}
     </div>
+    ${detailBlock}
   </article>`;
+}
+
+function renderCustomRuleDetails(rule) {
+  const engineConfig = rule.engine_config || {};
+  const examples = Array.isArray(rule.examples) ? rule.examples : [];
+  const compliantExample = examples.find(ex => ex.compliant);
+  const noncompliantExample = examples.find(ex => !ex.compliant);
+  const tags = Array.isArray(rule.tags) ? rule.tags : [];
+  const created = rule.created_at ? new Date(rule.created_at).toLocaleString() : '-';
+  const updated = rule.updated_at ? new Date(rule.updated_at).toLocaleString() : '-';
+  const published = rule.published_at ? new Date(rule.published_at).toLocaleString() : '';
+  const matcherRows = Object.entries(engineConfig)
+    .filter(([, value]) => value !== undefined && value !== null && value !== '')
+    .map(([key, value]) => `<dt>${escHtml(key)}</dt><dd><code class="mono custom-rule-detail-code">${escHtml(String(value))}</code></dd>`)
+    .join('');
+  return `<div class="custom-rule-detail">
+    <div class="custom-rule-detail-grid">
+      <dl class="custom-rule-detail-list">
+        <dt>Pack</dt><dd>${escHtml(rule.pack_name || '-')}</dd>
+        <dt>Version</dt><dd>${escHtml(String(rule.version || 1))}</dd>
+        <dt>Message</dt><dd>${escHtml(rule.message || '-')}</dd>
+        <dt>Description</dt><dd>${escHtml(rule.description || '-')}</dd>
+        <dt>Tags</dt><dd>${tags.length ? tags.map(tag => `<span class="badge badge-soft">${escHtml(tag)}</span>`).join(' ') : '-'}</dd>
+        <dt>Created</dt><dd>${escHtml(created)}</dd>
+        <dt>Updated</dt><dd>${escHtml(updated)}</dd>
+        ${published ? `<dt>Published</dt><dd>${escHtml(published)}</dd>` : ''}
+        <dt>Validation hash</dt><dd><code class="mono custom-rule-detail-code">${escHtml(rule.validation_hash || '(none)')}</code></dd>
+      </dl>
+      <dl class="custom-rule-detail-list">
+        <dt>Engine</dt><dd>${escHtml(rule.engine || '-')}</dd>
+        ${matcherRows || '<dt>Matcher</dt><dd>-</dd>'}
+      </dl>
+    </div>
+    ${noncompliantExample ? `<div class="custom-rule-detail-block"><p class="custom-rule-detail-label">Noncompliant example</p><pre class="custom-rule-detail-code-block">${escHtml(noncompliantExample.code || '')}</pre></div>` : ''}
+    ${compliantExample ? `<div class="custom-rule-detail-block"><p class="custom-rule-detail-label">Compliant example</p><pre class="custom-rule-detail-code-block">${escHtml(compliantExample.code || '')}</pre></div>` : ''}
+  </div>`;
 }
 
 function renderCustomRuleDiagnostic(item) {
@@ -436,10 +480,16 @@ function renderCustomRuleForm(engines, aiProviders = []) {
   const selectedEngine = customRuleDefaultEngine(engineList);
   const engineOptions = engineList
     .map(item => `<option value="${escAttr(item.engine)}"${item.engine === selectedEngine ? ' selected' : ''}>${escHtml(item.name || item.engine)}</option>`).join('');
-  return `<div class="rule-builder-card custom-rule-create">
+  const editingId = state.editingCustomRuleId;
+  const editingRule = editingId ? (state.customRulesData || []).find(rule => rule.id === editingId) : null;
+  const headerTitle = editingRule ? 'Edit rule' : 'New rule';
+  const headerEyebrow = editingRule ? `Editing ${editingRule.key}` : 'Builder';
+  const submitLabel = editingRule ? 'Save changes' : 'Create draft';
+  const cancelButton = editingRule ? `<button class="btn-sm btn-outline" id="cancelEditCustomRuleBtn" type="button">Cancel edit</button>` : '';
+  return `<div class="rule-builder-card custom-rule-create${editingRule ? ' editing' : ''}" id="customRuleBuilder">
     <div class="rule-builder-head">
-      <span>Builder</span>
-      <h4>New rule</h4>
+      <span>${escHtml(headerEyebrow)}</span>
+      <h4>${escHtml(headerTitle)}</h4>
     </div>
     ${renderCustomRuleAIAssist(aiProviders)}
     <div class="rule-builder-section">
@@ -497,7 +547,8 @@ function renderCustomRuleForm(engines, aiProviders = []) {
       <label class="custom-rule-field full"><span>Noncompliant example</span><textarea id="customRuleExample" class="filter-input custom-rule-textarea" placeholder="code that should produce an issue"></textarea><small class="custom-rule-field-hint">This snippet must produce the expected issue.</small></label>
       <label class="custom-rule-field full"><span>Expected issue message</span><input id="customRuleMessage" class="filter-input" placeholder="Issue message"></label>
     </div>
-    <button class="btn btn-primary custom-rule-create-btn" id="createCustomRuleBtn" type="button">Create draft</button>
+    <button class="btn btn-primary custom-rule-create-btn" id="createCustomRuleBtn" type="button">${escHtml(submitLabel)}</button>
+    ${cancelButton}
   </div>`;
 }
 
@@ -768,6 +819,41 @@ function setInputValue(id, value) {
   if (value === undefined || value === null || value === '') return;
   const input = document.getElementById(id);
   if (input) input.value = value;
+}
+
+// forceInputValue mirrors setInputValue but writes empty strings too.
+// Used when prefilling the builder from an existing rule, so that fields
+// not present in the source are reset rather than left dirty.
+function forceInputValue(id, value) {
+  const input = document.getElementById(id);
+  if (!input) return;
+  input.value = value === undefined || value === null ? '' : value;
+}
+
+function prefillCustomRuleBuilder(rule) {
+  if (!rule) return;
+  const fullKey = rule.key || '';
+  const separator = fullKey.indexOf(':');
+  const namespace = separator >= 0 ? fullKey.slice(0, separator) : 'custom';
+  const ruleID = separator >= 0 ? fullKey.slice(separator + 1) : fullKey;
+  forceInputValue('customRulePack', rule.pack_name || 'Rule Studio');
+  forceInputValue('customRuleNamespace', namespace);
+  forceInputValue('customRuleKey', ruleID);
+  forceInputValue('customRuleName', rule.name || '');
+  forceInputValue('customRuleType', rule.type || 'code_smell');
+  forceInputValue('customRuleSeverity', rule.severity || 'major');
+  forceInputValue('customRuleEngine', rule.engine || 'text');
+  forceInputValue('customRuleLanguage', rule.language || 'go');
+  const cfg = rule.engine_config || {};
+  forceInputValue('customRuleTextPattern', cfg.pattern || '');
+  forceInputValue('customRuleGoASTPattern', cfg.pattern || 'forbidden_call');
+  forceInputValue('customRuleTarget', cfg.target || '');
+  forceInputValue('customRuleQuery', cfg.query || '');
+  const examples = Array.isArray(rule.examples) ? rule.examples : [];
+  forceInputValue('customRuleExample', examples.find(ex => !ex.compliant)?.code || '');
+  forceInputValue('customRuleCompliantExample', examples.find(ex => ex.compliant)?.code || '');
+  forceInputValue('customRuleMessage', rule.message || '');
+  syncCustomRuleBuilder();
 }
 
 function renderCustomRuleImport() {
@@ -1347,6 +1433,37 @@ export function bindAdminTabContent() {
 
   bindCustomRuleBuilderControls();
 
+  document.querySelectorAll('.custom-rule-row-toggle').forEach(toggle => {
+    toggle.addEventListener('click', () => {
+      const ruleId = Number.parseInt(toggle.dataset.ruleId || '0', 10);
+      if (!ruleId) return;
+      state.expandedCustomRuleId = state.expandedCustomRuleId === ruleId ? null : ruleId;
+      renderView();
+    });
+  });
+
+  document.querySelectorAll('.edit-custom-rule-btn').forEach(btn => {
+    btn.addEventListener('click', event => {
+      event.stopPropagation();
+      const ruleId = Number.parseInt(btn.dataset.ruleId || '0', 10);
+      if (!ruleId) return;
+      const rule = (state.customRulesData || []).find(item => item.id === ruleId);
+      if (!rule) return;
+      state.editingCustomRuleId = ruleId;
+      state.expandedCustomRuleId = ruleId;
+      renderView();
+      requestAnimationFrame(() => {
+        prefillCustomRuleBuilder(rule);
+        document.getElementById('customRuleBuilder')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    });
+  });
+
+  document.getElementById('cancelEditCustomRuleBtn')?.addEventListener('click', () => {
+    state.editingCustomRuleId = null;
+    renderView();
+  });
+
   document.getElementById('generateCustomRuleAIBtn')?.addEventListener('click', async event => {
     const button = event.currentTarget;
     const select = document.getElementById('customRuleAIModel');
@@ -1447,8 +1564,20 @@ export function bindAdminTabContent() {
       }],
     };
     try {
-      await apiFetch('/custom-rules', { method: 'POST', body: JSON.stringify(doc) });
-      showToastMessage('Custom rule draft created.');
+      const editingId = state.editingCustomRuleId;
+      if (editingId) {
+        const draftRule = doc.rules[0];
+        const fullKey = draftRule.key.includes(':') ? draftRule.key : `${namespace}:${draftRule.key}`;
+        await apiFetch('/custom-rules/' + encodeURIComponent(editingId), {
+          method: 'PUT',
+          body: JSON.stringify({ ...draftRule, key: fullKey, pack_name: packName }),
+        });
+        showToastMessage('Custom rule updated. Re-validate before publishing.');
+        state.editingCustomRuleId = null;
+      } else {
+        await apiFetch('/custom-rules', { method: 'POST', body: JSON.stringify(doc) });
+        showToastMessage('Custom rule draft created.');
+      }
       await loadCustomRulesData();
     } catch (err) {
       showToastMessage(err.message, 'error');
