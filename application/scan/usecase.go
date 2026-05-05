@@ -37,6 +37,8 @@ type ScanOptions struct {
 	ServerWait        bool           // wait for accepted server job until completion
 	WaitTimeout       time.Duration  // maximum time to wait for server-side job completion
 	WaitPoll          time.Duration  // polling interval while waiting for server-side job completion
+	Proxy             string         // HTTP(S) proxy URL for server push
+	Skip              bool           // exit immediately without scanning
 	Profiles          ProfileOptions // effective quality profile loading and enforcement
 	CustomRules       CustomRuleOptions
 	Tests             TestOptions     // optional test-signal discovery and collection
@@ -89,6 +91,8 @@ func ParseFlags(args []string) (*ScanOptions, error) {
 	mutationsCommandPolicy := fs.String("mutations-command-policy", CommandPolicyExplicit, "Mutation command policy: explicit, never, configured_only, discovered, or trusted_shell")
 	mutationsFailOnTimeout := fs.Bool("mutations-fail-on-timeout", false, "Treat mutation command timeout as a failed scan instead of collecting partial reports")
 	mutationsAllowExternalArtifacts := fs.Bool("mutations-allow-external-artifacts", false, "Allow configured mutation reports outside the project directory")
+	proxy := fs.String("proxy", "", "HTTP(S) proxy URL for server push (e.g. http://proxy:3128)")
+	skip := fs.Bool("skip", false, "Exit immediately without scanning")
 
 	if err := fs.Parse(args); err != nil {
 		return nil, err
@@ -118,6 +122,8 @@ func ParseFlags(args []string) (*ScanOptions, error) {
 		ServerWait:        *serverWait,
 		WaitTimeout:       *waitTimeout,
 		WaitPoll:          *waitPoll,
+		Proxy:             *proxy,
+		Skip:              *skip,
 		Profiles: ProfileOptions{
 			Source:       *profileSource,
 			FilePath:     *profileFile,

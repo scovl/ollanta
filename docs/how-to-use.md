@@ -95,6 +95,74 @@ docker compose --profile push run --build --rm push
 
 When server wait is enabled, a completed push can still exit non-zero if the evaluated Quality Gate is `ERROR`. In that case the scan was accepted and processed; the non-zero exit is the CI signal that the project did not pass the configured gate.
 
+### Scanner Exit Codes
+
+| Exit code | Meaning |
+|-----------|---------|
+| `0` | Success or `-skip` activated |
+| `1` | Internal error (I/O failure, parse failure) |
+| `2` | User error (invalid flag, bad config) |
+| `3` | Quality Gate `ERROR` (scan succeeded, gate failed) |
+
+Use `$? -ne 0` in CI scripts to catch any failure, or `$? -eq 3` to detect gate-only failures.
+
+### Proxy Support
+
+For environments behind a corporate proxy, use the `-proxy` flag or the `proxy` field in `config.toml`:
+
+```sh
+ollanta -server http://ollanta.example.com -proxy http://corp-proxy:3128
+```
+
+Alternatively, set `HTTP_PROXY` / `HTTPS_PROXY` environment variables — the scanner respects them automatically.
+
+### Skip Scanning
+
+Use `-skip` to exit immediately without analysis:
+
+```sh
+ollanta -skip
+```
+
+This is useful in CI pipelines where scanning is conditionally disabled (e.g. `ollanta -skip` when `$SKIP_SCAN` is set). The `skip` field in `config.toml` also works:
+
+```toml
+[scanner]
+skip = true
+```
+
+### Config Variable Interpolation
+
+The `config.toml` supports `${VAR}`, `${env.VAR}`, and `${env.VAR:-default}` placeholders:
+
+```toml
+[scanner]
+server_url    = "${env.OLLANTA_URL:-http://localhost:8080}"
+server_token  = "${env.OLLANTA_TOKEN}"
+project_key   = "myapp-${env.BRANCH:-main}"
+```
+
+Use `$$` for a literal dollar sign.
+
+### Global Config File
+
+Place shared settings in `~/.ollanta/config.toml` (`%USERPROFILE%\.ollanta\config.toml` on Windows):
+
+```toml
+[scanner]
+server_url = "https://ollanta.example.com"
+proxy      = "http://corp-proxy:3128"
+```
+
+Per-project `config.toml` values override global values. Use `-global-config /path/to/global.toml` for a custom path, or `-global-config ""` to disable.
+
+### Version
+
+```sh
+ollanta --version
+# Ollanta Scanner 0.2.0
+```
+
 For repeated local validation after the scanner image already exists, omit `--build` to check runtime behavior without rebuilding the image.
 
 ## 5. Inspect The Result

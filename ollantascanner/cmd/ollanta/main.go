@@ -11,6 +11,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -18,6 +19,13 @@ import (
 	telemetry "github.com/scovl/ollanta/adapter/secondary/telemetry"
 	"github.com/scovl/ollanta/ollantascanner/scan"
 	"github.com/scovl/ollanta/ollantascanner/server"
+)
+
+const (
+	exitOK       = 0
+	exitInternal = 1
+	exitUser     = 2
+	exitGate     = 3
 )
 
 type serverScanJob struct {
@@ -28,6 +36,8 @@ type serverScanJob struct {
 }
 
 var serverHTTPClient = &http.Client{Timeout: 30 * time.Second}
+
+var version = "0.2.0"
 
 func printRunPlan(opts *scan.ScanOptions) {
 	sources := strings.Join(opts.Sources, ",")
@@ -74,7 +84,7 @@ func main() {
 	shutdownTracing, err := telemetry.SetupTracing(context.Background(), "ollantascanner")
 	if err != nil {
 		slog.Error("setup tracing", "error", err)
-		os.Exit(1)
+		os.Exit(exitInternal)
 	}
 	defer func() {
 		if err := shutdownTracing(context.Background()); err != nil {
@@ -82,7 +92,29 @@ func main() {
 		}
 	}()
 
+	if len(os.Args) > 1 && (os.Args[1] == "--version" || os.Args[1] == "-version" || os.Args[1] == "-v") {
+		fmt.Println("Ollanta Scanner " + version)
+		os.Exit(exitOK)
+	}
+
 	opts := mustParseOptions()
+
+	if opts.Skip {
+		slog.Info("scan skipped")
+		os.Exit(exitOK)
+	}
+
+	if opts.ServerToken != "" {
+		slog.SetDefault(slog.New(&redactHandler{
+			inner:  slog.Default().Handler(),
+			secret: opts.ServerToken,
+		}))
+	}
+
+	if opts.Proxy != "" {
+		setProxy(opts.Proxy)
+	}
+
 	printRunPlan(opts)
 	r := mustRunScan(opts)
 
@@ -98,7 +130,7 @@ func mustParseOptions() *scan.ScanOptions {
 	opts, err := parseOptions(os.Args[1:])
 	if err != nil {
 		slog.Error("parse options", "error", err)
-		os.Exit(2)
+		os.Exit(exitUser)
 	}
 	return opts
 }
@@ -109,7 +141,7 @@ func mustRunScan(opts *scan.ScanOptions) *scan.Report {
 	r, err := scan.Run(context.Background(), opts)
 	if err != nil {
 		slog.Error("scan failed", "error", err)
-		os.Exit(1)
+		os.Exit(exitInternal)
 	}
 	slog.Info("analysis completed", "duration_seconds", time.Since(started).Seconds())
 	return r
@@ -151,7 +183,7 @@ func serveReport(opts *scan.ScanOptions, reportPath string) {
 	}
 	if err := server.Serve(reportPath, opts.Bind, opts.Port); err != nil {
 		slog.Error("local UI server failed", "error", err)
-		os.Exit(1)
+		os.Exit(exitInternal)
 	}
 }
 
@@ -175,7 +207,7 @@ func handleServerPush(opts *scan.ScanOptions, r *scan.Report) {
 		)
 		logGateConditions(result)
 		if gs == "ERROR" {
-			os.Exit(1)
+			os.Exit(exitGate)
 		}
 		return
 	}
@@ -191,14 +223,14 @@ func handleServerPush(opts *scan.ScanOptions, r *scan.Report) {
 	jobID := int64(responseInt(result, "id"))
 	if jobID == 0 {
 		slog.Error("accepted response did not include a valid scan job id", "response", result)
-		os.Exit(1)
+		os.Exit(exitInternal)
 	}
 
 	slog.Info("waiting for server job", "job_id", jobID, "timeout", opts.WaitTimeout, "poll", opts.WaitPoll)
 	finalScan, err := waitForServerJob(opts.Server, opts.ServerToken, jobID, opts.WaitTimeout, opts.WaitPoll)
 	if err != nil {
 		slog.Error("waiting for server job failed", "job_id", jobID, "error", err)
-		os.Exit(1)
+		os.Exit(exitInternal)
 	}
 
 	slog.Info("server scan completed",
@@ -210,7 +242,7 @@ func handleServerPush(opts *scan.ScanOptions, r *scan.Report) {
 		logGateConditionsSummary(finalScan.GateResult)
 	}
 	if finalScan.GateStatus == "ERROR" {
-		os.Exit(1)
+		os.Exit(exitGate)
 	}
 }
 
@@ -484,5 +516,47 @@ func logGateConditionsSummary(gr *gateResultSummary) {
 			"actual", c.Actual,
 			"status", c.Status,
 		)
+	}
+}
+
+// ── redaction handler ────────────────────────────────────────────────────────
+
+type redactHandler struct {
+	inner  slog.Handler
+	secret string
+}
+
+func (h *redactHandler) Enabled(ctx context.Context, level slog.Level) bool {
+	return h.inner.Enabled(ctx, level)
+}
+
+func (h *redactHandler) Handle(ctx context.Context, r slog.Record) error {
+	r2 := r.Clone()
+	r2.Message = strings.ReplaceAll(r2.Message, h.secret, "[REDACTED]")
+	r2.Message = strings.ReplaceAll(r2.Message, "Bearer "+h.secret, "Bearer [REDACTED]")
+	return h.inner.Handle(ctx, r2)
+}
+
+func (h *redactHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return &redactHandler{inner: h.inner.WithAttrs(attrs), secret: h.secret}
+}
+
+func (h *redactHandler) WithGroup(name string) slog.Handler {
+	return &redactHandler{inner: h.inner.WithGroup(name), secret: h.secret}
+}
+
+// ── proxy ────────────────────────────────────────────────────────────────────
+
+func setProxy(proxyURL string) {
+	if proxyURL == "" {
+		return
+	}
+	u, err := url.Parse(proxyURL)
+	if err != nil {
+		slog.Warn("invalid proxy URL, ignoring", "proxy", proxyURL, "error", err)
+		return
+	}
+	serverHTTPClient.Transport = &http.Transport{
+		Proxy: http.ProxyURL(u),
 	}
 }

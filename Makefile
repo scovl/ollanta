@@ -1,4 +1,4 @@
-.PHONY: build test lint fmt clean run smoke-local up down recreate logs
+.PHONY: build test lint fmt clean run smoke-local up down recreate logs release release-dry-run
 
 PKGS := \
 	github.com/scovl/ollanta/ollantacore/... \
@@ -13,8 +13,12 @@ DIRS := ollantacore ollantaparser ollantarules ollantascanner ollantaengine
 export CGO_ENABLED := 1
 export PATH := C:\msys64\mingw64\bin;$(PATH)
 
+SCANNER_SRC := ./ollantascanner/cmd/ollanta
+RELEASE_DIR := build
+VERSION := 0.2.0
+
 build:
-	go build $(PKGS)
+	go build -ldflags="-X main.version=$(VERSION)" $(PKGS)
 
 test:
 	go test $(PKGS)
@@ -31,6 +35,27 @@ fmt:
 
 clean:
 	go clean $(PKGS)
+
+release:
+	@echo Building Ollanta Scanner $(VERSION) for all platforms...
+	@mkdir -p $(RELEASE_DIR)
+	GOOS=linux   GOARCH=amd64 CGO_ENABLED=$(CGO_ENABLED) go build -ldflags="-X main.version=$(VERSION)" -o $(RELEASE_DIR)/ollanta-linux-amd64       $(SCANNER_SRC)
+	GOOS=linux   GOARCH=arm64 CGO_ENABLED=$(CGO_ENABLED) go build -ldflags="-X main.version=$(VERSION)" -o $(RELEASE_DIR)/ollanta-linux-arm64       $(SCANNER_SRC)
+	GOOS=windows GOARCH=amd64 CGO_ENABLED=$(CGO_ENABLED) go build -ldflags="-X main.version=$(VERSION)" -o $(RELEASE_DIR)/ollanta-windows-amd64.exe $(SCANNER_SRC)
+	GOOS=darwin  GOARCH=amd64 CGO_ENABLED=$(CGO_ENABLED) go build -ldflags="-X main.version=$(VERSION)" -o $(RELEASE_DIR)/ollanta-darwin-amd64      $(SCANNER_SRC)
+	GOOS=darwin  GOARCH=arm64 CGO_ENABLED=$(CGO_ENABLED) go build -ldflags="-X main.version=$(VERSION)" -o $(RELEASE_DIR)/ollanta-darwin-arm64      $(SCANNER_SRC)
+	@for bin in $(RELEASE_DIR)/ollanta-*; do tar -czf "$$bin.tar.gz" -C $(RELEASE_DIR) "$$(basename $$bin)"; done
+	@cd $(RELEASE_DIR) && sha256sum *.tar.gz > checksums.txt
+	@echo Done. Artifacts in $(RELEASE_DIR)/
+
+release-dry-run:
+	@echo Checking cross-compilation for all platforms...
+	GOOS=linux   GOARCH=amd64 go build -o /dev/null $(SCANNER_SRC)
+	GOOS=linux   GOARCH=arm64 go build -o /dev/null $(SCANNER_SRC)
+	GOOS=windows GOARCH=amd64 go build -o /dev/null $(SCANNER_SRC)
+	GOOS=darwin  GOARCH=amd64 go build -o /dev/null $(SCANNER_SRC)
+	GOOS=darwin  GOARCH=arm64 go build -o /dev/null $(SCANNER_SRC)
+	@echo All platforms compile successfully.
 
 # Run the scanner against a project. Override with:
 #   make run PROJECT_DIR=D:\projects\myapp PROJECT_KEY=myapp
