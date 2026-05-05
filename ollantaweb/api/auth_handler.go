@@ -63,7 +63,7 @@ type loginResponse struct {
 	User         userView `json:"user"`
 }
 
-// Login handles POST /api/v1/auth/login with local email+password.
+// Login handles POST /api/v1/auth/login with a local login (username) + password.
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Login    string `json:"login"`

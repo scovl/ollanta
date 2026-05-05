@@ -51,6 +51,9 @@ func (h *NewCodePeriodHandler) SetGlobal(w http.ResponseWriter, r *http.Request)
 }
 
 // GetForProject handles GET /api/v1/projects/{key}/new-code-period
+//
+// Returns 200 with an empty payload when the project has no override
+// (callers should fall back to the global new-code period).
 func (h *NewCodePeriodHandler) GetForProject(w http.ResponseWriter, r *http.Request) {
 	project, err := h.resolveProject(r)
 	if err != nil {
@@ -59,7 +62,7 @@ func (h *NewCodePeriodHandler) GetForProject(w http.ResponseWriter, r *http.Requ
 	}
 	ncp, err := h.periods.GetForProject(r.Context(), project.ID)
 	if errors.Is(err, postgres.ErrNotFound) {
-		jsonError(w, http.StatusNotFound, "not found")
+		jsonOK(w, http.StatusOK, map[string]any{"strategy": "", "value": "", "scope": "inherited"})
 		return
 	}
 	if err != nil {
