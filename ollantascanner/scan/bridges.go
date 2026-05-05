@@ -137,6 +137,7 @@ func (b *analyzerBridge) Check(ctx context.Context, ac port.AnalysisContext, iss
 		ruleCtx.ParsedFile = parsed
 	}
 
+	ruleTags := b.inner.Meta.Tags
 	for _, issue := range b.inner.Check(ruleCtx) {
 		domainIssue := toDomainIssue(issue)
 		if domainIssue == nil {
@@ -144,6 +145,9 @@ func (b *analyzerBridge) Check(ctx context.Context, ac port.AnalysisContext, iss
 		}
 		if domainIssue.Language == "" {
 			domainIssue.Language = ac.Language
+		}
+		if len(domainIssue.Tags) == 0 && len(ruleTags) > 0 {
+			domainIssue.Tags = append([]string(nil), ruleTags...)
 		}
 		if domainIssue.QualityDomain == "" {
 			domainIssue.QualityDomain = model.DeriveIssueQualityDomain(domainIssue.Type, domainIssue.Tags)

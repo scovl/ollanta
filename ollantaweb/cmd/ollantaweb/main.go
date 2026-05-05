@@ -70,6 +70,7 @@ func main() {
 	permRepo := postgres.NewPermissionRepository(db)
 	profileRepo := postgres.NewProfileRepository(db)
 	customRuleRepo := postgres.NewCustomRuleRepository(db)
+	tagRepo := postgres.NewTagRepository(db)
 	gateRepo := postgres.NewGateRepository(db)
 	periodRepo := postgres.NewNewCodePeriodRepository(db)
 	webhookRepo := postgres.NewWebhookRepository(db)
@@ -119,6 +120,7 @@ func main() {
 		Snapshots:        snapshotRepo,
 		ProfileSnapshots: profileSnapshotRepo,
 		CustomRules:      customRuleRepo,
+		Tags:             tagRepo,
 		Users:            userRepo,
 		Groups:           groupRepo,
 		Tokens:           tokenRepo,

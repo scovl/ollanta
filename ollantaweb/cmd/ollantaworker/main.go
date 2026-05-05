@@ -55,6 +55,7 @@ func main() {
 	measureRepo := postgres.NewMeasureRepository(db)
 	snapshotRepo := postgres.NewCodeSnapshotRepository(db)
 	profileSnapshotRepo := postgres.NewProfileSnapshotRepository(db)
+	tagRepo := postgres.NewTagRepository(db)
 	webhookRepo := postgres.NewWebhookRepository(db)
 	webhookJobRepo := postgres.NewWebhookJobRepository(db)
 
@@ -84,6 +85,7 @@ func main() {
 			Measures:  measureRepo,
 			Snapshots: snapshotRepo,
 			Profiles:  profileSnapshotRepo,
+			Tags:      tagRepo,
 		},
 		indexEnqueuer,
 		webhookDispatcher,

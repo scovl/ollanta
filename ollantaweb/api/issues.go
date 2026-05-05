@@ -7,6 +7,8 @@ import (
 	"net/url"
 	"strconv"
 
+	"github.com/scovl/ollanta/application/tagging"
+	"github.com/scovl/ollanta/domain/model"
 	"github.com/scovl/ollanta/ollantastore/postgres"
 )
 
@@ -16,6 +18,7 @@ type IssuesHandler struct {
 	projects  *postgres.ProjectRepository
 	scans     *postgres.ScanRepository
 	changelog *postgres.ChangelogRepository
+	tags      *tagging.Service
 }
 
 type scopedIssueSelection struct {
@@ -143,6 +146,10 @@ func writeEmptyIssuesResponse(w http.ResponseWriter, filter postgres.IssueFilter
 // Query params: project_id, scan_id, rule_key, severity, type, quality, status, tracking_state, language, tag, security_category, directory, file, limit, offset
 func (h *IssuesHandler) List(w http.ResponseWriter, r *http.Request) {
 	f, projectKey := parseIssueFilter(r.URL.Query())
+	if err := h.resolveTagFilter(r, &f); err != nil {
+		jsonError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	selection, err := h.resolveScopedIssueSelection(r, f.ProjectID, projectKey)
 	if err != nil {
 		if errors.Is(err, postgres.ErrNotFound) {
@@ -220,6 +227,10 @@ func (h *IssuesHandler) Facets(w http.ResponseWriter, r *http.Request) {
 	}
 
 	filter, _ := parseIssueFilter(q)
+	if err := h.resolveTagFilter(r, &filter); err != nil {
+		jsonError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	filter.ProjectID = optionalInt64(projectID)
 	filter.ScanID = optionalInt64(scanID)
 	facets, err := h.issues.FacetsForFilter(r.Context(), filter)
@@ -232,6 +243,23 @@ func (h *IssuesHandler) Facets(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	jsonOK(w, http.StatusOK, facets)
+}
+
+func (h *IssuesHandler) resolveTagFilter(r *http.Request, filter *postgres.IssueFilter) error {
+	if h.tags == nil || filter == nil || filter.Tag == nil {
+		return nil
+	}
+	resolved, err := h.tags.ResolveTagKey(r.Context(), *filter.Tag)
+	if err == nil {
+		*filter.Tag = resolved
+		return nil
+	}
+	if errors.Is(err, postgres.ErrNotFound) || errors.Is(err, model.ErrNotFound) {
+		normalized := model.NormalizeTagKey(*filter.Tag)
+		*filter.Tag = normalized
+		return nil
+	}
+	return err
 }
 
 func optionalInt64(value int64) *int64 {

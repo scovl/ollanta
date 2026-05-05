@@ -7,6 +7,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	telemetry "github.com/scovl/ollanta/adapter/secondary/telemetry"
+	"github.com/scovl/ollanta/application/tagging"
 	"github.com/scovl/ollanta/ollantacore/branding"
 	"github.com/scovl/ollanta/ollantastore/postgres"
 	"github.com/scovl/ollanta/ollantastore/search"
@@ -32,6 +33,7 @@ type RouterDeps struct {
 	Snapshots        *postgres.CodeSnapshotRepository
 	ProfileSnapshots *postgres.ProfileSnapshotRepository
 	CustomRules      *postgres.CustomRuleRepository
+	Tags             *postgres.TagRepository
 	Users            *postgres.UserRepository
 	Groups           *postgres.GroupRepository
 	Tokens           *postgres.TokenRepository
@@ -84,6 +86,7 @@ func NewRouter(d *RouterDeps) http.Handler {
 	profilesH := NewProfilesHandler(d.Profiles, d.Projects)
 	customRulesH := NewCustomRulesHandler(d.CustomRules)
 	customRuleAIH := NewCustomRuleAIHandler()
+	tagsH := NewTagsHandler(tagging.NewService(d.Tags, d.Tags, d.Tags), d.Perms)
 	gatesH := NewGatesHandler(d.Gates, d.Projects)
 	periodsH := NewNewCodePeriodHandler(d.Periods, d.Projects)
 	webhooksH := NewWebhooksHandler(d.Webhooks, d.Projects, d.Dispatcher)
@@ -104,7 +107,7 @@ func NewRouter(d *RouterDeps) http.Handler {
 		},
 	}
 	sjh := &ScanJobsHandler{jobs: jobService}
-	ih := &IssuesHandler{issues: d.Issues, projects: d.Projects, scans: d.Scans, changelog: d.Changelog}
+	ih := &IssuesHandler{issues: d.Issues, projects: d.Projects, scans: d.Scans, changelog: d.Changelog, tags: tagsH.service}
 	ibh := &IssueTrackingBackfillHandler{service: &issueTrackingBackfillService{projects: d.Projects, scans: d.Scans, issues: d.Issues}}
 	mh := &MeasuresHandler{measures: d.Measures, projects: d.Projects}
 	srh := &SearchHandler{searcher: d.Searcher}
@@ -230,6 +233,28 @@ func NewRouter(d *RouterDeps) http.Handler {
 			// Rules (read-only, returns rule metadata including descriptions and examples)
 			r.Get("/rules", rulesH.List)
 			r.Get("/rules/*", rulesH.Get)
+
+			// Tags and saved filters
+			r.Route("/tags", func(r chi.Router) {
+				r.Get("/", tagsH.List)
+				r.Post("/", tagsH.Create)
+				r.Post("/bulk/preview", tagsH.BulkPreview)
+				r.Post("/bulk/apply", tagsH.BulkApply)
+				r.Get("/{key}", tagsH.Get)
+				r.Put("/{key}", tagsH.Update)
+				r.Get("/{key}/audit", tagsH.Audit)
+				r.Post("/{key}/deprecate", tagsH.Deprecate)
+				r.Post("/{key}/merge", tagsH.Merge)
+			})
+			r.Route("/saved-filters", func(r chi.Router) {
+				r.Get("/", tagsH.ListSavedFilters)
+				r.Post("/", tagsH.CreateSavedFilter)
+				r.Get("/{id}", tagsH.GetSavedFilter)
+				r.Put("/{id}", tagsH.UpdateSavedFilter)
+				r.Delete("/{id}", tagsH.DeleteSavedFilter)
+				r.Post("/{id}/apply", tagsH.ApplySavedFilter)
+			})
+
 			r.Get("/rule-engines", customRulesH.Engines)
 			r.Get("/custom-rules/catalog", customRulesH.Catalog)
 			r.Group(func(r chi.Router) {
