@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/scovl/ollanta/application/analysis"
 	"github.com/scovl/ollanta/domain/model"
 	"github.com/scovl/ollanta/domain/port"
 	"github.com/scovl/ollanta/domain/service"
@@ -74,6 +75,7 @@ type IngestResult struct {
 	ScanID       int64                   `json:"scan_id"`
 	ProjectKey   string                  `json:"project_key"`
 	GateStatus   string                  `json:"gate_status"`
+	GateResult   *model.GateResult       `json:"gate_result,omitempty"`
 	TotalIssues  int                     `json:"total_issues"`
 	NewIssues    int                     `json:"new_issues"`
 	ClosedIssues int                     `json:"closed_issues"`
@@ -95,15 +97,16 @@ type IWebhookDispatcher interface {
 
 // IngestUseCase orchestrates the full ingest workflow using domain port interfaces.
 type IngestUseCase struct {
-	projects  port.IProjectRepo
-	scans     port.IScanRepo
-	issues    port.IIssueRepo
-	measures  port.IMeasureRepo
-	snapshots port.ICodeSnapshotRepo
-	profiles  port.IProfileSnapshotRepo
-	tags      port.ITagCatalogRepo
-	indexer   ISearchEnqueuer    // optional — nil disables search indexing
-	webhooks  IWebhookDispatcher // optional — nil disables webhook dispatch
+	projects      port.IProjectRepo
+	scans         port.IScanRepo
+	issues        port.IIssueRepo
+	measures      port.IMeasureRepo
+	snapshots     port.ICodeSnapshotRepo
+	profiles      port.IProfileSnapshotRepo
+	tags          port.ITagCatalogRepo
+	gateEvaluator *analysis.EvaluateGateUseCase
+	indexer       ISearchEnqueuer    // optional — nil disables search indexing
+	webhooks      IWebhookDispatcher // optional — nil disables webhook dispatch
 }
 
 // NewIngestUseCase creates an IngestUseCase with all required dependencies.
@@ -136,6 +139,12 @@ func (uc *IngestUseCase) SetProfileSnapshotRepo(repo port.IProfileSnapshotRepo) 
 // SetTagCatalogRepo enables server-side tag discovery during scan ingestion.
 func (uc *IngestUseCase) SetTagCatalogRepo(repo port.ITagCatalogRepo) {
 	uc.tags = repo
+}
+
+// SetGateEvaluator enables database-backed quality gate evaluation during ingest.
+// When nil, falls back to built-in DefaultConditions().
+func (uc *IngestUseCase) SetGateEvaluator(evaluator *analysis.EvaluateGateUseCase) {
+	uc.gateEvaluator = evaluator
 }
 
 func resolveRequestScope(meta IngestMetadata) (model.AnalysisScope, error) {
@@ -237,7 +246,25 @@ func (uc *IngestUseCase) Ingest(ctx context.Context, req *IngestRequest) (*Inges
 	}
 	evidence := detectTestSignalEvidence(req.TestSignals)
 	addOptionalTestMeasures(measures, req.Measures, evidence)
-	gateStatus := service.Evaluate(service.DefaultConditions(), measures)
+
+	newMeasures := computeNewCodeMeasures(measures, prevScan)
+	changedLines := computeChangedLines(req.Measures, prevScan)
+
+	var gateStatus *service.GateStatus
+	var gateResult *model.GateResult
+	if uc.gateEvaluator != nil {
+		gateStatus, _ = uc.gateEvaluator.EvaluateForProject(
+			ctx, project.ID,
+			measures, newMeasures,
+			changedLines, 0, // smallChangesetLines comes from the gate
+		)
+		if gateStatus != nil {
+			gateResult = serviceGateToGateResult(gateStatus)
+		}
+	}
+	if gateStatus == nil {
+		gateStatus = service.Evaluate(service.DefaultConditions(), measures)
+	}
 	gateStr := string(gateStatus.Status)
 
 	// ── 5. Insert scan ───────────────────────────────────────────────────────
@@ -252,6 +279,7 @@ func (uc *IngestUseCase) Ingest(ctx context.Context, req *IngestRequest) (*Inges
 		Status:               "completed",
 		ElapsedMs:            req.Metadata.ElapsedMs,
 		GateStatus:           gateStr,
+		GateResult:           gateResult,
 		AnalysisDate:         analysisDate,
 		TotalFiles:           req.Measures.Files,
 		TotalLines:           req.Measures.Lines,
@@ -302,11 +330,13 @@ func (uc *IngestUseCase) Ingest(ctx context.Context, req *IngestRequest) (*Inges
 
 	// ── 10. Fire webhooks ────────────────────────────────────────────────────
 	uc.dispatchScanWebhook(ctx, project.ID, scan.ID)
+	uc.dispatchGateChanged(ctx, project.ID, scan.ID, prevScan, gateStr)
 
 	return &IngestResult{
 		ScanID:       scan.ID,
 		ProjectKey:   project.Key,
 		GateStatus:   gateStr,
+		GateResult:   gateResult,
 		TotalIssues:  len(req.Issues),
 		NewIssues:    trackResult.NewCount(),
 		ClosedIssues: trackResult.ClosedCount(),
@@ -656,4 +686,90 @@ func detectTestSignalEvidence(raw json.RawMessage) testSignalEvidence {
 		}
 	}
 	return evidence
+}
+
+// ── gate helpers ─────────────────────────────────────────────────────────────
+
+// computeNewCodeMeasures computes new-code metrics by subtracting the previous
+// scan baseline from the current scan measures. Cumulative metrics (bugs,
+// vulnerabilities, code_smells) use (current - previous). Relative metrics
+// (coverage, mutation_score) use the current value as-is. If prevScan is nil,
+// all current values are treated as new.
+func computeNewCodeMeasures(current map[string]float64, prevScan *model.Scan) map[string]float64 {
+	newM := make(map[string]float64, len(current))
+	for k, v := range current {
+		newM[k] = v
+	}
+	if prevScan == nil {
+		return newM
+	}
+	prevMeasures := analysis.MeasuresFromScan(prevScan)
+	cumulativeKeys := map[string]bool{
+		model.MetricBugs:            true,
+		model.MetricVulnerabilities: true,
+		model.MetricCodeSmells:      true,
+	}
+	for k := range current {
+		if cumulativeKeys[k] {
+			if prev, ok := prevMeasures[k]; ok {
+				diff := current[k] - prev
+				if diff < 0 {
+					diff = 0
+				}
+				newM[k] = diff
+			}
+		}
+	}
+	return newM
+}
+
+// computeChangedLines returns the number of changed lines compared to the
+// previous scan, for small-changeset detection. If prevScan is nil, returns
+// the current total lines.
+func computeChangedLines(m IngestMeasures, prevScan *model.Scan) int {
+	if prevScan == nil {
+		return m.Lines
+	}
+	changed := m.Lines - prevScan.TotalLines
+	if changed < 0 {
+		changed = -changed
+	}
+	return changed
+}
+
+func serviceGateToGateResult(gs *service.GateStatus) *model.GateResult {
+	if gs == nil {
+		return nil
+	}
+	conditions := make([]model.GateConditionEval, len(gs.Conditions))
+	for i, c := range gs.Conditions {
+		conditions[i] = model.GateConditionEval{
+			Metric:    c.Condition.MetricKey,
+			Operator:  string(c.Condition.Operator),
+			Threshold: c.Condition.ErrorThreshold,
+			Actual:    c.ActualValue,
+			HasValue:  c.HasValue,
+			Status:    string(c.Status),
+		}
+	}
+	return &model.GateResult{
+		Status:      string(gs.Status),
+		Conditions:  conditions,
+		EvaluatedAt: time.Now().UTC(),
+	}
+}
+
+func (uc *IngestUseCase) dispatchGateChanged(ctx context.Context, projectID, scanID int64, prevScan *model.Scan, gateStr string) {
+	if uc.webhooks == nil {
+		return
+	}
+	prevStatus := ""
+	if prevScan != nil {
+		prevStatus = prevScan.GateStatus
+	}
+	if prevStatus != gateStr {
+		_ = pipelineSteps.fireWebhooks.run(ctx, func(ctx context.Context) error {
+			return uc.webhooks.Dispatch(ctx, projectID, scanID, "gate.changed")
+		})
+	}
 }

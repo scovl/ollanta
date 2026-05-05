@@ -49,12 +49,13 @@ func (uc *EvaluateGateUseCase) EvaluateForProject(
 	conds := make([]service.PersistentCondition, len(rawConds))
 	for i, c := range rawConds {
 		conds[i] = service.PersistentCondition{
-			ID:        c.ID,
-			GateID:    c.GateID,
-			MetricKey: c.Metric,
-			Op:        service.Operator(c.Operator),
-			Threshold: c.Threshold,
-			OnNewCode: c.OnNewCode,
+			ID:               c.ID,
+			GateID:           c.GateID,
+			MetricKey:        c.Metric,
+			Op:               service.Operator(c.Operator),
+			Threshold:        c.Threshold,
+			WarningThreshold: c.WarningThreshold,
+			OnNewCode:        c.OnNewCode,
 		}
 	}
 
