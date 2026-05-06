@@ -475,6 +475,13 @@ func (r *fakeMeasureRepo) Trend(_ context.Context, _ int64, _ string, _, _ time.
 	return nil, nil
 }
 
+func (r *fakeMeasureRepo) UpsertLive(_ context.Context, _, _ int64, _, _ string, _ float64) error { return nil }
+func (r *fakeMeasureRepo) UpsertLiveBatch(_ context.Context, _ int64, _ int64, _ map[string]float64) error { return nil }
+func (r *fakeMeasureRepo) GetLive(_ context.Context, _ int64) (map[string]float64, error) { return nil, nil }
+func (r *fakeMeasureRepo) UpsertDailyAggregate(_ context.Context, _ int64, _, _ string, _ float64) error { return nil }
+func (r *fakeMeasureRepo) UpsertDailyAggregateBatch(_ context.Context, _ int64, _ string, _ map[string]float64) error { return nil }
+func (r *fakeMeasureRepo) GetDailyAggregates(_ context.Context, _ int64, _ string, _ int) ([]model.TrendPoint, error) { return nil, nil }
+
 type fakeCodeSnapshotRepo struct {
 	replaced *model.CodeSnapshotState
 }
