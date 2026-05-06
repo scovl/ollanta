@@ -61,4 +61,10 @@ type IMeasureRepo interface {
 	BulkInsert(ctx context.Context, measures []model.MeasureRow) error
 	GetLatest(ctx context.Context, projectID int64, metricKey string) (*model.MeasureRow, error)
 	Trend(ctx context.Context, projectID int64, metricKey string, from, to time.Time) ([]model.TrendPoint, error)
+	UpsertLive(ctx context.Context, projectID, scanID int64, metricKey, componentPath string, value float64) error
+	UpsertLiveBatch(ctx context.Context, projectID, scanID int64, metrics map[string]float64) error
+	GetLive(ctx context.Context, projectID int64) (map[string]float64, error)
+	UpsertDailyAggregate(ctx context.Context, projectID int64, metricKey string, date string, value float64) error
+	UpsertDailyAggregateBatch(ctx context.Context, projectID int64, date string, metrics map[string]float64) error
+	GetDailyAggregates(ctx context.Context, projectID int64, metricKey string, days int) ([]model.TrendPoint, error)
 }

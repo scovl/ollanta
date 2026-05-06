@@ -12,6 +12,7 @@ const (
 	IssueTrackingStateNew       IssueTrackingState = "new"
 	IssueTrackingStateUnchanged IssueTrackingState = "unchanged"
 	IssueTrackingStateReopened  IssueTrackingState = "reopened"
+	IssueTrackingStateMoved     IssueTrackingState = "moved"
 )
 
 // IssueRow is the database representation of a single issue.
@@ -36,6 +37,7 @@ type IssueRow struct {
 	EffortMinutes      int             `json:"effort_minutes"`
 	EngineID           string          `json:"engine_id"`
 	LineHash           string          `json:"line_hash"`
+	FileHash           string          `json:"file_hash"`
 	Tags               []string        `json:"tags"`
 	SecondaryLocations json.RawMessage `json:"secondary_locations"`
 	CreatedAt          time.Time       `json:"created_at"`

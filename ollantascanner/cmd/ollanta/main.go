@@ -3,6 +3,7 @@ package main
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -263,17 +264,34 @@ func responseInt(result map[string]interface{}, key string) int {
 }
 
 // pushReport POSTs the scan report to the given server URL and returns the parsed response body.
+// Uses gzip compression for reports larger than 1KB to reduce bandwidth.
 func pushReport(serverURL, token string, r interface{}) (map[string]interface{}, error) {
-	body, err := json.Marshal(r)
-	if err != nil {
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(r); err != nil {
 		return nil, fmt.Errorf("marshal report: %w", err)
 	}
 
-	req, err := http.NewRequest(http.MethodPost, serverURL+"/api/v1/scans", bytes.NewReader(body))
+	var body io.Reader = &buf
+	gzipped := false
+	if buf.Len() > 1024 {
+		var compressed bytes.Buffer
+		gw := gzip.NewWriter(&compressed)
+		if _, err := gw.Write(buf.Bytes()); err != nil {
+			return nil, fmt.Errorf("compress report: %w", err)
+		}
+		gw.Close()
+		body = &compressed
+		gzipped = true
+	}
+
+	req, err := http.NewRequest(http.MethodPost, serverURL+"/api/v1/scans", body)
 	if err != nil {
 		return nil, fmt.Errorf("build request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if gzipped {
+		req.Header.Set("Content-Encoding", "gzip")
+	}
 	if idempotencyKey := reportIdempotencyKey(r); idempotencyKey != "" {
 		req.Header.Set("Idempotency-Key", idempotencyKey)
 	}

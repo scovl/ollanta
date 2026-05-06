@@ -239,6 +239,7 @@ func (r *ScanJobRepository) ClaimNext(ctx context.Context, workerID string) (*Sc
 		UPDATE scan_jobs AS j
 		SET status = 'running',
 		    worker_id = $1,
+		    worker_heartbeat = now(),
 		    attempts = j.attempts + 1,
 		    last_error = '',
 		    started_at = COALESCE(j.started_at, now()),
@@ -434,4 +435,27 @@ func HashPayload(payload []byte) string {
 // PayloadHashesEqual compares payload hashes without short-circuiting on content.
 func PayloadHashesEqual(left, right string) bool {
 	return subtle.ConstantTimeCompare([]byte(left), []byte(right)) == 1
+}
+
+// UpdateHeartbeat refreshes the worker heartbeat timestamp.
+func (r *ScanJobRepository) UpdateHeartbeat(ctx context.Context, workerID string) error {
+	_, err := r.db.Pool.Exec(ctx, `
+		UPDATE scan_jobs
+		SET worker_heartbeat = now()
+		WHERE worker_id = $1 AND status = 'running'`, workerID)
+	return err
+}
+
+// ReclaimStale returns stale jobs (no heartbeat for > 30s) back to accepted status.
+func (r *ScanJobRepository) ReclaimStale(ctx context.Context, timeout time.Duration) (int64, error) {
+	tag, err := r.db.Pool.Exec(ctx, `
+		UPDATE scan_jobs
+		SET status = 'accepted', worker_id = NULL, worker_heartbeat = NULL
+		WHERE status = 'running'
+		  AND worker_heartbeat IS NOT NULL
+		  AND worker_heartbeat < now() - $1`, fmt.Sprintf("%d seconds", int64(timeout.Seconds())))
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
 }
