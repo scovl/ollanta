@@ -317,6 +317,38 @@ func (a *measureRepoAdapter) Trend(ctx context.Context, projectID int64, metricK
 	return out, nil
 }
 
+func (a *measureRepoAdapter) UpsertLive(ctx context.Context, projectID, scanID int64, metricKey, componentPath string, value float64) error {
+	return mapStoreErr(a.inner.UpsertLive(ctx, projectID, scanID, metricKey, componentPath, value))
+}
+
+func (a *measureRepoAdapter) GetLive(ctx context.Context, projectID int64) (map[string]float64, error) {
+	return a.inner.GetLive(ctx, projectID)
+}
+
+func (a *measureRepoAdapter) UpsertLiveBatch(ctx context.Context, projectID, scanID int64, metrics map[string]float64) error {
+	return mapStoreErr(a.inner.UpsertLiveBatch(ctx, projectID, scanID, metrics))
+}
+
+func (a *measureRepoAdapter) UpsertDailyAggregate(ctx context.Context, projectID int64, metricKey string, date string, value float64) error {
+	return mapStoreErr(a.inner.UpsertDailyAggregate(ctx, projectID, metricKey, date, value))
+}
+
+func (a *measureRepoAdapter) UpsertDailyAggregateBatch(ctx context.Context, projectID int64, date string, metrics map[string]float64) error {
+	return mapStoreErr(a.inner.UpsertDailyAggregateBatch(ctx, projectID, date, metrics))
+}
+
+func (a *measureRepoAdapter) GetDailyAggregates(ctx context.Context, projectID int64, metricKey string, days int) ([]model.TrendPoint, error) {
+	points, err := a.inner.GetDailyAggregates(ctx, projectID, metricKey, days)
+	if err != nil {
+		return nil, mapStoreErr(err)
+	}
+	out := make([]model.TrendPoint, len(points))
+	for i, pt := range points {
+		out[i] = model.TrendPoint{AnalysisDate: pt.Date, Value: pt.Value}
+	}
+	return out, nil
+}
+
 type searchEnqueuerAdapter struct {
 	inner IndexEnqueuer
 }

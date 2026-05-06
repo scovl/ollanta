@@ -177,6 +177,10 @@ type Config struct {
 	// PostgresPool controls PostgreSQL connection pool sizing and lifetimes.
 	PostgresPool postgres.PoolConfig
 
+	// WorkerPool controls the number of concurrent scan ingest goroutines.
+	// Defaults to 4. Use 1 for single-worker mode.
+	WorkerPool int32
+
 	// AutoMigrate controls whether API and worker roles apply migrations during startup.
 	AutoMigrate bool
 
@@ -475,6 +479,7 @@ func applyServerEnvOverrides(cfg *Config) error {
 	if err := applyPostgresPoolEnvOverrides(cfg); err != nil {
 		return err
 	}
+	applyEnvInt32Value(&cfg.WorkerPool, "OLLANTA_WORKER_POOL")
 	if err := applyEnvObservabilityLinks(cfg, "OLLANTA_OBSERVABILITY_LINKS"); err != nil {
 		return err
 	}

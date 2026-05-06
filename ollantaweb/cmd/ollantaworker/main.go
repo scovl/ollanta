@@ -92,10 +92,67 @@ func main() {
 		indexEnqueuer,
 		webhookDispatcher,
 	)
-	jobWorker := ingest.NewScanJobWorker(processor, time.Second, appMetrics)
+	wp := int(cfg.WorkerPool)
+	if wp < 1 {
+		wp = 4
+	}
+	slog.Info("started", "worker_id", workerID, "worker_pool", wp, "admin_addr", cfg.AdminAddr)
 
-	slog.Info("started", "worker_id", workerID, "admin_addr", cfg.AdminAddr)
-	jobWorker.Start(ctx)
+	for i := 0; i < wp; i++ {
+		go func(id int) {
+			wrk := ingest.NewScanJobWorker(processor, 100*time.Millisecond, appMetrics)
+			slog.Debug("worker goroutine started", "id", id)
+			wrk.Start(ctx)
+		}(i)
+	}
+
+	// Heartbeat goroutine
+	go func() {
+		ticker := time.NewTicker(10 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			_ = scanJobRepo.UpdateHeartbeat(context.Background(), workerID)
+		}
+	}()
+
+	// Stale job recovery
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			n, _ := scanJobRepo.ReclaimStale(context.Background(), 30*time.Second)
+			if n > 0 {
+				slog.Warn("reclaimed stale jobs", "count", n)
+			}
+		}
+	}()
+
+	// Data lifecycle cleanup
+	go func() {
+		ticker := time.NewTicker(1 * time.Hour)
+		defer ticker.Stop()
+		for range ticker.C {
+			ctx := context.Background()
+			pool := db.Pool
+			if tag, err := pool.Exec(ctx, `DELETE FROM scan_jobs WHERE status = 'completed' AND completed_at < now() - interval '7 days'`); err != nil {
+				slog.Warn("cleanup scan_jobs failed", "error", err)
+			} else if tag.RowsAffected() > 0 {
+				slog.Info("cleanup scan_jobs", "deleted", tag.RowsAffected())
+			}
+			if tag, err := pool.Exec(ctx, `DELETE FROM scans WHERE created_at < now() - interval '365 days'`); err != nil {
+				slog.Warn("cleanup scans failed", "error", err)
+			} else if tag.RowsAffected() > 0 {
+				slog.Info("cleanup scans", "deleted", tag.RowsAffected())
+			}
+			if tag, err := pool.Exec(ctx, `DELETE FROM measures WHERE created_at < now() - interval '90 days'`); err != nil {
+				slog.Warn("cleanup measures failed", "error", err)
+			} else if tag.RowsAffected() > 0 {
+				slog.Info("cleanup measures", "deleted", tag.RowsAffected())
+			}
+		}
+	}()
+
+	<-ctx.Done()
 
 	webhookDispatcher.Stop()
 	slog.Info("stopped")
