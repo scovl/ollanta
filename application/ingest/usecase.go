@@ -320,6 +320,12 @@ func (uc *IngestUseCase) Ingest(ctx context.Context, req *IngestRequest) (*Inges
 		return nil, fmt.Errorf("bulk insert measures: %w", err)
 	}
 
+	// ── 7.5. Upsert live measures for fast current-value queries ──────────
+	uc.upsertLiveMeasures(ctx, project.ID, scan.ID, measures)
+
+	// ── 7.6. Upsert daily rollup for trend queries ────────────────────────
+	uc.upsertDailyRollup(ctx, project.ID, measures)
+
 	// ── 8. Persist latest code/profile snapshots for the scope ──────────────
 	if err := uc.persistScanArtifacts(ctx, project.ID, scan.ID, scope, req); err != nil {
 		return nil, err
@@ -413,6 +419,15 @@ func (uc *IngestUseCase) dispatchScanWebhook(ctx context.Context, projectID, sca
 	_ = pipelineSteps.fireWebhooks.run(ctx, func(ctx context.Context) error {
 		return uc.webhooks.Dispatch(ctx, projectID, scanID, "scan.completed")
 	})
+}
+
+func (uc *IngestUseCase) upsertLiveMeasures(ctx context.Context, projectID, scanID int64, measures map[string]float64) {
+	_ = uc.measures.UpsertLiveBatch(ctx, projectID, scanID, measures)
+}
+
+func (uc *IngestUseCase) upsertDailyRollup(ctx context.Context, projectID int64, measures map[string]float64) {
+	today := time.Now().UTC().Format("2006-01-02")
+	_ = uc.measures.UpsertDailyAggregateBatch(ctx, projectID, today, measures)
 }
 
 func issueRowToDomain(r *model.IssueRow) *model.Issue {

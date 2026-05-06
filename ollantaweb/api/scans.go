@@ -1,6 +1,7 @@
 package api
 
 import (
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"errors"
@@ -25,8 +26,18 @@ type ScansHandler struct {
 
 // Ingest handles POST /api/v1/scans — receives a report.json payload and enqueues durable processing.
 func (h *ScansHandler) Ingest(w http.ResponseWriter, r *http.Request) {
+	body := r.Body
+	if r.Header.Get("Content-Encoding") == "gzip" {
+		gr, err := gzip.NewReader(body)
+		if err != nil {
+			jsonError(w, http.StatusBadRequest, "invalid gzip: "+err.Error())
+			return
+		}
+		defer gr.Close()
+		body = gr
+	}
 	var req ingest.IngestRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := json.NewDecoder(body).Decode(&req); err != nil {
 		var maxBytesErr *http.MaxBytesError
 		if errors.As(err, &maxBytesErr) {
 			jsonError(w, http.StatusRequestEntityTooLarge, "scan report exceeds configured request body limit")
