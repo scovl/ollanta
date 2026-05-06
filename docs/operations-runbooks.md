@@ -50,3 +50,41 @@ These runbooks assume PostgreSQL is the source of truth and search is a rebuilda
 2. Update all consumers and run a read-only API call to verify the new token.
 3. Revoke the old token through the API or UI.
 4. Inspect recent auth failures if consumers continue using the revoked token.
+
+## Worker Pool Tuning
+
+The scan ingest pool size is controlled by `OLLANTA_WORKER_POOL` (default 4). Each goroutine consumes one database connection during active processing.
+
+**Sizing guidelines:**
+
+| Deployment scale | Recommended pool | Rationale |
+|-----------------|-----------------|-----------|
+| Dev / < 100 projects | 1-2 | Low throughput, saves connections |
+| 100-1000 projects | 4 | Default, balanced |
+| 1k-10k projects | 8 | Handles scan bursts |
+| 10k-100k projects | 16 | High throughput, needs read replica |
+| 100k+ projects | 16-32 | Multiple worker pods recommended |
+
+```bash
+# High-throughput deployment
+OLLANTA_WORKER_POOL=16 ollantaworker
+
+# Scale horizontally with multiple pods for 200k+ projects
+OLLANTA_WORKER_POOL=8 ollantaworker  # pod 1
+OLLANTA_WORKER_POOL=8 ollantaworker  # pod 2
+```
+
+Ensure `OLLANTA_POSTGRES_MAX_CONNS` is at least `worker_pool + api_pool + 10` to avoid connection starvation.
+
+## Worker Heartbeat Monitoring
+
+- Metrics: not yet exposed via Prometheus; monitor via `SELECT count(*) FROM scan_jobs WHERE status = 'running' AND worker_heartbeat < now() - interval '30 seconds'` for stale count
+- Alert when stale count > 0 for more than 1 minute (indicates worker crash)
+- Recovery: jobs are auto-reclaimed every 30 seconds. No manual action needed.
+
+## Data Lifecycle Verification
+
+- Check `SELECT count(*) FROM scan_jobs WHERE status = 'completed' AND completed_at < now() - interval '7 days'` — should be 0
+- Check `SELECT count(*) FROM scans WHERE created_at < now() - interval '365 days'` — should be 0
+- Disk usage: live_measures stays constant (~4M rows). measure_daily_aggregates grows ~1.4B/year. Plan storage accordingly.
+- If cleanup stalls, restart the worker process. Cleanup runs every hour.

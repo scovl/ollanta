@@ -1174,6 +1174,56 @@ flowchart LR
 
 Resultado: imagem final de ~20MB, sem shell, sem ferramentas — superfície de ataque mínima.
 
+### Escala Horizontal
+
+O Ollanta foi projetado para escala horizontal desde o primeiro dia — diferente do SonarQube que embute o Elasticsearch no processo, impedindo deploys multi-instância.
+
+**Princípios:**
+- **Nenhum estado no processo** — todo estado vive no PostgreSQL ou ZincSearch (serviços externos)
+- **Workers stateless** — reivindicam tarefas da fila no banco via `FOR UPDATE SKIP LOCKED`
+- **Busca é uma projeção rebuildável** — PostgreSQL é fonte da verdade; índices do ZincSearch podem ser reconstruídos do banco
+- **Boot instantâneo** — sem rebuild de índice na inicialização (~2s vs 6h+ do SonarQube)
+
+**Workers paralelos de ingest:**
+```
+┌──────────────────┐     claim (SKIP LOCKED)    ┌─────────────┐
+│ ollantaworker-1  │──────────────────────────→│ scan_jobs    │
+│ ollantaworker-2  │                            │ (PostgreSQL) │
+│ ollantaworker-N  │                            └─────────────┘
+└──────────────────┘
+
+┌──────────────────┐     query (read replica)   ┌─────────────────┐
+│ ollantaweb-1     │──────────────────────────→│ PostgreSQL Read  │
+│ ollantaweb-2     │                            │ (réplica)       │
+│ ollantaweb-N     │                            └─────────────────┘
+└──────────────────┘     write (primary)        ┌─────────────────┐
+                         ──────────────────────→│ PostgreSQL Write │
+                                                │ (primário)      │
+                                                └─────────────────┘
+```
+
+**Ciclo de vida dos dados — tabelas em escala (200k+ projetos):**
+| Tabela | Estratégia | Volume (1 ano, 200k projetos) |
+|--------|------------|-------------------------------|
+| `issues` | Particionada por RANGE (`created_at`) | ~1B linhas |
+| `live_measures` | UPSERT — só valores atuais | ~4M linhas (constante) |
+| `measure_daily_aggregates` | Rollup — agregados diários | ~1.4B linhas |
+| `scans` | TTL 365 dias | ~73M linhas |
+| `scan_jobs` | TTL 7 dias | ~500K linhas (janelado) |
+| `measures` | TTL 90 dias | ~375M linhas (janelado) |
+
+**Heartbeat e recuperação de workers:**
+- Workers pingam `worker_heartbeat = now()` a cada 10s
+- Workers stale (>30s sem heartbeat) têm seus jobs reivindicados
+- `ReclaimStale()` roda a cada 30s no processo worker
+- `ClaimNext()` usa `FOR UPDATE SKIP LOCKED` — múltiplos workers nunca reivindicam o mesmo job
+
+**Degradação graciosa:**
+- Busca indisponível (ZincSearch) → scans continuam (step `index_search` é Skip)
+- Busca indisponível → API cai para PostgreSQL FTS com header `X-Search-Backend: postgres`
+- Réplica de leitura indisponível → cai para pool de escrita
+- Worker crash → job reivindicado por outro worker em 30s
+
 ---
 
 ## Parte 10: CI/CD

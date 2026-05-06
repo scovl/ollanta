@@ -64,6 +64,13 @@ Open `http://localhost:8080` and sign in with the local development account:
 
 The local Compose stack works without a `.env` file. It uses local development defaults for PostgreSQL, ZincSearch, the JWT secret, and the scanner token. For shared or long-lived environments, create a local `.env` and override at least `PG_PASSWORD`, `OLLANTA_JWT_SECRET`, and `OLLANTA_SCANNER_TOKEN`.
 
+For high-throughput environments, configure the worker pool:
+
+```bash
+# 16 goroutines for 10k+ projects
+OLLANTA_WORKER_POOL=16 docker compose --profile server up -d
+```
+
 ## 4. Push A Scan To The Server
 
 With the server running, push the current checkout from the local CLI:

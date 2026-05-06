@@ -278,6 +278,24 @@ Search indexing and webhook deliveries now run through durable PostgreSQL-backed
 | POST   | `/api/v1/tokens`            | Generate a new API token (`olt_…`) |
 | DELETE | `/api/v1/tokens/{id}`       | Revoke token |
 
+## Measures Live
+
+Fast current-value queries without expensive subqueries. Also supports daily trend rollups.
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/v1/projects/{key}/measures/live` | Current values for all project measures |
+| `GET` | `/api/v1/projects/{key}/measures/trend?metric=coverage&days=30` | Daily aggregated trend for a metric |
+
+## Components
+
+Persistent project directory tree with issue counts.
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/v1/projects/{key}/components` | Directory tree with issue counts per node |
+| `GET` | `/api/v1/projects/{key}/components?path=src/` | Subtree starting at path |
+
 ## Quality Gates & Profiles
 
 Quality Profiles and Quality Gates are separate APIs. Profiles decide which rules run and with which effective severity/params. Gates evaluate the resulting metrics after ingestion.

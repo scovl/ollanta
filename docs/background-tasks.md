@@ -9,6 +9,65 @@ Ollanta processes scan intake, search indexing, and webhook delivery asynchronou
 - `webhook`: outbound delivery jobs for project and scan events.
 - Future task types such as reindex, test-signal, and mutation-signal processing should use the same normalized API contract.
 
+## Worker Pool
+
+Scan ingest uses a **bounded goroutine pool** for parallel processing. Each goroutine independently claims and processes jobs from the `scan_jobs` table using `SELECT ... FOR UPDATE SKIP LOCKED`, guaranteeing that no two goroutines process the same job.
+
+| Config | Default | Description |
+|--------|---------|-------------|
+| `OLLANTA_WORKER_POOL` | `4` | Number of concurrent scan ingest goroutines |
+
+```bash
+# Single worker
+OLLANTA_WORKER_POOL=1 ollantaworker
+
+# 16 goroutines for high-throughput deployments (200k+ projects)
+OLLANTA_WORKER_POOL=16 ollantaworker
+```
+
+Workers run in the same process sharing a single `pgxpool`. Each worker loop: `ClaimNext()` → `ProcessNext()` → repeat (100ms idle delay).
+
+## Batch Optimizations
+
+To handle thousands of scans per second with minimal database round-trips:
+
+| Operation | Strategy | Round-trips/scan |
+|-----------|----------|-----------------|
+| Issue bulk insert | PostgreSQL `COPY` protocol | 1 |
+| Measure bulk insert | PostgreSQL `COPY` protocol | 1 |
+| Live measures UPSERT | Multi-row `unnest()` batch | 1 |
+| Daily rollup UPSERT | Multi-row `unnest()` batch | 1 |
+| Search indexing (ZincSearch) | Bulk API | 1 |
+| Search indexing (PG FTS) | No-op (live queries) | 0 |
+
+**Total: ~4 round-trips per scan** regardless of issue/measure count. Without batching, a scan with 20 metrics would need ~62 round-trips.
+
+## Worker Heartbeat & Recovery
+
+Each worker pings `worker_heartbeat = now()` every 10 seconds. If a worker crashes or stalls, its heartbeat stops updating. A recovery goroutine runs every 30 seconds:
+
+```sql
+UPDATE scan_jobs
+SET status = 'accepted', worker_id = NULL, worker_heartbeat = NULL
+WHERE status = 'running'
+  AND worker_heartbeat IS NOT NULL
+  AND worker_heartbeat < now() - interval '30 seconds'
+```
+
+Stale jobs are returned to the `accepted` pool and picked up by another goroutine. This ensures no job is permanently lost on worker failure.
+
+## Data Lifecycle Cleanup
+
+A cleanup goroutine runs every hour removing expired data:
+
+| Table | TTL | Action |
+|-------|-----|--------|
+| `scan_jobs` | 7 days | DELETE completed jobs |
+| `scans` | 365 days | DELETE (cascades to issues, measures) |
+| `measures` | 90 days | DELETE per-scan measures |
+
+The `live_measures` table is not cleaned — it stores only current values (UPSERT, ~4M rows constant). The `measure_daily_aggregates` table provides historical trends without the storage overhead of per-scan measures.
+
 ## States
 
 - `queued`: the source job is accepted and ready to be claimed.

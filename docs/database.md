@@ -57,6 +57,12 @@ erDiagram
     scans ||--o{ issues : "contains"
     scans ||--o{ measures : "contains"
     scans ||--o{ scan_profile_snapshots : "records profiles"
+    scans ||--o{ scan_gate_results : "audits gate"
+
+    projects ||--o{ live_measures : "has current"
+    projects ||--o{ measure_daily_aggregates : "rolls up"
+    projects ||--o{ components : "has tree"
+    components ||--o{ components : "parent of"
 
     users ||--o{ tokens : "owns"
     users ||--o{ sessions : "has"
@@ -551,6 +557,80 @@ SELECT
     i.rule_key,
     i.type,
     i.severity,
+...
+```
+
+## Live Measures
+
+The `live_measures` table stores the **current value** of each metric per project, updated atomically via `INSERT ... ON CONFLICT DO UPDATE` after every scan. This avoids expensive subqueries with `MAX(scan_id)` in overview and dashboard queries.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `project_id` | BIGINT | FK to projects |
+| `component_path` | TEXT | Empty for project-level, file path for file-level |
+| `metric_key` | TEXT | e.g. `bugs`, `coverage`, `new_bugs` |
+| `value` | NUMERIC | Current measure value |
+| `scan_id` | BIGINT | FK to scans (last scan that updated) |
+| `updated_at` | TIMESTAMPTZ | Last update time |
+
+**Unique constraint:** `(project_id, component_path, metric_key)` — ensures exactly one row per metric per component.
+
+## Measure Daily Aggregates
+
+The `measure_daily_aggregates` table rolls up per-scan measures into daily averages, max, min with sample counts. Trend queries use this table instead of scanning the full `measures` table.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `project_id` | BIGINT | FK to projects |
+| `metric_key` | TEXT | Metric key |
+| `date` | DATE | Aggregation date |
+| `value_avg` | NUMERIC | Average value for the day |
+| `value_max` | NUMERIC | Maximum value for the day |
+| `value_min` | NUMERIC | Minimum value for the day |
+| `sample_count` | INTEGER | Number of scans aggregated |
+
+**UPSERT logic:** `value_avg = (old_avg * old_count + new_value) / (old_count + 1)` — correct running average.
+
+## Components
+
+The `components` table persists the project directory tree with deterministic UUIDs. Each scan updates the tree via UPSERT.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `uuid` | TEXT PK | Deterministic: SHA256(project_key:path:qualifier) |
+| `project_id` | BIGINT | FK to projects |
+| `path` | TEXT | Full path relative to project root |
+| `qualifier` | TEXT | `TRK` (project), `DIR` (directory), `FIL` (file) |
+| `parent_uuid` | TEXT | FK to parent component |
+| `name` | TEXT | Component name (last path segment) |
+| `last_scan_id` | BIGINT | FK to last scan that touched this component |
+
+## Worker Fields
+
+The `scan_jobs` table has added columns for horizontal scaling:
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `project_id` | INTEGER | FK to projects (for lock-by-project) |
+| `worker_heartbeat` | TIMESTAMPTZ | Last heartbeat ping from worker |
+
+## File Hash
+
+The `issues` table has an added `file_hash` column (SHA256 of first 64 lines) for cross-path file move detection:
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `file_hash` | TEXT | SHA256 of first 64 lines of the source file |
+
+## Data Lifecycle
+
+Cleanup runs every hour in the worker process:
+
+| Table | TTL | Action |
+|-------|-----|--------|
+| `scan_jobs` | 7 days | DELETE completed jobs |
+| `scans` | 365 days | DELETE old scans (cascades to issues, measures) |
+| `measures` | 90 days | DELETE per-scan measures (dailies and live are preserved) |
     i.status,
     i.resolution,
     i.component_path,
