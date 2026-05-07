@@ -1,7 +1,6 @@
 package api
 
 import (
-	"errors"
 	"net/http"
 	"time"
 
@@ -40,8 +39,7 @@ func (h *MeasuresHandler) Trend(w http.ResponseWriter, r *http.Request) {
 	}
 
 	project, err := h.projects.GetByKey(r.Context(), key)
-	if errors.Is(err, postgres.ErrNotFound) {
-		jsonError(w, http.StatusNotFound, "project not found")
+	if handleNotFound(w, err, "project not found") {
 		return
 	}
 	if err != nil {

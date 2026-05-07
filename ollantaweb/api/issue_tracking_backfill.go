@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"errors"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -84,8 +83,7 @@ func (h *IssueTrackingBackfillHandler) BackfillProject(w http.ResponseWriter, r 
 	}
 
 	result, err := h.service.BackfillProject(r.Context(), projectKey)
-	if errors.Is(err, postgres.ErrNotFound) {
-		jsonError(w, http.StatusNotFound, projectNotFoundMessage)
+	if handleNotFound(w, err, projectNotFoundMessage) {
 		return
 	}
 	if err != nil {

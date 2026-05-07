@@ -86,8 +86,7 @@ func (h *ScansHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	scan, err := h.scans.GetByID(r.Context(), id)
-	if errors.Is(err, postgres.ErrNotFound) {
-		jsonError(w, http.StatusNotFound, "scan not found")
+	if handleNotFound(w, err, "scan not found") {
 		return
 	}
 	if err != nil {
@@ -105,8 +104,7 @@ func (h *ScansHandler) ListByProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	resolved, err := resolveProjectScope(r.Context(), h.projects, h.scans, routeParam(r, "key"), requested)
-	if errors.Is(err, postgres.ErrNotFound) {
-		jsonError(w, http.StatusNotFound, "project not found")
+	if handleNotFound(w, err, "project not found") {
 		return
 	}
 	if err != nil {
@@ -151,8 +149,7 @@ func (h *ScansHandler) Latest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	resolved, err := resolveProjectScope(r.Context(), h.projects, h.scans, routeParam(r, "key"), requested)
-	if errors.Is(err, postgres.ErrNotFound) {
-		jsonError(w, http.StatusNotFound, "project not found")
+	if handleNotFound(w, err, "project not found") {
 		return
 	}
 	if err != nil {
@@ -160,8 +157,7 @@ func (h *ScansHandler) Latest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	scan, err := h.scans.GetLatestInScope(r.Context(), resolved.Project.ID, resolved.Scope, resolved.DefaultBranch)
-	if errors.Is(err, postgres.ErrNotFound) {
-		jsonError(w, http.StatusNotFound, "no scans for project")
+	if handleNotFound(w, err, "no scans for project") {
 		return
 	}
 	if err != nil {

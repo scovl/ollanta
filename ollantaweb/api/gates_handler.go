@@ -2,7 +2,6 @@ package api
 
 import (
 	"encoding/json"
-	"errors"
 	"net/http"
 
 	"github.com/scovl/ollanta/ollantastore/postgres"
@@ -37,8 +36,7 @@ func (h *GatesHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	gate, err := h.gates.GetByID(r.Context(), id)
-	if errors.Is(err, postgres.ErrNotFound) {
-		jsonError(w, http.StatusNotFound, "gate not found")
+	if handleNotFound(w, err, "gate not found") {
 		return
 	}
 	if err != nil {
@@ -165,8 +163,7 @@ func (h *GatesHandler) UpdateCondition(w http.ResponseWriter, r *http.Request) {
 	}
 	c.ID = cid
 	if err := h.gates.UpdateCondition(r.Context(), &c); err != nil {
-		if errors.Is(err, postgres.ErrNotFound) {
-			jsonError(w, http.StatusNotFound, "condition not found")
+		if handleNotFound(w, err, "condition not found") {
 			return
 		}
 		jsonError(w, http.StatusInternalServerError, err.Error())
@@ -215,8 +212,7 @@ func (h *GatesHandler) SetDefault(w http.ResponseWriter, r *http.Request) {
 func (h *GatesHandler) AssignToProject(w http.ResponseWriter, r *http.Request) {
 	key := routeParam(r, "key")
 	project, err := h.projects.GetByKey(r.Context(), key)
-	if errors.Is(err, postgres.ErrNotFound) {
-		jsonError(w, http.StatusNotFound, "project not found")
+	if handleNotFound(w, err, "project not found") {
 		return
 	}
 	if err != nil {

@@ -202,8 +202,7 @@ func (h *ActivityHandler) Activity(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resolved, err := resolveProjectScope(ctx, h.projects, h.scans, routeParam(r, "key"), requested)
-	if errors.Is(err, postgres.ErrNotFound) {
-		jsonError(w, http.StatusNotFound, projectNotFoundMessage)
+	if handleNotFound(w, err, projectNotFoundMessage) {
 		return
 	}
 	if err != nil {

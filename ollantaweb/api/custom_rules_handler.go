@@ -3,7 +3,6 @@ package api
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"io"
 	"net/http"
 	"strconv"
@@ -143,8 +142,7 @@ func (h *CustomRulesHandler) Export(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	doc, err := h.rules.ExportDocument(r.Context(), id)
-	if errors.Is(err, postgres.ErrNotFound) {
-		jsonError(w, http.StatusNotFound, customRuleNotFoundMessage)
+	if handleNotFound(w, err, customRuleNotFoundMessage) {
 		return
 	}
 	if err != nil {
@@ -186,8 +184,7 @@ func (h *CustomRulesHandler) transition(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	rule, err := fn(r.Context(), id)
-	if errors.Is(err, postgres.ErrNotFound) {
-		jsonError(w, http.StatusNotFound, customRuleNotFoundMessage)
+	if handleNotFound(w, err, customRuleNotFoundMessage) {
 		return
 	}
 	if err != nil {
@@ -204,8 +201,7 @@ func (h *CustomRulesHandler) ruleByID(w http.ResponseWriter, r *http.Request) (*
 		return nil, false
 	}
 	rule, err := h.rules.Get(r.Context(), id)
-	if errors.Is(err, postgres.ErrNotFound) {
-		jsonError(w, http.StatusNotFound, customRuleNotFoundMessage)
+	if handleNotFound(w, err, customRuleNotFoundMessage) {
 		return nil, false
 	}
 	if err != nil {

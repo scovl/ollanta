@@ -2,7 +2,6 @@ package api
 
 import (
 	"encoding/json"
-	"errors"
 	"net/http"
 	"strconv"
 
@@ -36,8 +35,7 @@ func (h *ProjectsHandler) Create(w http.ResponseWriter, r *http.Request) {
 func (h *ProjectsHandler) Get(w http.ResponseWriter, r *http.Request) {
 	key := routeParam(r, "key")
 	p, err := h.repo.GetByKey(r.Context(), key)
-	if errors.Is(err, postgres.ErrNotFound) {
-		jsonError(w, http.StatusNotFound, projectNotFoundMessage)
+	if handleNotFound(w, err, projectNotFoundMessage) {
 		return
 	}
 	if err != nil {
@@ -72,8 +70,7 @@ func (h *ProjectsHandler) List(w http.ResponseWriter, r *http.Request) {
 func (h *ProjectsHandler) Update(w http.ResponseWriter, r *http.Request) {
 	key := routeParam(r, "key")
 	p, err := h.repo.GetByKey(r.Context(), key)
-	if errors.Is(err, postgres.ErrNotFound) {
-		jsonError(w, http.StatusNotFound, projectNotFoundMessage)
+	if handleNotFound(w, err, projectNotFoundMessage) {
 		return
 	}
 	if err != nil {
@@ -113,8 +110,7 @@ func (h *ProjectsHandler) Update(w http.ResponseWriter, r *http.Request) {
 func (h *ProjectsHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	key := routeParam(r, "key")
 	p, err := h.repo.GetByKey(r.Context(), key)
-	if errors.Is(err, postgres.ErrNotFound) {
-		jsonError(w, http.StatusNotFound, projectNotFoundMessage)
+	if handleNotFound(w, err, projectNotFoundMessage) {
 		return
 	}
 	if err != nil {

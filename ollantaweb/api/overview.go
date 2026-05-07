@@ -141,8 +141,7 @@ func (h *OverviewHandler) Overview(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if errors.Is(err, postgres.ErrNotFound) {
-		jsonError(w, http.StatusNotFound, projectNotFoundMessage)
+	if handleNotFound(w, err, projectNotFoundMessage) {
 		return
 	}
 	if err != nil {

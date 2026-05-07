@@ -22,8 +22,7 @@ func NewNewCodePeriodHandler(periods *postgres.NewCodePeriodRepository, projects
 // GetGlobal handles GET /api/v1/new-code-periods/global
 func (h *NewCodePeriodHandler) GetGlobal(w http.ResponseWriter, r *http.Request) {
 	ncp, err := h.periods.GetGlobal(r.Context())
-	if errors.Is(err, postgres.ErrNotFound) {
-		jsonError(w, http.StatusNotFound, "not found")
+	if handleNotFound(w, err, "not found") {
 		return
 	}
 	if err != nil {
