@@ -145,29 +145,9 @@ function Ensure-ScannerEnvironment {
 }
 
 function New-SmokeProject {
-    $stamp = Get-Date -Format "yyyyMMddHHmmss"
-    $script:projectKey = "smoke-config-toml-$stamp"
-    $script:tempProjectDir = Join-Path ([System.IO.Path]::GetTempPath()) ("ollanta-smoke-" + $stamp)
-
-    New-Item -ItemType Directory -Path $script:tempProjectDir | Out-Null
-    Set-Content -Path (Join-Path $script:tempProjectDir "go.mod") -Value @(
-        "module smoke",
-        "",
-        "go 1.21"
-    )
-    Set-Content -Path (Join-Path $script:tempProjectDir "main.go") -Value @(
-        "package main",
-        "",
-        'import "fmt"',
-        "",
-        "func main() {",
-        '    fmt.Println("smoke")',
-        "}"
-    )
-
-    & git -C $script:tempProjectDir init -b main | Out-Null
-    & git -C $script:tempProjectDir add . | Out-Null
-    & git -C $script:tempProjectDir -c user.name="Ollanta Smoke" -c user.email="smoke@local.test" commit -m "smoke" | Out-Null
+    Write-Host "Using ollanta repository as smoke project..."
+    $script:projectKey = "ollanta"
+    $script:tempProjectDir = $repoRoot
 }
 
 function Start-SmokeServer {
@@ -258,14 +238,14 @@ try {
         }
     }
 
-    if ($success -and -not $KeepTempProject -and $tempProjectDir -and (Test-Path $tempProjectDir)) {
+    if ($success -and -not $KeepTempProject -and $tempProjectDir -and (Test-Path $tempProjectDir) -and $tempProjectDir -ne $repoRoot) {
         Remove-Item -Path $tempProjectDir -Recurse -Force -ErrorAction SilentlyContinue
     }
 
     if ($success -and (Test-Path $serverLogPath)) {
         Remove-Item -Path $serverLogPath -Force -ErrorAction SilentlyContinue
     } elseif (-not $success) {
-        if ($tempProjectDir) {
+        if ($tempProjectDir -and $tempProjectDir -ne $repoRoot) {
             Write-Warning "smoke project preserved at $tempProjectDir"
         }
         if (Test-Path $serverLogPath) {

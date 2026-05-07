@@ -8,9 +8,7 @@
 
 # Ollanta
 
-Ollanta is a multi-language static analysis platform written in Go. It scans source code, reports bugs, code smells and vulnerabilities, computes metrics, and evaluates configurable quality gates.
-
-You can use Ollanta in two ways:
+Ollanta is a multi-language static analysis platform written in Go. It scans source code, reports bugs, code smells and vulnerabilities, computes metrics, and evaluates configurable quality gates. You can use Ollanta in two ways:
 
 - **Scanner**: a local CLI that scans a project and writes JSON/SARIF reports. It can also open an embedded local UI on port `7777`.
 - **Server**: a centralized API that receives scan reports, stores history, tracks issues across scans, evaluates quality gates, exposes dashboards, and runs background workers.
@@ -58,9 +56,7 @@ go run github.com/scovl/ollanta/ollantascanner/cmd/ollanta \
   -local-ui
 ```
 
-This is the fastest way to try Ollanta on Ollanta itself. Open `http://localhost:7777` to inspect issues, metrics, rule details, and optional `Fix with AI` suggestions.
-
-Reports are written to `.ollanta/` inside the scanned project:
+This is the fastest way to try Ollanta on Ollanta itself. Open `http://localhost:7777` to inspect issues, metrics, rule details, and optional `Fix with AI` suggestions. Reports are written to `.ollanta/` inside the scanned project:
 
 - `.ollanta/report.json`
 - `.ollanta/report.sarif`
@@ -71,9 +67,7 @@ Reports are written to `.ollanta/` inside the scanned project:
 docker compose --profile scanner up local-ui
 ```
 
-By default this scans the current checkout. For another project, set `PROJECT_DIR` and `PROJECT_KEY` in your shell or in a local `.env` file before running the same command.
-
-PowerShell example:
+By default this scans the current checkout. For another project, set `PROJECT_DIR` and `PROJECT_KEY` in your shell or in a local `.env` file before running the same command. PowerShell example:
 
 ```powershell
 $env:PROJECT_DIR = 'D:\projects\myapp'
@@ -121,9 +115,7 @@ go run github.com/scovl/ollanta/ollantascanner/cmd/ollanta \
 
 `-server-wait` makes the CLI wait until the accepted server-side scan job finishes. Without it, the server returns after accepting the job.
 
-When waiting is enabled, the scanner may exit non-zero after a successful push if the evaluated Quality Gate is `ERROR`. Treat that as a CI gate failure, not as an ingestion failure.
-
-Docker push mode is also available:
+When waiting is enabled, the scanner may exit non-zero after a successful push if the evaluated Quality Gate is `ERROR`. Treat that as a CI gate failure, not as an ingestion failure. Docker push mode is also available:
 
 ```sh
 docker compose --profile push run --build --rm push
@@ -139,9 +131,7 @@ Ollanta can read settings from [config.toml.example](config.toml.example). The e
 cp config.toml.example config.toml
 ```
 
-Use CLI flags for one-off runs and `config.toml` when the same project or CI job should be repeatable. Advanced test, coverage, and mutation evidence settings are documented in [docs/test-signals.md](docs/test-signals.md).
-
-Configuration precedence:
+Use CLI flags for one-off runs and `config.toml` when the same project or CI job should be repeatable. Advanced test, coverage, and mutation evidence settings are documented in [docs/test-signals.md](docs/test-signals.md). Configuration precedence:
 
 | Runtime | Precedence |
 |---------|------------|
