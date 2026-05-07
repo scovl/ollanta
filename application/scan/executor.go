@@ -7,7 +7,7 @@ import (
 	goast "go/ast"
 	"go/parser"
 	"go/token"
-	"log"
+	"log/slog"
 	"os"
 	"runtime"
 	"sync"
@@ -86,7 +86,7 @@ func (e *Executor) analyzeFile(ctx context.Context, f DiscoveredFile, policy *Pr
 		ac.Params = cloneParams(ruleConfig.Params)
 		before := len(issues)
 		if err := a.Check(ctx, ac, &issues); err != nil {
-			log.Printf("ollanta: analyser %s error on %s: %v", a.Key(), f.Path, err)
+			slog.Warn("analyser error", "key", a.Key(), "path", f.Path, "error", err)
 		}
 		applyProfileSeverity(issues[before:], ruleConfig.Severity)
 	}
@@ -120,7 +120,7 @@ func (e *Executor) Run(ctx context.Context, files []DiscoveredFile, policy *Prof
 
 			defer func() {
 				if r := recover(); r != nil {
-					log.Printf("ollanta: panic analyzing %s: %v", f.Path, r)
+					slog.Warn("panic analyzing file", "path", f.Path, "panic", r)
 					out <- result{}
 				}
 			}()

@@ -7,7 +7,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -401,7 +401,7 @@ func countContentLines(src []byte) int {
 func countLines(path string) (total, ncloc, comments int) {
 	f, err := os.Open(path)
 	if err != nil {
-		log.Printf("ollanta: cannot read %s for metrics: %v", path, err)
+		slog.Warn("cannot read file for metrics", "path", path, "error", err)
 		return 0, 0, 0
 	}
 	defer f.Close()

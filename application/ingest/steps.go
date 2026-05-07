@@ -3,7 +3,7 @@ package ingest
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"time"
 )
 
@@ -45,7 +45,7 @@ func (s Step) run(ctx context.Context, fn func(ctx context.Context) error) error
 
 	case StrategySkip:
 		if err := attempt(); err != nil {
-			log.Printf("ingest: step %s skipped: %v", s.Name, err)
+			slog.Warn("step skipped", "step", s.Name, "error", err)
 		}
 		return nil
 
@@ -59,8 +59,7 @@ func (s Step) run(ctx context.Context, fn func(ctx context.Context) error) error
 			if err := attempt(); err != nil {
 				lastErr = err
 				backoff := time.Duration(i) * 500 * time.Millisecond
-				log.Printf("ingest: step %s attempt %d/%d failed: %v (retry in %s)",
-					s.Name, i, maxR, err, backoff)
+				slog.Warn("step attempt failed", "step", s.Name, "attempt", i, "max_attempts", maxR, "error", err, "retry_in", backoff)
 				select {
 				case <-ctx.Done():
 					return fmt.Errorf("step %s: context cancelled: %w", s.Name, ctx.Err())
