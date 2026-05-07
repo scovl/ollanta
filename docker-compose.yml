@@ -71,6 +71,7 @@ services:
       - -project-dir=/project
       - -project-key=${PROJECT_KEY:-project}
       - -format=all
+      - -with-tests
       - -with-mutations
       - -local-ui
       - -bind=0.0.0.0
@@ -92,6 +93,7 @@ services:
       - -project-dir=/project
       - -project-key=${PROJECT_KEY:-project}
       - -format=all
+      - -with-tests
       - -with-mutations
     restart: "no"
     profiles: ["scanner"]
@@ -110,6 +112,7 @@ services:
       - -project-dir=/project
       - -project-key=${PROJECT_KEY:-project}
       - -format=all
+      - -with-tests
       - -with-mutations
       - -server=${OLLANTA_SERVER:-http://ollantaweb:8080}
       - -server-token=${OLLANTA_TOKEN:-ollanta-dev-scanner-token}
