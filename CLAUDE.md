@@ -260,8 +260,53 @@ Rule keys contain colons (`go:no-large-functions`). When passing through URLs:
 | Importing `ollantaparser` from `domain/` or `application/` | Breaks hexagonal boundary, introduces CGo |
 | Copying data files across modules | Silent drift, maintenance burden |
 | Duplicating struct definitions | Types diverge silently |
-| `_, _ = f()` â€” discarding errors | Bugs hide, debugging is harder |
+| `_, _ = f()` — discarding errors | Bugs hide, debugging is harder |
 | Putting SQL/HTTP/CGo in inner rings | Domain must stay pure |
 | Running `golangci-lint` at workspace root | Each module has own `go.mod` |
 | Mixing `model.Issue` and `domain.Issue` without bridge | Legacy and hexagonal types are separate |
 | `log.Printf` debug statements left in code | Noise in production logs |
+
+## Design Practices: SOLID, DRY, KISS, YAGNI
+
+Every change must be evaluated against these principles during review:
+
+### DRY (Don't Repeat Yourself)
+
+- **One truth per concept.** If the same logic appears in two places, extract it to a shared function or package before adding the third.
+- **No duplicated sentinels.** Errors like `ErrNotFound` must have a single definition, aliased by consumers.
+- **No duplicated interfaces.** If two interfaces declare the same methods, consolidate — do not wait for drift.
+- **Pattern extraction over copying.** The third time you write the same 4-line `if errors.Is` block, extract a helper. Two times is a coincidence; three is a pattern.
+
+### KISS (Keep It Simple, Stupid)
+
+- **Manual DI over frameworks.** Explicit constructor wiring in `main.go` is preferred over reflection-based containers.
+- **Helpers over middleware.** A 6-line function beats a middleware struct when the abstraction is thin. Add indirection only when it reduces total complexity.
+- **Flat over nested.** Prefer flat structs and linear control flow. Add layers when the current layer proves insufficient, not preemptively.
+- **Prefer `pgx` over ORM.** Direct SQL is simpler to reason about, profile, and optimize.
+
+### YAGNI (You Aren't Gonna Need It)
+
+- **No single-implementation interfaces unless they cross a hexagonal boundary.** Internal packages do not need interfaces — concrete types suffice until a second implementation exists.
+- **No speculative parameters.** Add configuration knobs when a concrete use case demands them, not when they "might be useful."
+- **No feature flags for unfinished features.** Either ship it or cut it. Dead branches rot.
+- **No preemptive abstraction.** Build for what the code does today. The "what if tomorrow" abstraction tax is paid with tomorrow's money.
+
+### SOLID
+
+| Principle | How we enforce it |
+|-----------|------------------|
+| **S**ingle Responsibility | One file = one concern. If a file exceeds ~400 lines or has two unrelated responsibilities, split it. |
+| **O**pen/Closed | Adding a new rule requires 3 new files, zero edits to existing ones. Extend with new code, not switches. |
+| **L**iskov Substitution | Every port implementation must have a compile-time check: `var _ port.IAnalyzer = (*Impl)(nil)`. |
+| **I**nterface Segregation | No interface should force a caller to depend on methods it does not use. Split large interfaces (>10 methods) into role-focused interfaces. |
+| **D**ependency Inversion | `domain/` imports only stdlib. `application/` never imports adapters. Arrows point inward. |
+
+### Validation Checklist
+
+Before marking any PR as ready:
+
+- [ ] Are there functions duplicated across files? → Extract to shared package.
+- [ ] Are there sentinel errors or config keys defined in multiple places? → Consolidate.
+- [ ] Are there interfaces with a single non-test implementation outside the hexagonal boundary? → Consider removing the interface.
+- [ ] Does any handler repeat the same 3+ line error-handling pattern? → Extract a helper.
+- [ ] Does the change add a configuration field, CLI flag, or abstraction without a concrete consumer? → Remove it.
