@@ -101,7 +101,7 @@ var EqEqEqJS = ollantarules.Rule{
 var TooManyParametersJS = ollantarules.Rule{
 	MetaKey: "js:too-many-parameters",
 	Check: func(ctx *ollantarules.AnalysisContext) []*domain.Issue {
-		maxVal := tsParamInt(ctx.Params, "max_params", 5)
+		maxVal := ollantarules.ParamInt(ctx.Params, "max_params", 5)
 		query := `[
           (function_declaration
             name: (identifier) @fn.name

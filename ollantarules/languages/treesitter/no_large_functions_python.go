@@ -12,7 +12,7 @@ import (
 var NoLargeFunctionsPY = ollantarules.Rule{
 	MetaKey: "py:no-large-functions",
 	Check: func(ctx *ollantarules.AnalysisContext) []*domain.Issue {
-		maxLines := tsParamInt(ctx.Params, "max_lines", 40)
+		maxLines := ollantarules.ParamInt(ctx.Params, "max_lines", 40)
 		query := `(function_definition name: (identifier) @fn.name) @fn`
 		matches, err := ctx.Query.Run(ctx.ParsedFile, query, ctx.Grammar)
 		if err != nil {

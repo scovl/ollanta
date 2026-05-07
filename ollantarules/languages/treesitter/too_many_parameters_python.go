@@ -12,7 +12,7 @@ import (
 var TooManyParametersPY = ollantarules.Rule{
 	MetaKey: "py:too-many-parameters",
 	Check: func(ctx *ollantarules.AnalysisContext) []*domain.Issue {
-		maxVal := tsParamInt(ctx.Params, "max_params", 5)
+		maxVal := ollantarules.ParamInt(ctx.Params, "max_params", 5)
 		query := `(function_definition
           name: (identifier) @fn.name
           parameters: (parameters) @params

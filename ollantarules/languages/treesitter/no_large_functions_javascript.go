@@ -2,7 +2,6 @@ package treesitter
 
 import (
 	"fmt"
-	"strconv"
 
 	"github.com/scovl/ollanta/ollantacore/domain"
 	ollantarules "github.com/scovl/ollanta/ollantarules"
@@ -13,7 +12,7 @@ import (
 var NoLargeFunctionsJS = ollantarules.Rule{
 	MetaKey: "js:no-large-functions",
 	Check: func(ctx *ollantarules.AnalysisContext) []*domain.Issue {
-		maxLines := tsParamInt(ctx.Params, "max_lines", 40)
+		maxLines := ollantarules.ParamInt(ctx.Params, "max_lines", 40)
 		query := `(function_declaration name: (identifier) @fn.name) @fn`
 		matches, err := ctx.Query.Run(ctx.ParsedFile, query, ctx.Grammar)
 		if err != nil {
@@ -42,11 +41,3 @@ var NoLargeFunctionsJS = ollantarules.Rule{
 	},
 }
 
-func tsParamInt(params map[string]string, key string, defaultVal int) int {
-	if v, ok := params[key]; ok {
-		if n, err := strconv.Atoi(v); err == nil {
-			return n
-		}
-	}
-	return defaultVal
-}
