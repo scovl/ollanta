@@ -115,8 +115,13 @@ func (e *Executor) Run(ctx context.Context, files []DiscoveredFile, policy *Prof
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			sem <- struct{}{}
-			defer func() { <-sem }()
+			select {
+			case sem <- struct{}{}:
+				defer func() { <-sem }()
+			case <-ctx.Done():
+				out <- result{}
+				return
+			}
 
 			defer func() {
 				if r := recover(); r != nil {
@@ -124,13 +129,6 @@ func (e *Executor) Run(ctx context.Context, files []DiscoveredFile, policy *Prof
 					out <- result{}
 				}
 			}()
-
-			select {
-			case <-ctx.Done():
-				out <- result{}
-				return
-			default:
-			}
 
 			out <- result{issues: e.analyzeFile(ctx, f, policy)}
 		}()
