@@ -1,3 +1,5 @@
+// Package ollantacore provides shared types, constants, and utility functions
+// used across the Ollanta codebase without introducing CGo dependencies.
 package ollantacore
 
 // Violated reports whether actual satisfies the failing side of the comparison
