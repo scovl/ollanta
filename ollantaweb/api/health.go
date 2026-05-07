@@ -8,14 +8,12 @@ import (
 
 	"github.com/scovl/ollanta/ollantastore/postgres"
 	"github.com/scovl/ollanta/ollantastore/search"
-	"github.com/scovl/ollanta/ollantaweb/ingest"
 )
 
 // healthDeps are satisfied by the dependencies available in main.
 type healthDeps struct {
 	db      dbHealthChecker
 	indexer searchHealthChecker
-	queue   *ingest.IngestQueue
 }
 
 type dbHealthChecker interface {
@@ -29,8 +27,8 @@ type searchHealthChecker interface {
 var deps *healthDeps
 
 // SetHealthDeps wires the dependencies used by the health handlers.
-func SetHealthDeps(db *postgres.DB, indexer search.IIndexer, queue *ingest.IngestQueue) {
-	deps = &healthDeps{db: db, indexer: indexer, queue: queue}
+func SetHealthDeps(db *postgres.DB, indexer search.IIndexer) {
+	deps = &healthDeps{db: db, indexer: indexer}
 }
 
 // Liveness handles GET /healthz — always 200 while the process is alive.
@@ -77,14 +75,6 @@ func Readiness(w http.ResponseWriter, r *http.Request) {
 		} else {
 			msOK = true
 			checks["search"] = checkResult{Status: "ok", Latency: time.Since(msStart).String()}
-		}
-
-		// ── ingest queue ──────────────────────────────────────────────────
-		if deps.queue != nil {
-			checks["ingest_queue"] = checkResult{
-				Status:  "ok",
-				Latency: "0s",
-			}
 		}
 	}
 

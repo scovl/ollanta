@@ -11,7 +11,6 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	telemetry "github.com/scovl/ollanta/adapter/secondary/telemetry"
 	"github.com/scovl/ollanta/ollantastore/postgres"
@@ -99,14 +98,14 @@ func main() {
 	}
 
 	// ── Health deps ────────────────────────────────────────────────────────
-	api.SetHealthDeps(db, indexer, nil)
+	api.SetHealthDeps(db, indexer)
 
 	// ── Telemetry ──────────────────────────────────────────────────────────
 	metricsReg := telemetry.NewRegistry()
 	appMetrics := telemetry.NewMetrics(metricsReg)
-	webhookDispatcher := webhook.NewDispatcher(webhookRepo, webhookJobRepo, "ollantaweb", appMetrics)
-	appruntime.StartDatabaseMetricsLoop(ctx, db, metricsReg, 30*time.Second)
-	api.StartBackgroundTaskMetricsLoop(ctx, api.NewBackgroundTasksHandler(scanJobRepo, indexJobRepo, webhookJobRepo, metricsReg), 30*time.Second)
+	webhookDispatcher := webhook.NewDispatcher(webhookRepo, webhookJobRepo, "ollantaweb", appMetrics, cfg.WebhookPollDelay, cfg.WebhookClientTimeout, cfg.WebhookRetryDelays)
+	appruntime.StartDatabaseMetricsLoop(ctx, db, metricsReg, cfg.DatabaseMetricsInterval)
+	api.StartBackgroundTaskMetricsLoop(ctx, api.NewBackgroundTasksHandler(scanJobRepo, indexJobRepo, webhookJobRepo, metricsReg), cfg.BackgroundTaskMetricsInterval)
 
 	// ── HTTP server ────────────────────────────────────────────────────────
 	router := api.NewRouter(&api.RouterDeps{
@@ -142,9 +141,9 @@ func main() {
 	srv := &http.Server{
 		Addr:         cfg.Addr,
 		Handler:      telemetry.WrapHTTPHandler("ollantaweb", router),
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 60 * time.Second,
-		IdleTimeout:  120 * time.Second,
+		ReadTimeout:  cfg.HTTPServerReadTimeout,
+		WriteTimeout: cfg.HTTPServerWriteTimeout,
+		IdleTimeout:  cfg.HTTPServerIdleTimeout,
 	}
 
 	go func() {
@@ -158,7 +157,7 @@ func main() {
 	<-ctx.Done()
 	slog.Info("shutting down")
 
-	shutCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	shutCtx, cancel := context.WithTimeout(context.Background(), cfg.HTTPServerShutdownTimeout)
 	defer cancel()
 	if err := srv.Shutdown(shutCtx); err != nil {
 		slog.Warn("graceful shutdown failed", "error", err)
