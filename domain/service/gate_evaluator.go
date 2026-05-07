@@ -2,6 +2,8 @@
 // Gate evaluation is inspired by the MetricHunter threshold system from OpenStaticAnalyzer.
 package service
 
+import "github.com/scovl/ollanta/ollantacore"
+
 // Operator is a comparison operator used in a gate Condition.
 type Operator string
 
@@ -98,7 +100,7 @@ func Evaluate(conditions []Condition, measures map[string]float64) *GateStatus {
 			ActualValue: actual,
 			HasValue:    ok,
 		}
-		if ok && violated(actual, c.Operator, c.ErrorThreshold) {
+		if ok && ollantacore.Violated(actual, string(c.Operator), c.ErrorThreshold) {
 			cr.Status = ConditionError
 			anyError = true
 		} else {
@@ -131,23 +133,6 @@ func DefaultConditions() []Condition {
 			Description:    "No vulnerabilities allowed",
 		},
 	}
-}
-
-// violated reports whether actual satisfies the failing side of the operator.
-func violated(actual float64, op Operator, threshold float64) bool {
-	switch op {
-	case OpGreaterThan:
-		return actual > threshold
-	case OpLessThan:
-		return actual < threshold
-	case OpEqual:
-		return actual == threshold
-	case OpGreaterOrEq:
-		return actual >= threshold
-	case OpLessOrEq:
-		return actual <= threshold
-	}
-	return false
 }
 
 // PersistentCondition is a gate condition loaded from the database.
@@ -221,10 +206,10 @@ func EvaluatePersistent(conditions []PersistentCondition, req EvalRequest) *Gate
 		}
 		if !ok {
 			cr.Status = ConditionOK
-		} else if violated(actual, pc.Op, pc.Threshold) {
+		} else if ollantacore.Violated(actual, string(pc.Op), pc.Threshold) {
 			cr.Status = ConditionError
 			anyError = true
-		} else if pc.WarningThreshold != nil && violated(actual, pc.Op, *pc.WarningThreshold) {
+		} else if pc.WarningThreshold != nil && ollantacore.Violated(actual, string(pc.Op), *pc.WarningThreshold) {
 			cr.Status = ConditionWarn
 			anyWarn = true
 		} else {

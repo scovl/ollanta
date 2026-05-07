@@ -1,5 +1,7 @@
 package qualitygate
 
+import "github.com/scovl/ollanta/ollantacore"
+
 // PersistentCondition is a gate condition loaded from the database.
 // It extends the in-memory Condition with on_new_code awareness.
 type PersistentCondition struct {
@@ -66,7 +68,7 @@ func EvaluatePersistent(conditions []PersistentCondition, req EvalRequest) *Gate
 			ActualValue: actual,
 			HasValue:    ok,
 		}
-		if ok && violated(actual, pc.Op, pc.Threshold) {
+		if ok && ollantacore.Violated(actual, string(pc.Op), pc.Threshold) {
 			cr.Status = ConditionError
 			anyError = true
 		} else {

@@ -2,6 +2,8 @@
 // for a project scan. Inspired by the MetricHunter threshold system from OpenStaticAnalyzer.
 package qualitygate
 
+import "github.com/scovl/ollanta/ollantacore"
+
 // Operator is a comparison operator used in a gate Condition.
 type Operator string
 
@@ -77,7 +79,7 @@ func Evaluate(conditions []Condition, measures map[string]float64) *GateStatus {
 			ActualValue: actual,
 			HasValue:    ok,
 		}
-		if ok && violated(actual, c.Operator, c.ErrorThreshold) {
+		if ok && ollantacore.Violated(actual, string(c.Operator), c.ErrorThreshold) {
 			cr.Status = ConditionError
 			anyError = true
 		} else {
@@ -110,21 +112,4 @@ func DefaultConditions() []Condition {
 			Description:    "No vulnerabilities allowed",
 		},
 	}
-}
-
-// violated reports whether actual satisfies the failing side of the operator.
-func violated(actual float64, op Operator, threshold float64) bool {
-	switch op {
-	case OpGreaterThan:
-		return actual > threshold
-	case OpLessThan:
-		return actual < threshold
-	case OpEqual:
-		return actual == threshold
-	case OpGreaterOrEq:
-		return actual >= threshold
-	case OpLessOrEq:
-		return actual <= threshold
-	}
-	return false
 }

@@ -3,6 +3,7 @@ package ollantarules
 import (
 	"fmt"
 
+	"github.com/scovl/ollanta/ollantacore"
 	"github.com/scovl/ollanta/ollantacore/domain"
 )
 
@@ -76,7 +77,7 @@ func CheckThresholds(component *domain.Component, thresholds []ThresholdDef) []*
 		if !ok {
 			continue
 		}
-		if violated(val, t.Relation, t.Value) {
+		if ollantacore.Violated(val, t.Relation, t.Value) {
 			msg := fmt.Sprintf(t.Message, component.Name, val, t.Value)
 			issue := domain.NewIssue("threshold:"+t.MetricKey, component.Path, 0)
 			issue.Message = msg
@@ -86,18 +87,4 @@ func CheckThresholds(component *domain.Component, thresholds []ThresholdDef) []*
 		}
 	}
 	return issues
-}
-
-func violated(actual float64, relation string, threshold float64) bool {
-	switch relation {
-	case "gt":
-		return actual > threshold
-	case "lt":
-		return actual < threshold
-	case "gte":
-		return actual >= threshold
-	case "lte":
-		return actual <= threshold
-	}
-	return false
 }
