@@ -14,7 +14,7 @@ import (
 var NoNakedReturns = ollantarules.Rule{
 	MetaKey: "go:no-naked-returns",
 	Check: func(ctx *ollantarules.AnalysisContext) []*domain.Issue {
-		minLines := paramInt(ctx.Params, "min_lines", 5)
+		minLines := ollantarules.ParamInt(ctx.Params, "min_lines", 5)
 		var issues []*domain.Issue
 
 		ast.Inspect(ctx.AST, func(n ast.Node) bool {

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
-	"strconv"
 
 	"github.com/scovl/ollanta/ollantacore/domain"
 	ollantarules "github.com/scovl/ollanta/ollantarules"
@@ -15,7 +14,7 @@ import (
 var NoLargeFunctions = ollantarules.Rule{
 	MetaKey: "go:no-large-functions",
 	Check: func(ctx *ollantarules.AnalysisContext) []*domain.Issue {
-		maxLines := paramInt(ctx.Params, "max_lines", 40)
+		maxLines := ollantarules.ParamInt(ctx.Params, "max_lines", 40)
 		var issues []*domain.Issue
 
 		ast.Inspect(ctx.AST, func(n ast.Node) bool {
@@ -39,16 +38,6 @@ var NoLargeFunctions = ollantarules.Rule{
 		})
 		return issues
 	},
-}
-
-// paramInt reads an int param from ctx.Params, falling back to defaultVal.
-func paramInt(params map[string]string, key string, defaultVal int) int {
-	if v, ok := params[key]; ok {
-		if n, err := strconv.Atoi(v); err == nil {
-			return n
-		}
-	}
-	return defaultVal
 }
 
 // lineOf returns the 1-based line number of a token.Pos.

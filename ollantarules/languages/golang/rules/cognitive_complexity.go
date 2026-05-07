@@ -20,7 +20,7 @@ import (
 var CognitiveComplexity = ollantarules.Rule{
 	MetaKey: "go:cognitive-complexity",
 	Check: func(ctx *ollantarules.AnalysisContext) []*domain.Issue {
-		maxVal := paramInt(ctx.Params, "max_complexity", 15)
+		maxVal := ollantarules.ParamInt(ctx.Params, "max_complexity", 15)
 		var issues []*domain.Issue
 
 		ast.Inspect(ctx.AST, func(n ast.Node) bool {

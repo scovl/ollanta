@@ -15,7 +15,7 @@ import (
 var FunctionNestingDepth = ollantarules.Rule{
 	MetaKey: "go:function-nesting-depth",
 	Check: func(ctx *ollantarules.AnalysisContext) []*domain.Issue {
-		maxVal := paramInt(ctx.Params, "max_depth", 4)
+		maxVal := ollantarules.ParamInt(ctx.Params, "max_depth", 4)
 		var issues []*domain.Issue
 
 		ast.Inspect(ctx.AST, func(n ast.Node) bool {

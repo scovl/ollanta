@@ -14,7 +14,7 @@ import (
 var TooManyParameters = ollantarules.Rule{
 	MetaKey: "go:too-many-parameters",
 	Check: func(ctx *ollantarules.AnalysisContext) []*domain.Issue {
-		maxVal := paramInt(ctx.Params, "max_params", 5)
+		maxVal := ollantarules.ParamInt(ctx.Params, "max_params", 5)
 		var issues []*domain.Issue
 
 		ast.Inspect(ctx.AST, func(n ast.Node) bool {
