@@ -59,6 +59,23 @@ type serverFileConfig struct {
 	WebhookJobStaleAfter       string   `toml:"webhook_job_stale_after"`
 	WebhookJobMaxAttempts      int      `toml:"webhook_job_max_attempts"`
 	WebhookJobRecoveryInterval string   `toml:"webhook_job_recovery_interval"`
+	WorkerPollDelay            string   `toml:"worker_poll_delay"`
+	WorkerHeartbeatInterval    string   `toml:"worker_heartbeat_interval"`
+	WorkerDataCleanupInterval  string   `toml:"worker_data_cleanup_interval"`
+	WorkerDataScanJobsRetDays  int      `toml:"worker_data_scan_jobs_retention_days"`
+	WorkerDataScansRetDays     int      `toml:"worker_data_scans_retention_days"`
+	WorkerDataMeasuresRetDays  int      `toml:"worker_data_measures_retention_days"`
+	IndexPollDelay             string   `toml:"index_poll_delay"`
+	IndexMaxRetries            int      `toml:"index_max_retries"`
+	IndexBatchSize             int      `toml:"index_batch_size"`
+	WebhookPollDelay           string   `toml:"webhook_poll_delay"`
+	WebhookClientTimeout       string   `toml:"webhook_client_timeout"`
+	WebhookRetryDelaysStr      string   `toml:"webhook_retry_delays"`
+	HTTPServerReadTimeout      string   `toml:"http_read_timeout"`
+	HTTPServerWriteTimeout     string   `toml:"http_write_timeout"`
+	HTTPServerIdleTimeout      string   `toml:"http_idle_timeout"`
+	HTTPServerShutdownTimeout  string   `toml:"http_shutdown_timeout"`
+	MetricsInterval            string   `toml:"metrics_interval"`
 }
 
 type databaseFileConfig struct {
@@ -207,6 +224,60 @@ type Config struct {
 
 	// ObservabilityLinks are optional external links shown in the admin navigation.
 	ObservabilityLinks []ObservabilityLink
+
+	// WorkerPollDelay is the delay between scan/index job poll cycles.
+	WorkerPollDelay time.Duration
+
+	// WorkerHeartbeatInterval is the interval for worker liveness updates.
+	WorkerHeartbeatInterval time.Duration
+
+	// WorkerDataCleanupInterval controls how often expired data cleanup runs.
+	WorkerDataCleanupInterval time.Duration
+
+	// WorkerDataScanJobsRetention is how long completed scan jobs are kept in the database.
+	WorkerDataScanJobsRetention time.Duration
+
+	// WorkerDataScansRetention is how long old scans are kept in the database.
+	WorkerDataScansRetention time.Duration
+
+	// WorkerDataMeasuresRetention is how long old measures are kept in the database.
+	WorkerDataMeasuresRetention time.Duration
+
+	// IndexPollDelay controls how often the index worker polls for new durable jobs.
+	IndexPollDelay time.Duration
+
+	// IndexMaxRetries caps the number of retry attempts for index jobs.
+	IndexMaxRetries int
+
+	// IndexBatchSize is the page size used when loading issues for the search index.
+	IndexBatchSize int
+
+	// WebhookPollDelay controls how often the webhook worker polls for new durable jobs.
+	WebhookPollDelay time.Duration
+
+	// WebhookClientTimeout is the HTTP client timeout applied to webhook deliveries.
+	WebhookClientTimeout time.Duration
+
+	// WebhookRetryDelays defines the backoff schedule between delivery attempts.
+	WebhookRetryDelays []time.Duration
+
+	// HTTPServerReadTimeout is http.Server.ReadTimeout.
+	HTTPServerReadTimeout time.Duration
+
+	// HTTPServerWriteTimeout is http.Server.WriteTimeout.
+	HTTPServerWriteTimeout time.Duration
+
+	// HTTPServerIdleTimeout is http.Server.IdleTimeout.
+	HTTPServerIdleTimeout time.Duration
+
+	// HTTPServerShutdownTimeout controls the grace period for graceful server shutdown.
+	HTTPServerShutdownTimeout time.Duration
+
+	// BackgroundTaskMetricsInterval controls how often the background task metrics loop runs.
+	BackgroundTaskMetricsInterval time.Duration
+
+	// DatabaseMetricsInterval controls how often database pool metrics are collected.
+	DatabaseMetricsInterval time.Duration
 }
 
 // Load reads configuration from config.toml and environment variables, then validates required fields.
@@ -228,6 +299,24 @@ func Load() (*Config, error) {
 		ScanJobRecovery:     defaultJobRecoveryConfig(),
 		IndexJobRecovery:    defaultJobRecoveryConfig(),
 		WebhookJobRecovery:  defaultJobRecoveryConfig(),
+		WorkerPollDelay:             100 * time.Millisecond,
+		WorkerHeartbeatInterval:     10 * time.Second,
+		WorkerDataCleanupInterval:   1 * time.Hour,
+		WorkerDataScanJobsRetention: 7 * 24 * time.Hour,
+		WorkerDataScansRetention:    365 * 24 * time.Hour,
+		WorkerDataMeasuresRetention: 90 * 24 * time.Hour,
+		IndexPollDelay:              time.Second,
+		IndexMaxRetries:             3,
+		IndexBatchSize:              1000,
+		WebhookPollDelay:            time.Second,
+		WebhookClientTimeout:        10 * time.Second,
+		WebhookRetryDelays:          []time.Duration{1 * time.Minute, 5 * time.Minute, 30 * time.Minute},
+		HTTPServerReadTimeout:         30 * time.Second,
+		HTTPServerWriteTimeout:        60 * time.Second,
+		HTTPServerIdleTimeout:         120 * time.Second,
+		HTTPServerShutdownTimeout:     15 * time.Second,
+		BackgroundTaskMetricsInterval: 30 * time.Second,
+		DatabaseMetricsInterval:       30 * time.Second,
 	}
 
 	var fileCfg fileConfig
@@ -362,7 +451,78 @@ func applyServerFileConfig(cfg *Config, file serverFileConfig) error {
 	if err := applyDurationValue(&cfg.RefreshExpiry, file.RefreshExpiry, "server.refresh_expiry"); err != nil {
 		return err
 	}
+	if err := applyDurationValue(&cfg.WorkerPollDelay, file.WorkerPollDelay, "server.worker_poll_delay"); err != nil {
+		return err
+	}
+	if err := applyDurationValue(&cfg.WorkerHeartbeatInterval, file.WorkerHeartbeatInterval, "server.worker_heartbeat_interval"); err != nil {
+		return err
+	}
+	if err := applyDurationValue(&cfg.WorkerDataCleanupInterval, file.WorkerDataCleanupInterval, "server.worker_data_cleanup_interval"); err != nil {
+		return err
+	}
+	if file.WorkerDataScanJobsRetDays != 0 {
+		cfg.WorkerDataScanJobsRetention = time.Duration(file.WorkerDataScanJobsRetDays) * 24 * time.Hour
+	}
+	if file.WorkerDataScansRetDays != 0 {
+		cfg.WorkerDataScansRetention = time.Duration(file.WorkerDataScansRetDays) * 24 * time.Hour
+	}
+	if file.WorkerDataMeasuresRetDays != 0 {
+		cfg.WorkerDataMeasuresRetention = time.Duration(file.WorkerDataMeasuresRetDays) * 24 * time.Hour
+	}
+	if err := applyDurationValue(&cfg.IndexPollDelay, file.IndexPollDelay, "server.index_poll_delay"); err != nil {
+		return err
+	}
+	if file.IndexMaxRetries != 0 {
+		cfg.IndexMaxRetries = file.IndexMaxRetries
+	}
+	if file.IndexBatchSize != 0 {
+		cfg.IndexBatchSize = file.IndexBatchSize
+	}
+	if err := applyDurationValue(&cfg.WebhookPollDelay, file.WebhookPollDelay, "server.webhook_poll_delay"); err != nil {
+		return err
+	}
+	if err := applyDurationValue(&cfg.WebhookClientTimeout, file.WebhookClientTimeout, "server.webhook_client_timeout"); err != nil {
+		return err
+	}
+	if file.WebhookRetryDelaysStr != "" {
+		delays, err := parseDurationList(file.WebhookRetryDelaysStr)
+		if err != nil {
+			return errors.New("invalid server.webhook_retry_delays: " + err.Error())
+		}
+		cfg.WebhookRetryDelays = delays
+	}
+	if err := applyDurationValue(&cfg.HTTPServerReadTimeout, file.HTTPServerReadTimeout, "server.http_read_timeout"); err != nil {
+		return err
+	}
+	if err := applyDurationValue(&cfg.HTTPServerWriteTimeout, file.HTTPServerWriteTimeout, "server.http_write_timeout"); err != nil {
+		return err
+	}
+	if err := applyDurationValue(&cfg.HTTPServerIdleTimeout, file.HTTPServerIdleTimeout, "server.http_idle_timeout"); err != nil {
+		return err
+	}
+	if err := applyDurationValue(&cfg.HTTPServerShutdownTimeout, file.HTTPServerShutdownTimeout, "server.http_shutdown_timeout"); err != nil {
+		return err
+	}
+	if err := applyDurationValue(&cfg.BackgroundTaskMetricsInterval, file.MetricsInterval, "server.metrics_interval"); err != nil {
+		return err
+	}
+	if err := applyDurationValue(&cfg.DatabaseMetricsInterval, file.MetricsInterval, "server.metrics_interval"); err != nil {
+		return err
+	}
 	return nil
+}
+
+func parseDurationList(raw string) ([]time.Duration, error) {
+	parts := splitList(raw)
+	delays := make([]time.Duration, 0, len(parts))
+	for _, part := range parts {
+		d, err := time.ParseDuration(strings.TrimSpace(part))
+		if err != nil {
+			return nil, fmt.Errorf("invalid duration %q: %w", part, err)
+		}
+		delays = append(delays, d)
+	}
+	return delays, nil
 }
 
 func applyJobRecoveryFileConfig(cfg *JobRecoveryConfig, staleAfter string, maxAttempts int, interval string, keyPrefix string) error {
@@ -477,6 +637,9 @@ func applyServerEnvOverrides(cfg *Config) error {
 		return err
 	}
 	if err := applyPostgresPoolEnvOverrides(cfg); err != nil {
+		return err
+	}
+	if err := applyWorkerEnvOverrides(cfg); err != nil {
 		return err
 	}
 	applyEnvInt32Value(&cfg.WorkerPool, "OLLANTA_WORKER_POOL")
@@ -605,6 +768,68 @@ func applyTokenExpiryEnvOverrides(cfg *Config) error {
 	}
 	if err := applyEnvDurationValue(&cfg.RefreshExpiry, "OLLANTA_REFRESH_EXPIRY"); err != nil {
 		return errors.New("invalid OLLANTA_REFRESH_EXPIRY")
+	}
+	return nil
+}
+
+func applyWorkerEnvOverrides(cfg *Config) error {
+	if err := applyEnvDurationValue(&cfg.WorkerPollDelay, "OLLANTA_WORKER_POLL_DELAY"); err != nil {
+		return err
+	}
+	if err := applyEnvDurationValue(&cfg.WorkerHeartbeatInterval, "OLLANTA_WORKER_HEARTBEAT_INTERVAL"); err != nil {
+		return err
+	}
+	if err := applyEnvDurationValue(&cfg.WorkerDataCleanupInterval, "OLLANTA_WORKER_DATA_CLEANUP_INTERVAL"); err != nil {
+		return err
+	}
+	if err := applyEnvDurationValue(&cfg.WorkerDataScanJobsRetention, "OLLANTA_WORKER_DATA_SCAN_JOBS_RETENTION"); err != nil {
+		return err
+	}
+	if err := applyEnvDurationValue(&cfg.WorkerDataScansRetention, "OLLANTA_WORKER_DATA_SCANS_RETENTION"); err != nil {
+		return err
+	}
+	if err := applyEnvDurationValue(&cfg.WorkerDataMeasuresRetention, "OLLANTA_WORKER_DATA_MEASURES_RETENTION"); err != nil {
+		return err
+	}
+	if err := applyEnvDurationValue(&cfg.IndexPollDelay, "OLLANTA_INDEX_POLL_DELAY"); err != nil {
+		return err
+	}
+	if err := applyEnvIntValue(&cfg.IndexMaxRetries, "OLLANTA_INDEX_MAX_RETRIES"); err != nil {
+		return err
+	}
+	if err := applyEnvIntValue(&cfg.IndexBatchSize, "OLLANTA_INDEX_BATCH_SIZE"); err != nil {
+		return err
+	}
+	if err := applyEnvDurationValue(&cfg.WebhookPollDelay, "OLLANTA_WEBHOOK_POLL_DELAY"); err != nil {
+		return err
+	}
+	if err := applyEnvDurationValue(&cfg.WebhookClientTimeout, "OLLANTA_WEBHOOK_CLIENT_TIMEOUT"); err != nil {
+		return err
+	}
+	if value, ok := os.LookupEnv("OLLANTA_WEBHOOK_RETRY_DELAYS"); ok && value != "" {
+		delays, err := parseDurationList(value)
+		if err != nil {
+			return errors.New("invalid OLLANTA_WEBHOOK_RETRY_DELAYS: " + err.Error())
+		}
+		cfg.WebhookRetryDelays = delays
+	}
+	if err := applyEnvDurationValue(&cfg.HTTPServerReadTimeout, "OLLANTA_HTTP_READ_TIMEOUT"); err != nil {
+		return err
+	}
+	if err := applyEnvDurationValue(&cfg.HTTPServerWriteTimeout, "OLLANTA_HTTP_WRITE_TIMEOUT"); err != nil {
+		return err
+	}
+	if err := applyEnvDurationValue(&cfg.HTTPServerIdleTimeout, "OLLANTA_HTTP_IDLE_TIMEOUT"); err != nil {
+		return err
+	}
+	if err := applyEnvDurationValue(&cfg.HTTPServerShutdownTimeout, "OLLANTA_HTTP_SHUTDOWN_TIMEOUT"); err != nil {
+		return err
+	}
+	if err := applyEnvDurationValue(&cfg.BackgroundTaskMetricsInterval, "OLLANTA_METRICS_INTERVAL"); err != nil {
+		return err
+	}
+	if err := applyEnvDurationValue(&cfg.DatabaseMetricsInterval, "OLLANTA_METRICS_INTERVAL"); err != nil {
+		return err
 	}
 	return nil
 }
