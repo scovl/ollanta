@@ -2,6 +2,7 @@ package scan
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -582,6 +583,303 @@ func TestCollectTestSignalsMonorepoHexagonalFixture(t *testing.T) {
 	}
 	if report.Health == nil || report.Health.Modules < 4 {
 		t.Fatalf("Health = %+v, want project health for the discovered fixture modules", report.Health)
+	}
+}
+
+func TestCommandPolicyExplicitDeniesWithoutExplicitCommand(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	report, err := CollectTestSignals(dir, TestOptions{Enabled: true, Discover: false, Run: true, CommandPolicy: CommandPolicyExplicit, Modules: []TestModuleConfig{{Root: ".", Command: ""}}}, time.Now())
+	if err != nil {
+		t.Fatalf("CollectTestSignals() error = %v", err)
+	}
+	if len(report.Modules) != 1 {
+		t.Fatalf("Modules = %d, want 1", len(report.Modules))
+	}
+	if report.Modules[0].Execution != nil {
+		t.Fatalf("Execution = %+v, want nil when explicit policy denies empty command", report.Modules[0].Execution)
+	}
+}
+
+func TestCommandPolicyConfiguredOnlyAllowsConfiguredModule(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	writeTestFile(t, filepath.Join(dir, "go.mod"), "module example.com/app\n")
+
+	report, err := CollectTestSignals(dir, TestOptions{Enabled: true, Discover: true, Run: true, CommandPolicy: CommandPolicyConfiguredOnly}, time.Now())
+	if err != nil {
+		t.Fatalf("CollectTestSignals() error = %v", err)
+	}
+	if len(report.Modules) != 1 {
+		t.Fatalf("Modules = %d, want 1", len(report.Modules))
+	}
+	if !hasDiagnostic(report.Diagnostics, "command_policy_denied") {
+		t.Fatalf("diagnostics = %#v, want command_policy_denied for discovered module", report.Diagnostics)
+	}
+}
+
+func TestIntegrationSuiteInferredFromFilePath(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	junit := `<testsuite name="unit" tests="1"><testcase classname="Adapters" name="connects"/></testsuite>`
+	writeTestFile(t, filepath.Join(dir, "build", "integration-results", "junit.xml"), junit)
+
+	report, err := CollectTestSignals(dir, TestOptions{Enabled: true, Discover: false, Modules: []TestModuleConfig{{Root: ".", TestReports: []string{"build/integration-results/junit.xml"}}}}, time.Now())
+	if err != nil {
+		t.Fatalf("CollectTestSignals() error = %v", err)
+	}
+	if len(report.Modules) != 1 || len(report.Modules[0].Suites) != 1 {
+		t.Fatalf("modules = %+v, want suite with integration kind", report.Modules)
+	}
+	if report.Modules[0].Suites[0].Kind != SuiteKindIntegration {
+		t.Fatalf("Suite kind = %q, want integration (inferred from path)", report.Modules[0].Suites[0].Kind)
+	}
+}
+
+func TestSuiteKindFromPathContractDir(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	junit := `<testsuite name="test" tests="1"><testcase classname="Pact" name="verifies"/></testsuite>`
+	writeTestFile(t, filepath.Join(dir, "contract", "reports", "junit.xml"), junit)
+
+	report, err := CollectTestSignals(dir, TestOptions{Enabled: true, Discover: false, Modules: []TestModuleConfig{{Root: ".", SuiteKind: SuiteKindUnknown, TestReports: []string{"contract/reports/junit.xml"}}}}, time.Now())
+	if err != nil {
+		t.Fatalf("CollectTestSignals() error = %v", err)
+	}
+	if len(report.Modules) != 1 || len(report.Modules[0].Suites) != 1 {
+		t.Fatalf("modules = %+v, want suite", report.Modules)
+	}
+	if report.Modules[0].Suites[0].Kind != SuiteKindContract {
+		t.Fatalf("Suite kind = %q, want contract (inferred from path)", report.Modules[0].Suites[0].Kind)
+	}
+}
+
+func TestSuiteKindFromE2EPath(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	junit := `<testsuite name="specs" tests="1"><testcase classname="Flow" name="completes"/></testsuite>`
+	writeTestFile(t, filepath.Join(dir, "e2e", "results", "junit.xml"), junit)
+
+	report, err := CollectTestSignals(dir, TestOptions{Enabled: true, Discover: false, Modules: []TestModuleConfig{{Root: ".", SuiteKind: SuiteKindUnknown, TestReports: []string{"e2e/results/junit.xml"}}}}, time.Now())
+	if err != nil {
+		t.Fatalf("CollectTestSignals() error = %v", err)
+	}
+	if len(report.Modules) != 1 || len(report.Modules[0].Suites) != 1 {
+		t.Fatalf("modules = %+v, want suite", report.Modules)
+	}
+	if report.Modules[0].Suites[0].Kind != SuiteKindE2E {
+		t.Fatalf("Suite kind = %q, want e2e (inferred from path)", report.Modules[0].Suites[0].Kind)
+	}
+}
+
+func TestSuiteKindNotAffectedByGenericPath(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	junit := `<testsuite name="unit" tests="1"><testcase classname="Calc" name="adds"/></testsuite>`
+	writeTestFile(t, filepath.Join(dir, "build", "test-results", "junit.xml"), junit)
+
+	report, err := CollectTestSignals(dir, TestOptions{Enabled: true, Discover: false, Modules: []TestModuleConfig{{Root: ".", TestReports: []string{"build/test-results/junit.xml"}}}}, time.Now())
+	if err != nil {
+		t.Fatalf("CollectTestSignals() error = %v", err)
+	}
+	if len(report.Modules) != 1 || len(report.Modules[0].Suites) != 1 {
+		t.Fatalf("modules = %+v, want suite", report.Modules)
+	}
+	if report.Modules[0].Suites[0].Kind != SuiteKindUnknown {
+		t.Fatalf("Suite kind = %q, want unknown for generic path", report.Modules[0].Suites[0].Kind)
+	}
+}
+
+func TestMutationCommandBuilderStrykerChangedOnly(t *testing.T) {
+	t.Parallel()
+	opts := MutationOptions{ChangedOnly: true}
+	result := buildMutationCommand(mutationToolStryker, opts)
+
+	if !strings.Contains(result.Command, "--mutate") {
+		t.Fatalf("Command = %q, want --mutate flag", result.Command)
+	}
+	if result.Enforcement != mutationEnforcementBestEffort {
+		t.Fatalf("Enforcement = %q, want best_effort", result.Enforcement)
+	}
+}
+
+func TestMutationCommandBuilderStrykerWithoutChangedOnly(t *testing.T) {
+	t.Parallel()
+	opts := MutationOptions{}
+	result := buildMutationCommand(mutationToolStryker, opts)
+
+	if strings.Contains(result.Command, "--mutate") {
+		t.Fatalf("Command = %q, want no --mutate flag", result.Command)
+	}
+	if result.Enforcement != mutationEnforcementAdvisory {
+		t.Fatalf("Enforcement = %q, want advisory", result.Enforcement)
+	}
+}
+
+func TestMutationCommandBuilderStrykerMaxMutants(t *testing.T) {
+	t.Parallel()
+	opts := MutationOptions{MaxMutants: 100}
+	result := buildMutationCommand(mutationToolStryker, opts)
+
+	if !strings.Contains(result.Command, "--concurrency=") {
+		t.Fatalf("Command = %q, want concurrency limit", result.Command)
+	}
+}
+
+func TestMutationCommandBuilderInfectionChangedOnly(t *testing.T) {
+	t.Parallel()
+	opts := MutationOptions{ChangedOnly: true}
+	result := buildMutationCommand(mutationToolInfection, opts)
+
+	if !strings.Contains(result.Command, "--git-diff-filter") {
+		t.Fatalf("Command = %q, want --git-diff-filter flag", result.Command)
+	}
+	if result.Enforcement != mutationEnforcementBestEffort {
+		t.Fatalf("Enforcement = %q, want best_effort", result.Enforcement)
+	}
+}
+
+func TestMutationCommandBuilderCosmicRayDefault(t *testing.T) {
+	t.Parallel()
+	opts := MutationOptions{}
+	result := buildMutationCommand(mutationToolCosmic, opts)
+
+	if !strings.Contains(result.Command, ".cosmic-ray.toml") {
+		t.Fatalf("Command = %q, want .cosmic-ray.toml config reference", result.Command)
+	}
+}
+
+func TestMutationCommandBuilderStrykerEnforcedWithChangedFiles(t *testing.T) {
+	t.Parallel()
+	opts := MutationOptions{ChangedOnly: true, ChangedFiles: []string{"src/app.ts", "src/util.ts"}}
+	result := buildMutationCommand(mutationToolStryker, opts)
+
+	if !strings.Contains(result.Command, "--mutate=src/app.ts,src/util.ts") {
+		t.Fatalf("Command = %q, want --mutate with file list", result.Command)
+	}
+	if result.Enforcement != mutationEnforcementEnforced {
+		t.Fatalf("Enforcement = %q, want enforced", result.Enforcement)
+	}
+}
+
+func TestMutationCommandBuilderInfectionEnforcedWithChangedFiles(t *testing.T) {
+	t.Parallel()
+	opts := MutationOptions{ChangedOnly: true, ChangedFiles: []string{"src/App.php"}}
+	result := buildMutationCommand(mutationToolInfection, opts)
+
+	if !strings.Contains(result.Command, "--filter=src/App.php") {
+		t.Fatalf("Command = %q, want --filter flag", result.Command)
+	}
+	if !strings.Contains(result.Command, "--git-diff-filter") {
+		t.Fatalf("Command = %q, want --git-diff-filter flag", result.Command)
+	}
+	if result.Enforcement != mutationEnforcementEnforced {
+		t.Fatalf("Enforcement = %q, want enforced", result.Enforcement)
+	}
+}
+
+func TestResolveChangedFilesWithGitDiff(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	mustGit(t, dir, "init")
+	mustGit(t, dir, "config", "user.email", "test@example.com")
+	mustGit(t, dir, "config", "user.name", "test")
+	writeTestFile(t, filepath.Join(dir, "main.go"), "package main\n")
+	mustGit(t, dir, "add", ".")
+	mustGit(t, dir, "commit", "-m", "initial")
+	writeTestFile(t, filepath.Join(dir, "changed.go"), "package main\nfunc Changed() {}\n")
+	mustGit(t, dir, "add", ".")
+	mustGit(t, dir, "commit", "-m", "changed")
+
+	files, err := ResolveChangedFiles(dir, "")
+	if err != nil {
+		t.Fatalf("ResolveChangedFiles() error = %v", err)
+	}
+	if len(files) == 0 {
+		t.Fatal("want at least one changed file")
+	}
+}
+
+func mustGit(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git %v failed: %s", args, string(out))
+	}
+}
+
+func TestWeightedHealthWeightsDomainHigherThanLibrary(t *testing.T) {
+	t.Parallel()
+	goodCoverage := 90.0
+	mutationScore := 80.0
+	report := &TestSignalReport{Summary: TestSignalSummary{Enabled: true}, Modules: []TestModuleSignal{
+		{Name: "domain", Root: "domain", ArchitectureRole: "domain", Suites: []TestSuiteSignal{{Name: "unit", Tests: 1, Passed: 1}}, Coverage: &TestCoverageSummary{LinesToCover: 1, CoveredLines: 1, Coverage: &goodCoverage}, Mutation: &TestMutationSummary{Score: &mutationScore, Total: 1, Killed: 1}},
+		{Name: "lib", Root: "lib", ArchitectureRole: "library", Suites: []TestSuiteSignal{{Name: "unit", Tests: 1, Passed: 1}}, Coverage: &TestCoverageSummary{LinesToCover: 1, CoveredLines: 1, Coverage: &goodCoverage}},
+	}}
+	evaluateTestHealth(report)
+
+	if report.Modules[0].Health == nil || report.Modules[0].Health.Status != "healthy" {
+		t.Fatalf("domain health = %+v, want healthy", report.Modules[0].Health)
+	}
+	if report.Modules[1].Health == nil || report.Modules[1].Health.Status != "healthy" {
+		t.Fatalf("library health = %+v, want healthy", report.Modules[1].Health)
+	}
+	if report.Health == nil {
+		t.Fatal("project health is nil")
+	}
+}
+
+func TestWeightedHealthAtRiskDomainPullsDownWeightedScore(t *testing.T) {
+	t.Parallel()
+	badCoverage := 50.0
+	goodCoverage := 90.0
+	report := &TestSignalReport{Summary: TestSignalSummary{Enabled: true}, Modules: []TestModuleSignal{
+		{Name: "domain", Root: "domain", ArchitectureRole: "domain", Suites: []TestSuiteSignal{{Name: "unit", Tests: 1, Passed: 1}}, Coverage: &TestCoverageSummary{LinesToCover: 1, CoveredLines: 1, Coverage: &badCoverage}},
+		{Name: "lib", Root: "lib", ArchitectureRole: "library", Suites: []TestSuiteSignal{{Name: "unit", Tests: 1, Passed: 1}}, Coverage: &TestCoverageSummary{LinesToCover: 1, CoveredLines: 1, Coverage: &goodCoverage}},
+	}}
+	evaluateTestHealth(report)
+
+	if report.Health == nil || report.Health.Status != "at_risk" {
+		t.Fatalf("project health = %+v, want at_risk when domain has bad coverage", report.Health)
+	}
+}
+
+func TestMutationSummaryChangedOnlyEnforcementBestEffortForStryker(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	writeTestFile(t, filepath.Join(dir, "package.json"), `{"devDependencies":{"@stryker-mutator/core":"^8.0.0"}}`)
+	writeTestFile(t, filepath.Join(dir, nativeMutationFile), `{"score":80,"total":1,"killed":1}`)
+
+	report, err := CollectMutationSignals(dir, MutationOptions{Enabled: true, Discover: true, ChangedOnly: true, Modules: []MutationModuleConfig{{Root: ".", MutationPolicy: MutationPolicyIgnored, IgnoreReason: "override"}}}, time.Now())
+	if err != nil {
+		t.Fatalf("CollectMutationSignals() error = %v", err)
+	}
+	for _, module := range report.Modules {
+		if module.Mutation != nil && module.Mutation.Tool == mutationToolStryker && module.Mutation.ChangedOnlyEnforcement != mutationEnforcementBestEffort {
+			t.Fatalf("ChangedOnlyEnforcement = %q, want best_effort for Stryker with changed_only", module.Mutation.ChangedOnlyEnforcement)
+		}
+	}
+}
+
+func TestDiscoverMutationModulesUsesCommandBuilderForChangedOnly(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	writeTestFile(t, filepath.Join(dir, "package.json"), `{"devDependencies":{"@stryker-mutator/core":"^8.0.0"}}`)
+
+	modules, _, err := DiscoverMutationModules(dir, MutationOptions{ChangedOnly: true, MaxDepth: 4})
+	if err != nil {
+		t.Fatalf("DiscoverMutationModules() error = %v", err)
+	}
+	if len(modules) != 1 {
+		t.Fatalf("Modules = %d, want 1", len(modules))
+	}
+	if !strings.Contains(modules[0].Command, "--mutate") {
+		t.Fatalf("Command = %q, want --mutate flag when changed_only=true", modules[0].Command)
+	}
+	if modules[0].Mutation == nil || modules[0].Mutation.ChangedOnlyEnforcement != mutationEnforcementBestEffort {
+		t.Fatalf("Mutation = %+v, want best_effort ChangedOnlyEnforcement", modules[0].Mutation)
 	}
 }
 

@@ -103,6 +103,7 @@ type MutationOptions struct {
 	Discover               bool
 	Run                    bool
 	ChangedOnly            bool
+	ChangedFiles           []string
 	MaxRuntime             time.Duration
 	MaxMutants             int
 	Exclusions             []string

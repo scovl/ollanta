@@ -18,7 +18,7 @@ func executeTestCommand(projectDir string, module TestModuleSignal, opts TestOpt
 	if module.Command == "" {
 		return nil, nil
 	}
-	if !commandAllowed(opts.CommandPolicy, module.Source) {
+	if !commandAllowed(opts.CommandPolicy, module.Source, module.Command != "") {
 		*diagnostics = append(*diagnostics, TestSignalDiagnostic{Level: "warn", Code: "command_policy_denied", Message: "test command was not executed because command_policy denied this command source", Module: module.Name, Path: module.Root})
 		return &TestExecutionStatus{Mode: TestModeRun, Command: module.Command, CommandPolicy: opts.CommandPolicy, Shell: commandShell(), Partial: true}, nil
 	}
@@ -110,13 +110,15 @@ func appendOutputTruncationDiagnostics(module TestModuleSignal, status *TestExec
 	}
 }
 
-func commandAllowed(policy, source string) bool {
+func commandAllowed(policy, source string, hasExplicitCommand bool) bool {
 	switch policy {
 	case CommandPolicyNever:
 		return false
 	case CommandPolicyDiscovered, CommandPolicyTrustedShell:
 		return true
-	case CommandPolicyConfiguredOnly, CommandPolicyExplicit, "":
+	case CommandPolicyExplicit:
+		return source == TestSourceConfigured && hasExplicitCommand
+	case CommandPolicyConfiguredOnly, "":
 		return source == TestSourceConfigured
 	default:
 		return false

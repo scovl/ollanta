@@ -271,7 +271,9 @@ func mergeJUnitReport(path string, module *TestModuleSignal, diagnostics *[]Test
 		suites.Suites = []junitSuite{suite}
 	}
 	for _, suite := range suites.Suites {
-		module.Suites = append(module.Suites, suite.toSignal())
+		signal := suite.toSignal()
+		signal.Kind = classifySuiteKindFromPath(path, suite.Name)
+		module.Suites = append(module.Suites, signal)
 	}
 	*diagnostics = append(*diagnostics, TestSignalDiagnostic{Level: "info", Code: "junit_report_loaded", Message: "JUnit XML test report loaded", Module: module.Name, Path: path})
 }
@@ -359,12 +361,30 @@ func classifyModuleSuites(module *TestModuleSignal) {
 }
 
 func classifySuiteKind(configuredKind, suiteName string) string {
+	return classifySuiteKindFromHint(configuredKind, suiteName, "")
+}
+
+func classifySuiteKindFromPath(path, suiteName string) string {
+	return classifySuiteKindFromHint("", suiteName, path)
+}
+
+func classifySuiteKindFromHint(configuredKind, suiteName, filePath string) string {
 	if configuredKind != "" && configuredKind != SuiteKindUnknown {
 		return configuredKind
 	}
-	name := strings.ToLower(suiteName)
+	if kind := suiteKindFromName(suiteName); kind != SuiteKindUnknown {
+		return kind
+	}
+	if kind := suiteKindFromPath(filePath); kind != SuiteKindUnknown {
+		return kind
+	}
+	return SuiteKindUnknown
+}
+
+func suiteKindFromName(name string) string {
+	name = strings.ToLower(name)
 	switch {
-	case strings.Contains(name, "integration") || strings.Contains(name, "it."):
+	case strings.Contains(name, "integration"):
 		return SuiteKindIntegration
 	case strings.Contains(name, "contract"):
 		return SuiteKindContract
@@ -377,6 +397,38 @@ func classifySuiteKind(configuredKind, suiteName string) string {
 	default:
 		return SuiteKindUnknown
 	}
+}
+
+func suiteKindFromPath(path string) string {
+	if path == "" {
+		return SuiteKindUnknown
+	}
+	path = strings.ToLower(filepath.ToSlash(path))
+	switch {
+	case pathElem(path, "integration"):
+		return SuiteKindIntegration
+	case pathElem(path, "contract"):
+		return SuiteKindContract
+	case pathElem(path, "component"):
+		return SuiteKindComponent
+	case pathElem(path, "functional"):
+		return SuiteKindFunctional
+	case pathElem(path, "e2e") || pathElem(path, "end-to-end"):
+		return SuiteKindE2E
+	default:
+		return SuiteKindUnknown
+	}
+}
+
+func pathElem(path, word string) bool {
+	w := "/" + word
+	if strings.Contains(path, w+"/") || strings.Contains(path, w+"-") || strings.Contains(path, w+".") || strings.HasSuffix(path, w) {
+		return true
+	}
+	if strings.HasPrefix(path, word+"/") || strings.HasPrefix(path, word+"-") || strings.HasPrefix(path, word+".") {
+		return true
+	}
+	return false
 }
 
 func confidenceForSuiteKind(kind string) string {

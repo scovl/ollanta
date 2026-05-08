@@ -6,18 +6,19 @@ type roleExpectation struct {
 	CoverageThreshold   float64
 	MutationThreshold   float64
 	IntegrationRequired bool
+	HealthWeight        int
 }
 
 var defaultRoleExpectations = map[string]roleExpectation{
-	"domain":         {CoverageThreshold: 85, MutationThreshold: 70},
-	"application":    {CoverageThreshold: 80, MutationThreshold: 65},
-	"adapter":        {CoverageThreshold: 65, IntegrationRequired: true},
-	"infrastructure": {CoverageThreshold: 60, IntegrationRequired: true},
-	"frontend":       {CoverageThreshold: 70},
-	"web":            {CoverageThreshold: 70},
-	"service":        {CoverageThreshold: 75},
-	"library":        {CoverageThreshold: 80},
-	"unknown":        {CoverageThreshold: 60},
+	"domain":         {CoverageThreshold: 85, MutationThreshold: 70, HealthWeight: 3},
+	"application":    {CoverageThreshold: 80, MutationThreshold: 65, HealthWeight: 2},
+	"adapter":        {CoverageThreshold: 65, IntegrationRequired: true, HealthWeight: 1},
+	"infrastructure": {CoverageThreshold: 60, IntegrationRequired: true, HealthWeight: 1},
+	"frontend":       {CoverageThreshold: 70, HealthWeight: 1},
+	"web":            {CoverageThreshold: 70, HealthWeight: 1},
+	"service":        {CoverageThreshold: 75, HealthWeight: 1},
+	"library":        {CoverageThreshold: 80, HealthWeight: 1},
+	"unknown":        {CoverageThreshold: 60, HealthWeight: 1},
 }
 
 func evaluateTestHealth(report *TestSignalReport) {
@@ -32,10 +33,16 @@ func evaluateTestHealth(report *TestSignalReport) {
 		return
 	}
 	projectScore := 0
+	totalWeight := 0
 	for index := range report.Modules {
 		module := &report.Modules[index]
 		module.Health = evaluateModuleHealth(module)
-		projectScore += module.Health.Score
+		weight := moduleRoleExpectation(module).HealthWeight
+		if weight <= 0 {
+			weight = 1
+		}
+		projectScore += module.Health.Score * weight
+		totalWeight += weight
 		if module.Health.Status == "at_risk" {
 			summary.ModulesAtRisk++
 		}
@@ -45,7 +52,11 @@ func evaluateTestHealth(report *TestSignalReport) {
 		summary.Recommendations = append(summary.Recommendations, module.Health.Recommendations...)
 		addModuleMeasures(&report.Summary, module)
 	}
-	summary.Score = projectScore / len(report.Modules)
+	if totalWeight > 0 {
+		summary.Score = projectScore / totalWeight
+	} else {
+		summary.Score = projectScore / len(report.Modules)
+	}
 	switch {
 	case summary.ModulesAtRisk > 0:
 		summary.Status = "at_risk"

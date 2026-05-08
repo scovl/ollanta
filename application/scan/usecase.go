@@ -270,6 +270,11 @@ func collectReportTestSignals(report *Report, opts *ScanOptions, scanStarted tim
 		report.TestSignals = testSignals
 	}
 	if opts.Mutations.Enabled {
+		if opts.Mutations.ChangedOnly && len(opts.Mutations.ChangedFiles) == 0 {
+			if files, err := ResolveChangedFiles(opts.ProjectDir, opts.PullRequestBase); err == nil && len(files) > 0 {
+				opts.Mutations.ChangedFiles = files
+			}
+		}
 		mutationSignals, err := CollectMutationSignals(opts.ProjectDir, opts.Mutations, scanStarted)
 		if err != nil {
 			return fmt.Errorf("mutation signals: %w", err)

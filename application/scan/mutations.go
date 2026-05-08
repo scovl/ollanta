@@ -146,13 +146,20 @@ func DiscoverMutationModules(projectDir string, opts MutationOptions) ([]TestMod
 	}
 	out := make([]TestModuleSignal, 0, len(modules))
 	for _, module := range modules {
-		tool := detectMutationTool(projectDir, module)
+		tool := detectMutationTool(projectDir, module, opts)
 		if tool.Name == "" {
 			diagnostics = append(diagnostics, TestSignalDiagnostic{Level: "info", Code: "mutation_tool_missing", Message: "no supported mutation tool or native mutation report detected", Module: module.Name, Path: module.Root})
 			continue
 		}
+		changedOnlyEnforcement := tool.Enforcement
+		if changedOnlyEnforcement == "" {
+			changedOnlyEnforcement = mutationEnforcementAdvisory
+		}
+		if !opts.ChangedOnly {
+			changedOnlyEnforcement = ""
+		}
 		module.Command = tool.Command
-		module.Mutation = &TestMutationSummary{Tool: tool.Name, Status: "available", Confidence: tool.Confidence, ChangedOnly: opts.ChangedOnly, MaxRuntime: opts.MaxRuntime.String(), MaxMutants: opts.MaxMutants}
+		module.Mutation = &TestMutationSummary{Tool: tool.Name, Status: "available", Confidence: tool.Confidence, ChangedOnly: opts.ChangedOnly, ChangedOnlyEnforcement: changedOnlyEnforcement, MaxRuntime: opts.MaxRuntime.String(), MaxMutants: opts.MaxMutants, MaxMutantsEnforcement: maxMutantsEnforcement(opts.MaxMutants)}
 		diagnostics = append(diagnostics, TestSignalDiagnostic{Level: "info", Code: "mutation_tool_detected", Message: "mutation tool detected", Module: module.Name, Path: tool.Name})
 		out = append(out, module)
 	}
@@ -261,12 +268,13 @@ func mutationSummaryFromConfig(opts MutationOptions, cfg MutationModuleConfig) *
 	}
 	changedOnlyEnforcement := ""
 	if changedOnly {
-		changedOnlyEnforcement = "advisory"
+		cmdResult := buildMutationCommand(cfg.Tool, opts)
+		changedOnlyEnforcement = cmdResult.Enforcement
+		if changedOnlyEnforcement == "" {
+			changedOnlyEnforcement = mutationEnforcementAdvisory
+		}
 	}
-	maxMutantsEnforcement := ""
-	if maxMutants > 0 {
-		maxMutantsEnforcement = "advisory"
-	}
+	maxMutantsEnforcement := maxMutantsEnforcement(maxMutants)
 	return &TestMutationSummary{Tool: cfg.Tool, Status: "configured", Confidence: firstNonEmpty(cfg.EvidenceConfidence, EvidenceConfidenceMedium), SuiteKind: normalizedSuiteKind(cfg.SuiteKind), Availability: EvidenceAvailabilityUnavailable, ChangedCodeThreshold: cfg.ChangedCodeThreshold, ChangedOnly: changedOnly, ChangedOnlyEnforcement: changedOnlyEnforcement, MaxRuntime: maxRuntime.String(), MaxMutants: maxMutants, MaxMutantsEnforcement: maxMutantsEnforcement}
 }
 
@@ -424,12 +432,13 @@ func (module TestModuleSignal) MutationTool() string {
 }
 
 type mutationToolDetection struct {
-	Name       string
-	Command    string
-	Confidence string
+	Name        string
+	Command     string
+	Confidence  string
+	Enforcement string
 }
 
-func detectMutationTool(projectDir string, module TestModuleSignal) mutationToolDetection {
+func detectMutationTool(projectDir string, module TestModuleSignal, opts MutationOptions) mutationToolDetection {
 	root := filepath.Join(projectDir, filepath.FromSlash(module.Root))
 	if module.Root == "." {
 		root = projectDir
@@ -438,19 +447,24 @@ func detectMutationTool(projectDir string, module TestModuleSignal) mutationTool
 		return mutationToolDetection{Name: mutationToolNative, Confidence: "high"}
 	}
 	if detectsStryker(root) {
-		return mutationToolDetection{Name: mutationToolStryker, Command: "npx stryker run", Confidence: "high"}
+		result := buildMutationCommand(mutationToolStryker, opts)
+		return mutationToolDetection{Name: mutationToolStryker, Command: result.Command, Confidence: "high", Enforcement: result.Enforcement}
 	}
 	if detectsPIT(root) {
-		return mutationToolDetection{Name: mutationToolPIT, Command: pitCommand(root), Confidence: "high"}
+		result := buildMutationCommand(mutationToolPIT, opts)
+		return mutationToolDetection{Name: mutationToolPIT, Command: result.Command, Confidence: "high", Enforcement: result.Enforcement}
 	}
 	if detectsMutmut(root) {
-		return mutationToolDetection{Name: mutationToolMutmut, Command: "mutmut run", Confidence: "medium"}
+		result := buildMutationCommand(mutationToolMutmut, opts)
+		return mutationToolDetection{Name: mutationToolMutmut, Command: result.Command, Confidence: "medium", Enforcement: result.Enforcement}
 	}
 	if fileExists(filepath.Join(root, ".cosmic-ray.toml")) {
-		return mutationToolDetection{Name: mutationToolCosmic, Command: "cosmic-ray exec .cosmic-ray.toml", Confidence: "medium"}
+		result := buildMutationCommand(mutationToolCosmic, opts)
+		return mutationToolDetection{Name: mutationToolCosmic, Command: result.Command, Confidence: "medium", Enforcement: result.Enforcement}
 	}
 	if detectsInfection(root) {
-		return mutationToolDetection{Name: mutationToolInfection, Command: "vendor/bin/infection", Confidence: "medium"}
+		result := buildMutationCommand(mutationToolInfection, opts)
+		return mutationToolDetection{Name: mutationToolInfection, Command: result.Command, Confidence: "medium", Enforcement: result.Enforcement}
 	}
 	return mutationToolDetection{}
 }
@@ -474,21 +488,6 @@ func detectsPIT(root string) bool {
 	return fileContainsAny(filepath.Join(root, "pom.xml"), "pitest", "pitest-maven") || fileContainsAny(filepath.Join(root, "build.gradle"), "pitest") || fileContainsAny(filepath.Join(root, "build.gradle.kts"), "pitest")
 }
 
-func pitCommand(root string) string {
-	if fileExists(filepath.Join(root, "pom.xml")) {
-		return "mvn test-compile org.pitest:pitest-maven:mutationCoverage"
-	}
-	return "./gradlew pitest"
-}
-
-func detectsMutmut(root string) bool {
-	return fileContainsAny(filepath.Join(root, "pyproject.toml"), "mutmut") || fileContainsAny(filepath.Join(root, "setup.cfg"), "mutmut")
-}
-
-func detectsInfection(root string) bool {
-	return fileExists(filepath.Join(root, "infection.json")) || fileContainsAny(filepath.Join(root, "composer.json"), "infection/infection")
-}
-
 func fileContainsAny(path string, needles ...string) bool {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -501,6 +500,21 @@ func fileContainsAny(path string, needles ...string) bool {
 		}
 	}
 	return false
+}
+
+func maxMutantsEnforcement(maxMutants int) string {
+	if maxMutants > 0 {
+		return mutationEnforcementAdvisory
+	}
+	return ""
+}
+
+func detectsMutmut(root string) bool {
+	return fileContainsAny(filepath.Join(root, "pyproject.toml"), "mutmut") || fileContainsAny(filepath.Join(root, "setup.cfg"), "mutmut")
+}
+
+func detectsInfection(root string) bool {
+	return fileExists(filepath.Join(root, "infection.json")) || fileContainsAny(filepath.Join(root, "composer.json"), "infection/infection")
 }
 
 func appendMutationDoctorDiagnostics(module TestModuleSignal, reportCandidates []string, diagnostics *[]TestSignalDiagnostic) {
@@ -517,7 +531,7 @@ func appendMutationDoctorDiagnostics(module TestModuleSignal, reportCandidates [
 }
 
 func executeMutationCommand(projectDir string, module TestModuleSignal, opts MutationOptions, diagnostics *[]TestSignalDiagnostic) (*TestExecutionStatus, error) {
-	if !commandAllowed(opts.CommandPolicy, module.Source) {
+	if !commandAllowed(opts.CommandPolicy, module.Source, module.Command != "") {
 		*diagnostics = append(*diagnostics, TestSignalDiagnostic{Level: "warn", Code: "mutation_command_policy_denied", Message: "mutation command was not executed because command_policy denied this command source", Module: module.Name, Path: module.Root})
 		return &TestExecutionStatus{Mode: MutationModeRun, Command: module.Command, CommandPolicy: opts.CommandPolicy, Shell: commandShell(), Partial: true}, nil
 	}
