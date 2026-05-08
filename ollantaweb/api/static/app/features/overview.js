@@ -421,7 +421,7 @@ function renderSummaryNewCode(newCode) {
       ${metricSignal('New Code Smells', metrics.new_code_smells || 0, 'muted', (metrics.new_code_smells || 0) > 0 ? 'card-yellow' : 'card-green', 'code_smell')}
       ${metricSignalPct('New Coverage', metrics.new_coverage, coverageCardClass(metrics.new_coverage), 'coverage', 'No new lines')}
       ${metricSignalPct('Changed Mutation', metrics.changed_mutation_score, mutationCardClass(metrics.changed_mutation_score), null, 'No mutation report')}
-      ${metricSignal('Survived Mutants', metrics.changed_mutants_survived || 0, (metrics.changed_mutants_survived || 0) > 0 ? 'warning' : 'success', (metrics.changed_mutants_survived || 0) > 0 ? 'card-yellow' : 'card-green')}
+      ${metricSignal('Survived Mutants', metrics.changed_mutants_survived || 0, (metrics.changed_mutants_survived || 0) > 0 ? 'warning' : 'success', (metrics.changed_mutants_survived || 0) > 0 ? 'card-yellow' : 'card-green', null, 'survived-mutants')}
       ${metricSignalPct('New Duplication', metrics.new_duplications, duplicationCardClass(metrics.new_duplications), null, 'No new lines')}
       ${metricSignal('Closed Issues', metrics.closed_issues || 0, 'success', (metrics.closed_issues || 0) > 0 ? 'card-green' : 'card-neutral', null, 'closed-issues')}
     </div>

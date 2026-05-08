@@ -960,3 +960,115 @@ test('applyActivityFilters drops entries outside the time window', () => {
   assert.equal(filtered.length, 1);
   assert.equal(filtered[0].analysis_date, fresh);
 });
+
+test('renderSurvivedMutantsTab renders table with survived mutant rows', () => {
+  const { app: harnessApp } = createHarness();
+
+  harnessApp.state.currentProject = { key: 'test-project' };
+  harnessApp.state.scope = { type: 'branch', branch: 'main', defaultBranch: 'main' };
+  harnessApp.state.survivedMutantsData = {
+    total: 2,
+    mutants: [
+      { id: 'src/app.go:42:conditionals-boundary', status: 'survived', mutator: 'conditionals-boundary', file: 'src/app.go', line: 42, description: 'Replaced > with >=', module: 'domain', changed_code: true },
+      { id: 'internal/cart.go:15:void-method', status: 'survived', mutator: 'void-method', file: 'internal/cart.go', line: 15, description: 'Removed method call', module: 'application', changed_code: false },
+    ],
+  };
+
+  const html = harnessApp.renderSurvivedMutantsTab();
+  assert.match(html, /Survived Mutants/);
+  assert.match(html, /2 survived mutants on main/);
+  assert.match(html, /conditionals-boundary/);
+  assert.match(html, /void-method/);
+  assert.match(html, /src\/app\.go/);
+  assert.match(html, /internal\/cart\.go/);
+  assert.match(html, /domain/);
+  assert.match(html, /application/);
+  assert.match(html, /changed/);
+});
+
+test('renderSurvivedMutantsTab empty state when zero mutants', () => {
+  const { app: harnessApp } = createHarness();
+
+  harnessApp.state.currentProject = { key: 'test-project' };
+  harnessApp.state.scope = { type: 'branch', branch: 'main', defaultBranch: 'main' };
+  harnessApp.state.survivedMutantsData = { total: 0, mutants: [] };
+
+  const html = harnessApp.renderSurvivedMutantsTab();
+  assert.match(html, /No survived mutants in this scan/);
+});
+
+test('renderSurvivedMutantsTab error state when data is null', () => {
+  const { app: harnessApp } = createHarness();
+
+  harnessApp.state.currentProject = { key: 'test-project' };
+  harnessApp.state.scope = { type: 'branch', branch: 'main', defaultBranch: 'main' };
+  harnessApp.state.survivedMutantsData = null;
+  harnessApp.state.survivedMutantsError = 'Network error';
+  harnessApp.state.loadingSurvivedMutants = false;
+
+  const html = harnessApp.renderSurvivedMutantsTab();
+  assert.match(html, /Network error/);
+});
+
+test('renderSurvivedMutantsTab loading state', () => {
+  const { app: harnessApp } = createHarness();
+
+  harnessApp.state.currentProject = { key: 'test-project' };
+  harnessApp.state.survivedMutantsData = null;
+  harnessApp.state.loadingSurvivedMutants = true;
+
+  const html = harnessApp.renderSurvivedMutantsTab();
+  assert.match(html, /Loading/);
+});
+
+test('renderSurvivedMutantsTab renders filter toolbar with module options', () => {
+  const { app: harnessApp } = createHarness();
+
+  harnessApp.state.currentProject = { key: 'test-project' };
+  harnessApp.state.scope = { type: 'branch', branch: 'main', defaultBranch: 'main' };
+  harnessApp.state.survivedMutantsData = {
+    total: 2,
+    mutants: [
+      { id: 'a:1:x', file: 'a.go', line: 1, mutator: 'x', module: 'domain', changed_code: false },
+      { id: 'b:2:y', file: 'b.go', line: 2, mutator: 'y', module: 'adapter', changed_code: true },
+    ],
+  };
+
+  const html = harnessApp.renderSurvivedMutantsTab();
+  assert.match(html, /svmModuleFilter/);
+  assert.match(html, /Changed code only/);
+  assert.match(html, /adapter/);
+});
+
+test('renderOverviewTab includes survived-mutants action on card', () => {
+  const { app: harnessApp } = createHarness();
+
+  harnessApp.state.overviewData = {
+    scope: { type: 'branch', branch: 'main', defaultBranch: 'main' },
+    last_scan: {
+      total_issues: 100,
+      version: '1.0.0',
+      branch: 'main',
+      analysis_date: '2026-05-01T12:00:00Z',
+      elapsed_ms: 0,
+    },
+    summary: {
+      review: { status: 'review', headline: 'ok', reasons: [] },
+      new_code: {
+        metrics: {
+          changed_mutation_score: 66,
+          changed_mutants_survived: 3,
+          changed_mutants_total: 15,
+          changed_mutants_killed: 12,
+        },
+      },
+      overall_code: { metrics: {} },
+      must_fix_now: [],
+      impacted_files: [],
+    },
+  };
+
+  const html = harnessApp.renderOverviewTab();
+  assert.match(html, /survived-mutants/);
+});
+

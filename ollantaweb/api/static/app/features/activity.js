@@ -174,6 +174,7 @@ function renderActivityFilters(filters, filteredCount, totalCount) {
   const summary = cats.length || win !== 'all'
     ? `${fmtNum(filteredCount)} of ${fmtNum(totalCount)} in view`
     : `${fmtNum(totalCount)} loaded`;
+  const exportBtn = `<button type="button" class="btn-sm btn-outline" id="activityExportBtn">Export CSV</button>`;
   return `<section class="activity-filters" aria-label="Activity filters">
     <div class="activity-filter-group">
       <span class="activity-filter-label">Events</span>
@@ -184,16 +185,79 @@ function renderActivityFilters(filters, filteredCount, totalCount) {
       <span class="activity-filter-label">Window</span>
       <div class="activity-window-group">${windowButtons}</div>
     </div>
-    <div class="activity-filter-summary">${summary}</div>
+    <div class="activity-filter-group" style="margin-left:auto;gap:12px">
+      ${exportBtn}
+      <span class="activity-filter-summary">${summary}</span>
+    </div>
   </section>`;
+}
+
+function computeNiceTicks(min, max, targetCount) {
+  const span = max - min;
+  if (span <= 0) return { min, max, step: 1, values: [min] };
+  const rough = span / targetCount;
+  const pow10 = Math.pow(10, Math.floor(Math.log10(rough)));
+  const d = rough / pow10;
+  let step;
+  if (d <= 1) step = pow10;
+  else if (d <= 2) step = 2 * pow10;
+  else if (d <= 5) step = 5 * pow10;
+  else step = 10 * pow10;
+  const niceMin = Math.floor(min / step) * step;
+  const niceMax = Math.ceil(max / step) * step;
+  const values = [];
+  for (let v = niceMin; v <= niceMax + step * 0.0001; v += step) {
+    values.push(Math.round(v * 1000000) / 1000000);
+  }
+  return { min: niceMin, max: niceMax, step, values };
+}
+
+function buildXAxisLabels(firstTs, lastTs, timeRange, left, plotWidth, width, right, height) {
+  const labelCount = 5;
+  let labels = '';
+  for (let i = 0; i < labelCount; i++) {
+    const t = firstTs + (timeRange * i) / (labelCount - 1);
+    const x = left + (plotWidth * i) / (labelCount - 1);
+    const anchor = i === 0 ? 'start' : i === labelCount - 1 ? 'end' : 'middle';
+    const date = new Date(t);
+    const text = timeRange < 2 * 24 * 60 * 60 * 1000
+      ? date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+      : timeRange < 90 * 24 * 60 * 60 * 1000
+      ? date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+      : date.toLocaleDateString(undefined, { year: 'numeric', month: 'short' });
+    labels += `<text x="${x.toFixed(1)}" y="${height - 10}" class="activity-chart-label" text-anchor="${anchor}">${escHtml(text)}</text>`;
+  }
+  return labels;
+}
+
+function buildChartTooltipText(scanId) {
+  const items = state.activityData?.items || [];
+  const entry = items.find(e => String(e.scan_id) === String(scanId));
+  if (!entry) return '';
+  const measures = entry.measures || {};
+  const parts = [];
+  parts.push(new Date(entry.analysis_date).toLocaleString());
+  parts.push(`Issues: ${fmtNum(entry.total_issues)}`);
+  if (entry.gate_status) parts.push(`Gate: ${entry.gate_status}`);
+  if (entry.version) parts.push(`Version: ${entry.version}`);
+  if (measures.coverage != null) parts.push(`Coverage: ${fmtPct(measures.coverage)}`);
+  const mutation = measures.changed_mutation_score ?? measures.mutation_score;
+  if (mutation != null) parts.push(`Mutation: ${fmtPct(mutation)}`);
+  return parts.join(' \u00b7 ');
 }
 
 function renderActivityTrend(entries, filteredCount, totalCount) {
   const points = [...entries].reverse();
+  if (!points.length) return '';
+
   const values = points.map(entry => Number(entry.total_issues || 0));
-  const max = Math.max(...values, 1);
-  const min = Math.min(...values, 0);
+  const rawMax = Math.max(...values, 1);
+  const rawMin = Math.min(...values, 0);
+  const yTicks = computeNiceTicks(rawMin, rawMax, 5);
+  const max = yTicks.max;
+  const min = yTicks.min;
   const spread = Math.max(max - min, 1);
+
   const width = 760;
   const height = 280;
   const left = 54;
@@ -202,27 +266,45 @@ function renderActivityTrend(entries, filteredCount, totalCount) {
   const bottom = 42;
   const plotWidth = width - left - right;
   const plotHeight = height - top - bottom;
-  const xFor = index => left + (points.length === 1 ? plotWidth / 2 : (plotWidth * index) / (points.length - 1));
+
+  const firstTs = Date.parse(points[0].analysis_date);
+  const lastTs = Date.parse(points[points.length - 1].analysis_date);
+  const timeRange = Math.max(lastTs - firstTs, 1);
+
+  const xFor = (entry, _index) => {
+    const ts = Date.parse(entry.analysis_date);
+    if (!Number.isFinite(ts)) return left + plotWidth / 2;
+    if (timeRange <= 1 || points.length === 1) return left + plotWidth / 2;
+    return left + ((ts - firstTs) / timeRange) * plotWidth;
+  };
+
   const yFor = value => top + plotHeight - ((Number(value || 0) - min) / spread) * plotHeight;
-  const path = points.map((entry, index) => `${index === 0 ? 'M' : 'L'} ${xFor(index).toFixed(1)} ${yFor(entry.total_issues).toFixed(1)}`).join(' ');
-  const area = `${path} L ${xFor(points.length - 1).toFixed(1)} ${top + plotHeight} L ${xFor(0).toFixed(1)} ${top + plotHeight} Z`;
-  const grid = [0, 0.25, 0.5, 0.75, 1].map(step => {
-    const y = top + plotHeight * step;
-    const label = Math.round(max - spread * step);
-    return `<g><line x1="${left}" y1="${y}" x2="${width - right}" y2="${y}" class="activity-chart-grid"/><text x="${left - 12}" y="${y + 4}" class="activity-chart-label" text-anchor="end">${fmtNum(label)}</text></g>`;
+
+  const path = points.map((entry, index) => `${index === 0 ? 'M' : 'L'} ${xFor(entry, index).toFixed(1)} ${yFor(entry.total_issues).toFixed(1)}`).join(' ');
+  const area = `${path} L ${xFor(points[points.length - 1], points.length - 1).toFixed(1)} ${top + plotHeight} L ${xFor(points[0], 0).toFixed(1)} ${top + plotHeight} Z`;
+
+  const grid = yTicks.values.map(val => {
+    const y = yFor(val);
+    return `<g><line x1="${left}" y1="${y}" x2="${width - right}" y2="${y}" class="activity-chart-grid"/><text x="${left - 12}" y="${y + 4}" class="activity-chart-label" text-anchor="end">${fmtNum(val)}</text></g>`;
   }).join('');
+
   const markers = points.map((entry, index) => {
-    const x = xFor(index).toFixed(1);
+    const x = xFor(entry, index).toFixed(1);
     const y = yFor(entry.total_issues).toFixed(1);
     const gate = chartGateClass(entry.gate_status);
-    return `<circle cx="${x}" cy="${y}" r="5" class="activity-chart-point ${gate}" data-activity-scan="${escAttr(String(entry.id || ''))}" tabindex="0" role="button" aria-label="Open issues for analysis ${escAttr(new Date(entry.analysis_date).toLocaleString())}"><title>${escHtml(new Date(entry.analysis_date).toLocaleString())}: ${fmtNum(entry.total_issues)} issues — click to drill down</title></circle>`;
+    const tooltip = buildChartTooltipText(entry.scan_id);
+    return `<circle cx="${x}" cy="${y}" r="5" class="activity-chart-point ${gate}" data-activity-scan="${escAttr(String(entry.scan_id || ''))}" tabindex="0" role="button" aria-label="Open issues for analysis ${escAttr(new Date(entry.analysis_date).toLocaleString())}"><title>${escHtml(tooltip)}</title></circle>`;
   }).join('');
+
   const eventTicks = points.flatMap((entry, index) => (entry.events || []).map(event => ({ entry, index, event }))).map(item => {
-    const x = xFor(item.index).toFixed(1);
+    const x = xFor(item.entry, item.index).toFixed(1);
     return `<line x1="${x}" y1="${top + plotHeight + 12}" x2="${x}" y2="${top + plotHeight + 28}" class="activity-event-tick"><title>${escHtml(item.event.name)}</title></line>`;
   }).join('');
+
+  const xLabels = buildXAxisLabels(firstTs, lastTs, timeRange, left, plotWidth, width, right, height);
+
   const first = points[0];
-  const last = points.at(-1);
+  const last = points[points.length - 1];
   const subtitle = filteredCount && filteredCount !== totalCount
     ? `${fmtNum(points.length)} of ${fmtNum(totalCount)} analyses (filtered) from ${escHtml(new Date(first.analysis_date).toLocaleDateString())} to ${escHtml(new Date(last.analysis_date).toLocaleDateString())}`
     : `${fmtNum(points.length)} analyses from ${escHtml(new Date(first.analysis_date).toLocaleDateString())} to ${escHtml(new Date(last.analysis_date).toLocaleDateString())}`;
@@ -245,8 +327,7 @@ function renderActivityTrend(entries, filteredCount, totalCount) {
       <path d="${path}" class="activity-chart-line"></path>
       ${markers}
       ${eventTicks}
-      <text x="${left}" y="${height - 10}" class="activity-chart-label">${escHtml(new Date(first.analysis_date).toLocaleDateString())}</text>
-      <text x="${width - right}" y="${height - 10}" class="activity-chart-label" text-anchor="end">${escHtml(new Date(last.analysis_date).toLocaleDateString())}</text>
+      ${xLabels}
     </svg>
   </section>`;
 }
@@ -262,13 +343,19 @@ function renderActivityTimeline(entries) {
   const eventRows = entries.flatMap(entry => {
     const baseEvents = entry.events?.length ? entry.events : [{ category: 'ANALYSIS', name: 'Analysis completed' }];
     return baseEvents.map(event => ({ entry, event }));
-  }).slice(0, 18);
+  });
 
   const rows = eventRows.map(({ entry, event }, index) => {
     const isLast = index === eventRows.length - 1;
     const cls = eventClass(event);
-    const isClickable = entry.id != null;
-    return `<div class="activity-entry${isClickable ? ' clickable' : ''}"${isClickable ? ` data-activity-scan="${escAttr(String(entry.id))}" tabindex="0" role="button"` : ''}>
+    const hadIssues = (entry.total_issues || 0) > 0;
+    const isClickable = entry.scan_id != null && hadIssues;
+    const titleAttr = isClickable
+      ? ` title="View issues from this analysis"`
+      : hadIssues
+        ? ''
+        : ` title="No issues in this analysis"`;
+    return `<div class="activity-entry${isClickable ? ' clickable' : ''}"${isClickable ? ` data-activity-scan="${escAttr(String(entry.scan_id))}" tabindex="0" role="button"${titleAttr}` : titleAttr}>
       <div class="activity-dot-col">
         <div class="activity-dot ${cls}"></div>
         ${isLast ? '' : '<div class="activity-line"></div>'}
@@ -297,15 +384,19 @@ function renderActivityTimeline(entries) {
 
 function renderActivityScanList(entries) {
   const selection = state.activityCompareSelection || [];
-  const rows = entries.slice(0, 12).map(entry => {
+  const rows = entries.map(entry => {
     const measures = entry.measures || {};
     const coverage = measures.coverage == null ? '\u2014' : fmtPct(measures.coverage);
     const mutation = measures.changed_mutation_score ?? measures.mutation_score;
-    const checked = selection.includes(entry.id) ? ' checked' : '';
-    const branch = entry.scope?.branch || '';
-    return `<tr data-activity-scan="${escAttr(String(entry.id || ''))}" data-activity-branch="${escAttr(branch)}" class="activity-scan-row">
-      <td class="activity-scan-pick"><input type="checkbox" class="activity-compare-pick" data-activity-scan="${escAttr(String(entry.id || ''))}" data-activity-branch="${escAttr(branch)}"${checked} aria-label="Compare scan"></td>
-      <td class="activity-scan-link"><strong>${fmtDate(entry.analysis_date)}</strong><span>${escHtml(new Date(entry.analysis_date).toLocaleDateString())}</span></td>
+    const checked = selection.includes(entry.scan_id) ? ' checked' : '';
+    const selectedClass = selection.includes(entry.scan_id) ? ' selected' : '';
+    const branch = entry.branch || '';
+    const hasIssues = (entry.total_issues || 0) > 0;
+    const linkCls = hasIssues ? 'activity-scan-link clickable' : 'activity-scan-link';
+    const linkTitle = hasIssues ? 'View issues from this analysis' : 'No issues in this analysis';
+    return `<tr data-activity-scan="${escAttr(String(entry.scan_id || ''))}" data-activity-branch="${escAttr(branch)}" class="activity-scan-row${selectedClass}">
+      <td class="activity-scan-pick"><input type="checkbox" class="activity-compare-pick" data-activity-scan="${escAttr(String(entry.scan_id || ''))}" data-activity-branch="${escAttr(branch)}"${checked} aria-label="Compare scan"></td>
+      <td class="${linkCls}" title="${escAttr(linkTitle)}"><strong>${fmtDate(entry.analysis_date)}</strong><span>${escHtml(new Date(entry.analysis_date).toLocaleDateString())}</span></td>
       <td>${gateBadge(entry.gate_status)}</td>
       <td class="num">${fmtNum(entry.total_issues)}<span>${signedValue(entry.delta?.issues || 0)}</span></td>
       <td class="num dangerish">${fmtNum(entry.new_issues)}</td>
@@ -331,8 +422,8 @@ function renderActivityScanList(entries) {
 function renderActivityCompare(allEntries) {
   const selection = state.activityCompareSelection || [];
   if (selection.length !== 2) return '';
-  const a = allEntries.find(e => e.id === selection[0]);
-  const b = allEntries.find(e => e.id === selection[1]);
+  const a = allEntries.find(e => e.scan_id === selection[0]);
+  const b = allEntries.find(e => e.scan_id === selection[1]);
   if (!a || !b) return '';
   const [left, right] = Date.parse(a.analysis_date) <= Date.parse(b.analysis_date) ? [a, b] : [b, a];
   const fields = [
@@ -388,7 +479,55 @@ function renderActivityCompare(allEntries) {
 function renderActivityLoadMore() {
   const page = state.activityPage || { hasMore: false };
   if (!page.hasMore) return '';
-  return `<div class="activity-load-more"><button type="button" class="btn-sm btn-outline" id="activityLoadMoreBtn">Load more analyses</button></div>`;
+  const label = state.loadingMoreActivity ? 'Loading…' : 'Load more analyses';
+  return `<div class="activity-load-more"><button type="button" class="btn-sm btn-outline" id="activityLoadMoreBtn"${state.loadingMoreActivity ? ' disabled' : ''}>${label}</button></div>`;
+}
+
+function exportActivityCSV(entries) {
+  if (!entries.length) return;
+  const headers = [
+    'analysis_date', 'gate_status', 'version', 'branch', 'commit_sha',
+    'total_issues', 'new_issues', 'closed_issues',
+    'total_bugs', 'total_vulnerabilities', 'total_code_smells',
+    'total_files', 'total_ncloc', 'coverage', 'mutation_score',
+  ];
+  const rows = entries.map(entry => {
+    const m = entry.measures || {};
+    const cells = [
+      entry.analysis_date,
+      entry.gate_status,
+      entry.version,
+      entry.branch,
+      entry.commit_sha,
+      entry.total_issues,
+      entry.new_issues,
+      entry.closed_issues,
+      entry.total_bugs,
+      entry.total_vulnerabilities,
+      entry.total_code_smells,
+      entry.total_files,
+      entry.total_ncloc,
+      m.coverage != null ? fmtPct(m.coverage) : '',
+      m.mutation_score != null ? fmtPct(m.mutation_score) : '',
+    ];
+    return cells.map(v => {
+      const s = String(v ?? '');
+      if (s.includes(',') || s.includes('"') || s.includes('\n')) {
+        return '"' + s.replace(/"/g, '""') + '"';
+      }
+      return s;
+    }).join(',');
+  });
+  const csv = [headers.join(','), ...rows].join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `activity-${state.currentProject?.key || 'project'}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
 
 function eventClass(event) {
@@ -420,6 +559,8 @@ async function loadMoreActivity() {
   const project = state.currentProject;
   if (!project) return;
   const page = state.activityPage || { offset: 0 };
+  state.loadingMoreActivity = true;
+  renderView();
   try {
     const url = buildScopedPath(
       '/projects/' + encodeURIComponent(project.key) +
@@ -435,6 +576,7 @@ async function loadMoreActivity() {
   } catch {
     state.activityPage = { ...page, hasMore: false };
   }
+  state.loadingMoreActivity = false;
   renderView();
 }
 
@@ -457,8 +599,8 @@ function toggleCompareSelection(scanId, branch) {
     return true;
   }
   if (selection.length >= 1) {
-    const first = items.find(item => item.id === selection[0]);
-    const firstBranch = first?.scope?.branch || '';
+    const first = items.find(item => item.scan_id === selection[0]);
+    const firstBranch = first?.branch || '';
     if (firstBranch && branch && firstBranch !== branch) {
       return false;
     }
@@ -520,7 +662,7 @@ function bindActivityInteractions() {
     });
   });
 
-  document.querySelectorAll('.activity-scan-row .activity-scan-link').forEach(cell => {
+  document.querySelectorAll('.activity-scan-row .activity-scan-link.clickable').forEach(cell => {
     cell.addEventListener('click', () => {
       const row = cell.closest('.activity-scan-row');
       openScanInIssues(row?.dataset.activityScan);
@@ -547,6 +689,13 @@ function bindActivityInteractions() {
 
   document.getElementById('activityLoadMoreBtn')?.addEventListener('click', () => {
     loadMoreActivity();
+  });
+
+  document.getElementById('activityExportBtn')?.addEventListener('click', () => {
+    const allEntries = normalizeActivityPayload(state.activityData);
+    const filters = state.activityFilters || { categories: [], window: 'all' };
+    const filtered = applyActivityFilters(allEntries, filters);
+    exportActivityCSV(filtered.length ? filtered : allEntries);
   });
 }
 

@@ -17,6 +17,7 @@ import { bindActivityTabContent, loadActivityData, renderActivityTab } from './f
 import { loadCodeFileData, loadCodeTreeData, renderCoverageTab } from './features/code.js';
 import { loadIssues, openIssueDetail, renderIssuesSection } from './features/issues.js';
 import { renderOverviewTab } from './features/overview.js';
+import { loadSurvivedMutants, renderSurvivedMutantsTab, bindSurvivedMutantsContent } from './features/survived-mutants.js';
 import { loadProjectInfoData } from './features/project-information.js';
 
 let renderView = () => {};
@@ -38,13 +39,14 @@ function scopesTabHasContent() {
 }
 
 function renderProjectTabs(activeTab, issueCount) {
-  const tabs = ['overview', 'issues', 'coverage', 'activity', 'scopes', 'gate', 'profiles', 'custom-rules', 'ai-providers', 'webhooks'];
+  const tabs = ['overview', 'issues', 'coverage', 'survived-mutants', 'activity', 'scopes', 'gate', 'profiles', 'custom-rules', 'ai-providers', 'webhooks'];
   const labels = {
     overview: 'Overview',
     issues: 'Issues',
     activity: 'Activity',
     scopes: 'Scopes',
     coverage: 'Coverage',
+    'survived-mutants': 'Survived Mutants',
     gate: 'Quality Gate',
     webhooks: 'Webhooks',
     profiles: 'Profiles',
@@ -65,6 +67,7 @@ function renderProjectTabContent(tab) {
   if (tab === 'activity') return renderActivityTab();
   if (tab === 'scopes') return renderScopesTab();
   if (tab === 'coverage') return renderCoverageTab();
+  if (tab === 'survived-mutants') return renderSurvivedMutantsTab();
   if (tab === 'gate') return renderGateTab();
   if (tab === 'webhooks') return renderWebhooksTab();
   if (tab === 'profiles') return renderProfilesTab();
@@ -192,6 +195,10 @@ const projectTabLoaders = {
     shouldLoad: () => state.codeTreeData === null,
     load: loadCodeTreeData,
   },
+  'survived-mutants': {
+    shouldLoad: () => state.survivedMutantsData == null,
+    load: () => loadSurvivedMutants(state.currentProject?.key || ''),
+  },
   gate: {
     shouldLoad: () => state.gateData === null,
     load: loadGateData,
@@ -231,6 +238,10 @@ export async function changeScope(scope) {
   state.codeTreeData = null;
   state.codeFileData = null;
   state.codeSelectedPath = '';
+  state.survivedMutantsData = null;
+  state.survivedMutantsError = '';
+  state.survivedMutantsFilters = { module: '', changedOnly: false };
+  state.survivedMutantsSort = { field: 'file', dir: 'asc' };
   state.issues = [];
   state.issuesTotal = 0;
   state.issueOffset = 0;
@@ -468,6 +479,7 @@ function bindTabContent() {
 
   bindAdminTabContent();
   bindActivityTabContent();
+  bindSurvivedMutantsContent();
 }
 
 function resetIssueFilters() {
@@ -498,6 +510,10 @@ function openIssuesFromOverview(updates) {
 function handleOverviewAction(action) {
   if (action === 'coverage') {
     switchTab('coverage');
+    return;
+  }
+  if (action === 'survived-mutants') {
+    switchTab('survived-mutants');
     return;
   }
   if (action === 'new-issues') {

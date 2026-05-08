@@ -86,6 +86,7 @@ export function createInitialState() {
     activityFilters: { categories: [], window: 'all' },
     activityPage: { offset: 0, hasMore: false },
     activityCompareSelection: [],
+    loadingMoreActivity: false,
     branchesData: null,
     pullRequestsData: null,
     projectInfoData: null,
@@ -117,6 +118,11 @@ export function createInitialState() {
     paletteResults: null,
     paletteLoading: false,
     paletteIndex: 0,
+    survivedMutantsData: null,
+    survivedMutantsError: '',
+    survivedMutantsFilters: { module: '', changedOnly: false },
+    survivedMutantsSort: { field: 'file', dir: 'asc' },
+    loadingSurvivedMutants: false,
   };
 }
 
@@ -155,6 +161,7 @@ export function resetProjectState() {
   state.activityFilters = { categories: [], window: 'all' };
   state.activityPage = { offset: 0, hasMore: false };
   state.activityCompareSelection = [];
+  state.loadingMoreActivity = false;
   state.branchesData = null;
   state.pullRequestsData = null;
   state.projectInfoData = null;
@@ -172,4 +179,9 @@ export function resetProjectState() {
   state.backgroundTaskError = '';
   state.tagDetailData = null;
   state.selectedTagKey = '';
+  state.survivedMutantsData = null;
+  state.survivedMutantsError = '';
+  state.survivedMutantsFilters = { module: '', changedOnly: false };
+  state.survivedMutantsSort = { field: 'file', dir: 'asc' };
+  state.loadingSurvivedMutants = false;
 }

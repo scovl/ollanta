@@ -137,7 +137,11 @@ function buildIssuesHtml() {
   }
 
   if (issues.length === 0) {
-    return `<div class="issues-layout">${facetSidebar}<section class="issues-results">${filtersHtml}<div class="empty-state" style="padding:32px 0"><p>No issues match the current filters.</p></div></section></div>`;
+    const isScanFilter = filter.scanId != null && filter.scanId !== '';
+    const emptyMsg = isScanFilter
+      ? `<p>No issues remain from analysis #${escHtml(filter.scanId)}.</p><p class="muted" style="margin-top:8px">They may have been resolved or removed in subsequent scans.</p><button type="button" class="btn-sm btn-outline" id="clearScanFilterEmptyBtn" style="margin-top:16px">Show all issues</button>`
+      : `<p>No issues match the current filters.</p>`;
+    return `<div class="issues-layout">${facetSidebar}<section class="issues-results">${filtersHtml}<div class="empty-state" style="padding:32px 0">${emptyMsg}</div></section></div>`;
   }
 
   const rows = issues.map((issue, idx) => {
@@ -278,6 +282,10 @@ function bindIssueControls() {
     state.issueFilter.scanId = '';
     loadIssues();
   });
+  document.getElementById('clearScanFilterEmptyBtn')?.addEventListener('click', () => {
+    state.issueFilter.scanId = '';
+    loadIssues();
+  });
 
   document.querySelectorAll('.issues-table tbody tr[data-issue-idx]').forEach(row => {
     row.addEventListener('click', () => {
@@ -346,6 +354,7 @@ export function openIssueDetail(issue) {
 
   inner.innerHTML = `
     <button class="detail-close" id="detailClose">\u2715</button>
+    <button class="detail-copy" id="detailCopy" title="Copy issue details to clipboard">\uD83D\uDCCB Copy</button>
     <div class="detail-title">${escHtml(currentIssue.message || 'Issue')}</div>
     <div class="detail-props">
       <div class="detail-prop">
@@ -396,6 +405,7 @@ export function openIssueDetail(issue) {
   });
 
   document.getElementById('detailClose').addEventListener('click', closeIssueDetail);
+  document.getElementById('detailCopy')?.addEventListener('click', () => copyIssueDetail(currentIssue));
   overlay.addEventListener('click', closeIssueDetail);
   document.querySelectorAll('[data-issue-tag]').forEach(btn => {
     btn.addEventListener('click', event => {
@@ -432,6 +442,62 @@ export function openIssueDetail(issue) {
       const el = document.getElementById('rule-detail-section');
       if (el) el.innerHTML = '';
     });
+  }
+}
+
+async function copyIssueDetail(issue) {
+  const file = (issue.component_path || '').replaceAll('\\', '/');
+  const loc = issue.end_line && issue.end_line !== issue.line
+    ? `lines ${issue.line}\u2013${issue.end_line}`
+    : `line ${issue.line}`;
+  const sev = SEV_LABEL[issue.severity] || issue.severity || '';
+  const type = (TYPE_LABEL[issue.type] || issue.type || 'issue');
+  const rule = issue.rule_key || '';
+  const engine = issue.engine_id || '';
+  const status = issue.status || 'open';
+  const resolution = issue.resolution ? ` (${issue.resolution})` : '';
+  const lifecycle = TRACKING_LABEL[issue.tracking_state] || 'current';
+  const tags = (issue.tags || []).join(', ');
+  const quality = QUALITY_LABEL[issue.quality] || '';
+
+  const lines = [];
+  lines.push(`Issue: ${issue.message || 'Untitled'}`);
+  if (sev) lines.push(`Severity: ${sev}`);
+  if (type) lines.push(`Type: ${type}`);
+  if (quality) lines.push(`Quality domain: ${quality}`);
+  if (rule) lines.push(`Rule: ${rule}`);
+  if (engine) lines.push(`Engine: ${engine}`);
+  lines.push(`File: ${file}`);
+  lines.push(`Location: ${loc}${issue.column ? ', column ' + issue.column : ''}`);
+  lines.push(`Status: ${status}${resolution}`);
+  lines.push(`Lifecycle: ${lifecycle}`);
+  if (tags) lines.push(`Tags: ${tags}`);
+
+  if (rule) {
+    try {
+      const ruleData = await apiFetch(`/rules/${encodeURIComponent(rule)}`);
+      if (ruleData.rationale) lines.push(`\nWhy is this a problem?\n${ruleData.rationale}`);
+      if (ruleData.noncompliant_code) lines.push(`\nNoncompliant code:\n${ruleData.noncompliant_code}`);
+      if (ruleData.compliant_code) lines.push(`\nCompliant code:\n${ruleData.compliant_code}`);
+    } catch {
+      // rule details unavailable; omit from copy
+    }
+  }
+
+  try {
+    await navigator.clipboard.writeText(lines.join('\n'));
+    const btn = document.getElementById('detailCopy');
+    if (btn) {
+      btn.textContent = '\u2714 Copied';
+      setTimeout(() => { btn.textContent = '\uD83D\uDCCB Copy'; }, 2000);
+    }
+  } catch {
+    // clipboard unavailable; show feedback anyway
+    const btn = document.getElementById('detailCopy');
+    if (btn) {
+      btn.textContent = '\u26A0 Failed';
+      setTimeout(() => { btn.textContent = '\uD83D\uDCCB Copy'; }, 2000);
+    }
   }
 }
 
