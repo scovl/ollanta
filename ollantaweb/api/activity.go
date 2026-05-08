@@ -189,10 +189,17 @@ func buildActivityEntries(scans []*postgres.Scan, total, offset, limit int) []ac
 }
 
 // Activity handles GET /api/v1/projects/{key}/activity?limit=20&offset=0
-//
-// Returns a chronological timeline of scans with notable events highlighted.
-// Events are derived by comparing consecutive scans (quality gate changes,
-// version bumps, issue spikes).
+// @Summary Project activity
+// @Description Returns a chronological timeline of scans with events
+// @Tags project-overview
+// @Produce json
+// @Param key path string true "Project key"
+// @Param branch query string false "Branch"
+// @Param pull_request query string false "Pull request"
+// @Param limit query int false "Limit" default(20)
+// @Param offset query int false "Offset"
+// @Success 200 {object} activityResponse
+// @Router /api/v1/projects/{key}/activity [get]
 func (h *ActivityHandler) Activity(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	requested, err := parseScopeQuery(r)
