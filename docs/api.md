@@ -49,7 +49,8 @@ Database and search settings can be expressed either as a full `url` or as expli
 | DELETE | `/api/v1/projects/{key}`                  | Delete project |
 | POST   | `/api/v1/scans`                           | Accept a scan report for asynchronous processing |
 | GET    | `/api/v1/scan-jobs/{id}`                  | Get durable scan-job status |
-| GET    | `/api/v1/scans/{id}`                      | Get scan by ID |
+| GET    | `/api/v1/scans/{id}`                      | Get scan by ID (includes `test_signals` when available) |
+| GET    | `/api/v1/scans/{id}/survived-mutants`    | Survived mutant list extracted from test signals |
 | GET    | `/api/v1/projects/{key}/scans`            | List scans for project |
 | GET    | `/api/v1/projects/{key}/scans/latest`     | Latest scan for project |
 | GET    | `/api/v1/projects/{key}/overview`         | Scope-aware dashboard payload |
@@ -246,6 +247,11 @@ Scan reports may include optional aggregate test and mutation fields inside `mea
 | `mutants_survived` | Mutants that survived. |
 | `mutants_timeout` | Mutants that timed out. |
 | `mutants_error` | Mutants that errored. |
+| `mutants_skipped` | Mutants skipped during execution. |
+| `changed_mutation_score` | Mutation score restricted to changed code. |
+| `changed_mutants_total` | Total mutants generated for changed code. |
+| `changed_mutants_killed` | Changed-code mutants killed by tests. |
+| `changed_mutants_survived` | Changed-code mutants that survived. |
 
 ### Durable side-effect inspection
 
@@ -286,6 +292,7 @@ Fast current-value queries without expensive subqueries. Also supports daily tre
 |--------|----------|-------------|
 | `GET` | `/api/v1/projects/{key}/measures/live` | Current values for all project measures |
 | `GET` | `/api/v1/projects/{key}/measures/trend?metric=coverage&days=30` | Daily aggregated trend for a metric |
+| `GET` | `/api/v1/projects/{key}/measures/trend?metric=mutation_score&component=domain` | Per-module metric trend with optional `component` filter |
 
 ## Components
 

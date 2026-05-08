@@ -1,4 +1,4 @@
-.PHONY: build test lint fmt clean run smoke-local up down recreate logs release release-dry-run
+.PHONY: build test lint fmt clean run push up down recreate logs release release-dry-run swagger
 
 PKGS := \
 	github.com/scovl/ollanta/ollantacore/... \
@@ -15,8 +15,17 @@ export PATH := C:\msys64\mingw64\bin;$(PATH)
 
 SCANNER_SRC := ./ollantascanner/cmd/ollanta
 RELEASE_DIR := build
-VERSION := 0.2.0
+VERSION := 0.3.0
 
+# ── Default settings ────────────────────────────────────────────────────
+SCANNER_BIN := $(RELEASE_DIR)/ollanta.exe
+PROJECT_DIR ?= .
+PROJECT_KEY ?= $(notdir $(abspath $(PROJECT_DIR)))
+PORT        ?= 7777
+SERVER      ?= http://localhost:8080
+TOKEN       ?= ollanta-dev-scanner-token
+
+# ── Core targets ─────────────────────────────────────────────────────────
 build:
 	go build -ldflags="-X main.version=$(VERSION)" $(PKGS)
 
@@ -36,6 +45,63 @@ fmt:
 clean:
 	go clean $(PKGS)
 
+# ── Run: scan + local interactive UI ─────────────────────────────────────
+#   make run                        scan current directory
+#   make run PROJECT_DIR=../myapp   scan another project
+#   make run PORT=8888              custom port
+$(SCANNER_BIN):
+	-mkdir $(RELEASE_DIR)
+	go build -ldflags="-X main.version=$(VERSION)" -o "$(SCANNER_BIN)" $(SCANNER_SRC)
+
+run: $(SCANNER_BIN)
+	./$(SCANNER_BIN) -project-dir "$(PROJECT_DIR)" -project-key "$(PROJECT_KEY)" -format all -with-tests -with-mutations -local-ui -port $(PORT)
+
+# Background variant: same as run but doesn't block the terminal.
+# Close the browser tab and run `make stop` to kill the server.
+run-bg: $(SCANNER_BIN)
+	powershell -Command "Start-Process -FilePath '$(SCANNER_BIN)' -ArgumentList @('-project-dir','$(PROJECT_DIR)','-project-key','$(PROJECT_KEY)','-format','all','-with-tests','-with-mutations','-local-ui','-port','$(PORT)') -WindowStyle Minimized"
+	@echo "Scanner running in background on http://localhost:$(PORT)"
+	@echo "Run 'make stop' to kill it."
+
+stop:
+	-taskkill /f /im ollanta.exe 2>nul
+	@echo Scanner stopped.
+
+# ── Push: scan + send to ollantaweb server ──────────────────────────────
+#   make push                       push to http://localhost:8080
+#   make push SERVER=http://prod:8080 TOKEN=my-key
+push: $(SCANNER_BIN)
+	./$(SCANNER_BIN) \
+		-project-dir "$(PROJECT_DIR)" \
+		-project-key "$(PROJECT_KEY)" \
+		-format all \
+		-with-tests \
+		-with-mutations \
+		-server $(SERVER) \
+		-server-token $(TOKEN) \
+		-server-wait \
+		-server-wait-timeout 5m \
+		-server-wait-poll 2s
+
+# ── Server: docker compose management ────────────────────────────────────
+COMPOSE_PROFILE ?= server
+
+up:
+	docker compose --profile $(COMPOSE_PROFILE) up -d
+
+down:
+	docker compose --profile $(COMPOSE_PROFILE) down
+
+recreate:
+	docker compose --profile $(COMPOSE_PROFILE) down --remove-orphans
+	docker compose --profile $(COMPOSE_PROFILE) build --no-cache
+	docker compose --profile $(COMPOSE_PROFILE) up -d --force-recreate
+	docker compose --profile $(COMPOSE_PROFILE) ps
+
+logs:
+	docker compose --profile $(COMPOSE_PROFILE) logs -f --tail=100
+
+# ── Release ──────────────────────────────────────────────────────────────
 release:
 	@echo Building Ollanta Scanner $(VERSION) for all platforms...
 	@mkdir -p $(RELEASE_DIR)
@@ -57,40 +123,11 @@ release-dry-run:
 	GOOS=darwin  GOARCH=arm64 go build -o /dev/null $(SCANNER_SRC)
 	@echo All platforms compile successfully.
 
-# Run the scanner against a project. Override with:
-#   make run PROJECT_DIR=D:\projects\myapp PROJECT_KEY=myapp
-PROJECT_DIR ?= .
-PROJECT_KEY ?= $(notdir $(abspath $(PROJECT_DIR)))
-PORT        ?= 7777
-
-run:
-	go run github.com/scovl/ollanta/ollantascanner/cmd/ollanta \
-		-project-dir "$(PROJECT_DIR)" \
-		-project-key "$(PROJECT_KEY)" \
-		-format all \
-		-local-ui \
-		-port $(PORT)
-
 SMOKE_BACKEND_PORT ?= 18080
 
 smoke-local:
 	powershell -ExecutionPolicy Bypass -File scripts/smoke-local.ps1 -BackendPort $(SMOKE_BACKEND_PORT)
 
-# Docker compose helpers for the server stack (postgres + zincsearch + ollantaweb).
-COMPOSE_PROFILE ?= server
-
-up:
-	docker compose --profile $(COMPOSE_PROFILE) up -d
-
-down:
-	docker compose --profile $(COMPOSE_PROFILE) down
-
-# Full rebuild: stop everything, rebuild images without cache, recreate containers.
-recreate:
-	docker compose --profile $(COMPOSE_PROFILE) down --remove-orphans
-	docker compose --profile $(COMPOSE_PROFILE) build --no-cache
-	docker compose --profile $(COMPOSE_PROFILE) up -d --force-recreate
-	docker compose --profile $(COMPOSE_PROFILE) ps
-
-logs:
-	docker compose --profile $(COMPOSE_PROFILE) logs -f --tail=100
+swagger:
+	go run github.com/swaggo/swag/cmd/swag init -g api/router.go -d ./ollantaweb --parseDependency --parseInternal
+	powershell -Command "New-Item -ItemType Directory -Force -Path 'ollantaweb/docs'; Move-Item -Force -Path 'docs/docs.go' -Destination 'ollantaweb/docs/docs.go'; Move-Item -Force -Path 'docs/swagger.json' -Destination 'ollantaweb/docs/swagger.json'; Move-Item -Force -Path 'docs/swagger.yaml' -Destination 'ollantaweb/docs/swagger.yaml'"

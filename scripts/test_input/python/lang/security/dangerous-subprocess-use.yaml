@@ -1,0 +1,15 @@
+﻿rules:
+  - id: dangerous-subprocess-use
+    pattern: subprocess.run(..., shell=True)
+    message: >
+      Found user-controlled content when spawning a subprocess with shell=True.
+      This is dangerous because it allows a malicious actor to execute commands.
+    languages:
+      - python
+    severity: ERROR
+    metadata:
+      category: security
+      technology:
+        - python
+      cwe:
+        - "CWE-78: OS Command Injection"

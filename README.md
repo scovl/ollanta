@@ -42,61 +42,48 @@ On Windows, the Makefile prepends `C:\msys64\mingw64\bin` to `PATH` for its own 
 
 ## Quick Start
 
-This section is the shortest happy path. The complete scanner-to-server journey is in [docs/how-to-use.md](docs/how-to-use.md).
+This section is the shortest happy path. The full journey is in [docs/how-to-use.md](docs/how-to-use.md).
 
-### 1. Scan this checkout
+### 1. Start the server (one-time)
 
-From the repository root:
+```sh
+make up
+```
+
+Open `http://localhost:8080` — login `admin` / `admin`.
+
+### 2. Scan and explore
+
+```sh
+make run         # scan + local UI at http://localhost:7777
+make run-bg      # same, but in background (terminal stays free)
+make push        # scan + push results to the server
+```
+
+`make run` blocks the terminal while serving. Use `make run-bg` for background mode and `make stop` to kill it. All commands auto-build the scanner binary on first run.
+
+Override defaults:
+
+```sh
+make run   PROJECT_DIR=D:\projects\myapp PROJECT_KEY=my-app
+make push  PROJECT_DIR=D:\projects\myapp PROJECT_KEY=my-app SERVER=http://prod:8080
+```
+
+### 3. Reports and CI
 
 ```sh
 go run github.com/scovl/ollanta/ollantascanner/cmd/ollanta \
-  -project-dir . \
-  -project-key ollanta-self \
-  -format all \
-  -local-ui
+  -project-dir . -project-key my-project -format sarif
 ```
 
-This is the fastest way to try Ollanta on Ollanta itself. Open `http://localhost:7777` to inspect issues, metrics, rule details, and optional `Fix with AI` suggestions. Reports are written to `.ollanta/` inside the scanned project:
+Reports are written to `.ollanta/report.json` and `.ollanta/report.sarif`.
 
-- `.ollanta/report.json`
-- `.ollanta/report.sarif`
-
-### 2. Scan with Docker
+### 4. Docker alternative
 
 ```sh
-docker compose --profile scanner up local-ui
+docker compose --profile server up -d                     # server stack
+docker compose --profile push run --build --rm push       # push scan
 ```
-
-By default this scans the current checkout. For another project, set `PROJECT_DIR` and `PROJECT_KEY` in your shell or in a local `.env` file before running the same command. PowerShell example:
-
-```powershell
-$env:PROJECT_DIR = 'D:\projects\myapp'
-$env:PROJECT_KEY = 'myapp'
-docker compose --profile scanner up local-ui
-```
-
-### 3. Generate CI-friendly reports only
-
-```sh
-go run github.com/scovl/ollanta/ollantascanner/cmd/ollanta \
-  -project-dir . \
-  -project-key my-project \
-  -format sarif
-```
-
-Use `-format json`, `-format sarif`, or `-format all` depending on what your CI consumes.
-
-### 4. Start the centralized server
-
-```sh
-docker compose --profile server up -d
-```
-
-This starts:
-
-- PostgreSQL on port `5432`
-- ZincSearch on port `4080`
-- `ollantaweb` on port `8080`
 - `ollantaworker`, `ollantaindexer`, and `ollantawebhookworker`
 
 The local Docker stack works without extra variables. It uses `admin` / `admin` for the seeded development login and `ollanta-dev-scanner-token` for scanner pushes. Override `PG_PASSWORD`, `OLLANTA_JWT_SECRET`, and `OLLANTA_SCANNER_TOKEN` in a local `.env` file for any shared or long-lived environment.
@@ -110,18 +97,7 @@ go run github.com/scovl/ollanta/ollantascanner/cmd/ollanta \
   -format all \
   -server http://localhost:8080 \
   -server-token ollanta-dev-scanner-token \
-  -server-wait
-```
-
-`-server-wait` makes the CLI wait until the accepted server-side scan job finishes. Without it, the server returns after accepting the job.
-
-When waiting is enabled, the scanner may exit non-zero after a successful push if the evaluated Quality Gate is `ERROR`. Treat that as a CI gate failure, not as an ingestion failure. Docker push mode is also available:
-
-```sh
-docker compose --profile push run --build --rm push
-```
-
-Set `PROJECT_DIR`, `PROJECT_KEY`, and `OLLANTA_SERVER_WAIT=true` in your shell or `.env` when pushing a different project or when you want the containerized scanner to wait for server-side processing.
+`make push` waits for server-side processing to complete before returning. If the Quality Gate fails, the scanner exits with code 3 — treat that as a gate failure, not an ingestion error.
 
 ## Configuration
 
