@@ -63,6 +63,7 @@ let filterRule = "all";
 let filterQuality = "all";
 let filterTag = "all";
 let searchText = "";
+let issuesViewMode: "flat" | "grouped" = "flat";
 
 let mutantFilterModule = "all";
 let mutantSortField: "file" | "line" | "module" = "file";
@@ -121,13 +122,12 @@ async function init(): Promise<void> {
     populateFilters();
     applyFilters();
     buildFileGroups();
-    renderFileTree();
+    renderGroupedIssues();
     setupTabs();
     setupKeyboard();
     setupMutantFilters();
 
     el("tab-issue-count").textContent = String(allIssues.length);
-    el("tab-file-count").textContent = String(new Set(allIssues.map(i => i.component_path)).size);
     el("tab-coverage-count").textContent = formatPercent(report.measures.coverage ?? report.test_signals?.summary?.coverage);
     el("tab-mutant-count").textContent = String(mutationOverview().survived);
   } catch (e) {
@@ -672,11 +672,12 @@ function renderHotspotFiles(): void {
     </div>`;
   }).join("");
 
-  // Click to jump to files tab
+  // Click to jump to issues tab in grouped mode
   el("hotspot-files").querySelectorAll(".hotspot-row").forEach(row => {
     row.addEventListener("click", () => {
       const path = (row as HTMLElement).dataset["path"]!;
-      switchTab("files");
+      issuesViewMode = "grouped";
+      switchTab("issues");
       expandFileGroup(path);
     });
   });
@@ -927,6 +928,16 @@ function setupTabs(): void {
     });
   });
 
+  const viewToggle = document.getElementById("view-mode-toggle");
+  if (viewToggle) {
+    viewToggle.addEventListener("click", () => {
+      issuesViewMode = issuesViewMode === "flat" ? "grouped" : "flat";
+      viewToggle.textContent = issuesViewMode === "grouped" ? "List view" : "Group by file";
+      viewToggle.setAttribute("aria-pressed", String(issuesViewMode === "grouped"));
+      applyFilters();
+    });
+  }
+
   const tablist = document.querySelector(".tabs")!;
   tablist.addEventListener("keydown", (e: KeyboardEvent) => {
     const tabs = Array.from(document.querySelectorAll<HTMLElement>(".tab[role='tab']"));
@@ -1074,16 +1085,28 @@ function applyFilters(): void {
 }
 
 function renderIssueList(): void {
-  const container = el("issue-list");
+  const flatContainer = el("issue-list");
+  const groupedContainer = el("issue-grouped");
   const issueLabel = filteredIssues.length === 1 ? "issue" : "issues";
   el("issue-count").textContent = `${filteredIssues.length} ${issueLabel}`;
 
   if (!filteredIssues.length) {
-    container.innerHTML = `<div class="empty-state">No issues match the current filters.</div>`;
+    flatContainer.innerHTML = `<div class="empty-state">No issues match the current filters.</div>`;
+    groupedContainer.innerHTML = `<div class="empty-state">No issues match the current filters.</div>`;
     return;
   }
 
-  container.innerHTML = filteredIssues.map((issue, idx) => {
+  if (issuesViewMode === "grouped") {
+    flatContainer.classList.add("hidden");
+    groupedContainer.classList.remove("hidden");
+    renderGroupedIssues();
+    return;
+  }
+
+  flatContainer.classList.remove("hidden");
+  groupedContainer.classList.add("hidden");
+
+  flatContainer.innerHTML = filteredIssues.map((issue, idx) => {
     const color = SEV_COLORS[issue.severity] ?? "#64748b";
     const file = shortenPath(issue.component_path);
     const loc = issue.end_line && issue.end_line !== issue.line
@@ -1106,7 +1129,7 @@ function renderIssueList(): void {
   }).join("");
 
   // Click / keyboard handlers
-  container.querySelectorAll(".issue-row").forEach(row => {
+  flatContainer.querySelectorAll(".issue-row").forEach(row => {
     row.addEventListener("click", () => {
       const idx = Number.parseInt((row as HTMLElement).dataset["idx"]!, 10);
       selectIssue(idx);
@@ -1143,8 +1166,8 @@ function buildFileGroups(): void {
     }));
 }
 
-function renderFileTree(): void {
-  const container = el("file-tree");
+function renderGroupedIssues(): void {
+  const container = el("issue-grouped");
   if (!fileGroups.length) {
     container.innerHTML = `<div class="empty-state">No issues found</div>`;
     return;
@@ -1201,7 +1224,7 @@ function expandFileGroup(path: string): void {
   const gi = fileGroups.findIndex(fg => fg.path === path);
   if (gi < 0) return;
   fileGroups[gi].expanded = true;
-  renderFileTree();
+  renderGroupedIssues();
   const group = document.querySelector(`.file-group[data-gi="${gi}"]`);
   group?.scrollIntoView({ behavior: "smooth", block: "start" });
 }

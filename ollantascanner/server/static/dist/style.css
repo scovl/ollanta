@@ -836,8 +836,10 @@ main {
   margin-bottom: 12px;
 }
 .toolbar-left { display: flex; gap: 8px; flex-wrap: wrap; }
-.toolbar-right { font-size: 13px; color: var(--text-muted); }
+.toolbar-right { display: flex; align-items: center; gap: 12px; font-size: 13px; color: var(--text-muted); }
 .result-count { font-weight: 600; }
+.view-mode-toggle { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 4px 10px; font-size: 12px; color: var(--text-muted); cursor: pointer; }
+.view-mode-toggle:hover { background: var(--surface2); }
 
 input[type="search"],
 select {

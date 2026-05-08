@@ -48,9 +48,6 @@
       <button class="tab" data-tab="issues" role="tab" aria-selected="false" aria-controls="panel-issues" id="tab-issues">
         Issues <span id="tab-issue-count" class="tab-badge">0</span>
       </button>
-      <button class="tab" data-tab="files" role="tab" aria-selected="false" aria-controls="panel-files" id="tab-files">
-        Files <span id="tab-file-count" class="tab-badge">0</span>
-      </button>
       <button class="tab" data-tab="coverage" role="tab" aria-selected="false" aria-controls="panel-coverage" id="tab-coverage">
         Coverage <span id="tab-coverage-count" class="tab-badge">0</span>
       </button>
@@ -204,6 +201,7 @@
           </select>
         </div>
         <div class="toolbar-right">
+          <button type="button" id="view-mode-toggle" class="view-mode-toggle" title="Toggle grouped view">Group by file</button>
           <span id="issue-count" class="result-count"></span>
         </div>
       </div>
@@ -213,15 +211,13 @@
       <!-- Severity chips -->
       <div id="sev-chips" class="sev-chips"></div>
 
-      <!-- Issue list -->
+      <!-- Issue list (flat) -->
       <div id="issue-list" class="issue-list">
         <div class="empty-state">Loading…</div>
       </div>
-    </div>
 
-    <!-- ── Files Tab ──────────────────────────────────────────────────── -->
-    <div id="panel-files" class="panel hidden" role="tabpanel" aria-labelledby="tab-files">
-      <div id="file-tree" class="file-tree">
+      <!-- Issue list (grouped by file) -->
+      <div id="issue-grouped" class="file-tree hidden">
         <div class="empty-state">Loading…</div>
       </div>
     </div>
