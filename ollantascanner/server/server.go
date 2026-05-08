@@ -34,6 +34,42 @@ const (
 	jsonContentType    = "application/json"
 )
 
+// codeSnapshotEntry is a parsed file from report.json's code_snapshot.
+type codeSnapshotEntry struct {
+	Path      string `json:"path"`
+	Language  string `json:"language"`
+	Content   string `json:"content,omitempty"`
+	SizeBytes int    `json:"size_bytes,omitempty"`
+	LineCount int    `json:"line_count,omitempty"`
+}
+
+// loadCodeSnapshot reads report.json and returns a path→file lookup of its
+// embedded code_snapshot. Returns an empty map when the report is absent or the
+// snapshot is empty.
+func loadCodeSnapshot(reportPath string) map[string]codeSnapshotEntry {
+	data, err := os.ReadFile(reportPath)
+	if err != nil {
+		return nil
+	}
+	var payload struct {
+		CodeSnapshot struct {
+			Files []codeSnapshotEntry `json:"files"`
+		} `json:"code_snapshot"`
+	}
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return nil
+	}
+	files := payload.CodeSnapshot.Files
+	if len(files) == 0 {
+		return nil
+	}
+	m := make(map[string]codeSnapshotEntry, len(files))
+	for _, f := range files {
+		m[f.Path] = f
+	}
+	return m
+}
+
 // Serve starts a local HTTP server that exposes:
 //   - GET /           → index.html
 //   - GET /style.css  → style.css
@@ -48,6 +84,8 @@ func Serve(reportPath, bind string, port int) error {
 	projectRoot := filepath.Dir(filepath.Dir(reportPath))
 	metricsReg := telemetry.NewRegistry()
 	appMetrics := telemetry.NewMetrics(metricsReg)
+
+	snapshotFiles := loadCodeSnapshot(reportPath)
 
 	distFS, err := fs.Sub(staticFiles, "static/dist")
 	if err != nil {
@@ -126,7 +164,7 @@ func Serve(reportPath, bind string, port int) error {
 			logger.Error("write report.json response", "error", err)
 		}
 	})
-	mux.HandleFunc("/api/files/source", handleSourceFile(projectRoot))
+	mux.HandleFunc("/api/files/source", handleSourceFile(projectRoot, snapshotFiles))
 
 	// Serve static assets from the embedded dist/ directory
 	staticHandler := http.FileServer(http.FS(distFS))
@@ -198,7 +236,7 @@ func ReportPath(projectDir string) string {
 	return filepath.Join(projectDir, ".ollanta", "report.json")
 }
 
-func handleSourceFile(projectRoot string) http.HandlerFunc {
+func handleSourceFile(projectRoot string, snapshotFiles map[string]codeSnapshotEntry) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -209,7 +247,7 @@ func handleSourceFile(projectRoot string) http.HandlerFunc {
 			writeJSONError(w, http.StatusBadRequest, "path must stay inside the project")
 			return
 		}
-		writeSourceFile(w, projectRoot, cleanPath)
+		writeSourceFile(w, projectRoot, cleanPath, snapshotFiles)
 	}
 }
 
@@ -225,7 +263,21 @@ func cleanSourcePath(path string) (string, bool) {
 	return cleanPath, true
 }
 
-func writeSourceFile(w http.ResponseWriter, projectRoot, cleanPath string) {
+func writeSourceFile(w http.ResponseWriter, projectRoot, cleanPath string, snapshotFiles map[string]codeSnapshotEntry) {
+	slashed := filepath.ToSlash(cleanPath)
+	if entry, ok := snapshotFiles[slashed]; ok && entry.Content != "" {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"file": map[string]any{
+				"path":       slashed,
+				"language":   entry.Language,
+				"content":    entry.Content,
+				"size_bytes": entry.SizeBytes,
+				"line_count": entry.LineCount,
+			},
+		})
+		return
+	}
+
 	fullPath := filepath.Join(projectRoot, cleanPath)
 	info, err := os.Stat(fullPath)
 	if err != nil || info.IsDir() {
@@ -240,7 +292,7 @@ func writeSourceFile(w http.ResponseWriter, projectRoot, cleanPath string) {
 	content := string(data)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"file": map[string]any{
-			"path":       filepath.ToSlash(cleanPath),
+			"path":       slashed,
 			"language":   languageFromPath(cleanPath),
 			"content":    content,
 			"size_bytes": info.Size(),

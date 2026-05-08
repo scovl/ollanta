@@ -52,61 +52,72 @@ func Track(current, previous []*domain.Issue) *TrackingResult {
 		return result
 	}
 	if len(current) == 0 {
-		for _, p := range previous {
-			if p.Status == domain.StatusOpen || p.Status == domain.StatusConfirmed {
-				result.Closed = append(result.Closed, p)
-			}
-		}
+		result.Closed = filterByStatus(previous, isOpenOrConfirmed)
 		return result
 	}
 
-	// Build tier-1 index: open/confirmed previous issues.
-	openIdx := map[string]*domain.Issue{}
-	for _, p := range previous {
-		if p.Status == domain.StatusOpen || p.Status == domain.StatusConfirmed {
-			openIdx[matchKey(p)] = p
+	openIdx, closedIdx := buildIndices(previous)
+	matchedOpenKeys := matchCurrent(current, openIdx, closedIdx, result)
+	result.Closed = findUnmatchedOpen(previous, matchedOpenKeys)
+
+	return result
+}
+
+func isOpenOrConfirmed(s domain.Status) bool {
+	return s == domain.StatusOpen || s == domain.StatusConfirmed
+}
+
+func filterByStatus(issues []*domain.Issue, predicate func(domain.Status) bool) []*domain.Issue {
+	out := make([]*domain.Issue, 0, len(issues))
+	for _, iss := range issues {
+		if predicate(iss.Status) {
+			out = append(out, iss)
 		}
 	}
+	return out
+}
 
-	// Build tier-2 index: closed/resolved previous issues.
-	closedIdx := map[string]*domain.Issue{}
+func buildIndices(previous []*domain.Issue) (open, closed map[string]*domain.Issue) {
+	open = make(map[string]*domain.Issue, len(previous))
+	closed = make(map[string]*domain.Issue)
 	for _, p := range previous {
-		if p.Status == domain.StatusClosed || p.Status == domain.StatusReopened {
-			closedIdx[matchKey(p)] = p
+		key := matchKey(p)
+		switch p.Status {
+		case domain.StatusOpen, domain.StatusConfirmed:
+			open[key] = p
+		case domain.StatusClosed, domain.StatusReopened:
+			closed[key] = p
 		}
 	}
+	return open, closed
+}
 
-	matchedOpenKeys := map[string]bool{}
-
+func matchCurrent(current []*domain.Issue, openIdx, closedIdx map[string]*domain.Issue, result *TrackingResult) map[string]bool {
+	matched := make(map[string]bool, len(current))
 	for _, cur := range current {
 		key := matchKey(cur)
-
-		// Tier 1: open match
 		if prev, ok := openIdx[key]; ok {
 			result.Unchanged = append(result.Unchanged, IssuePair{Current: cur, Previous: prev})
-			matchedOpenKeys[key] = true
+			matched[key] = true
 			continue
 		}
-
-		// Tier 2: closed match → reopened
 		if prev, ok := closedIdx[key]; ok {
 			result.Reopened = append(result.Reopened, IssuePair{Current: cur, Previous: prev})
 			continue
 		}
-
-		// No match → new
 		result.New = append(result.New, cur)
 	}
+	return matched
+}
 
-	// Unmatched open issues → closed
+func findUnmatchedOpen(previous []*domain.Issue, matchedOpenKeys map[string]bool) []*domain.Issue {
+	out := make([]*domain.Issue, 0, len(previous))
 	for _, p := range previous {
-		if (p.Status == domain.StatusOpen || p.Status == domain.StatusConfirmed) &&
-			!matchedOpenKeys[matchKey(p)] {
-			result.Closed = append(result.Closed, p)
+		if isOpenOrConfirmed(p.Status) && !matchedOpenKeys[matchKey(p)] {
+			out = append(out, p)
 		}
 	}
-
-	return result
+	return out
 }
 
 // matchKey builds the matching key for an issue.

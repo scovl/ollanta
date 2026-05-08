@@ -168,6 +168,34 @@ func (r *MeasureRepository) Trend(ctx context.Context, projectID int64, metricKe
 	return points, rows.Err()
 }
 
+// TrendForComponent returns a time-ordered series of component-level metric values.
+func (r *MeasureRepository) TrendForComponent(ctx context.Context, projectID int64, metricKey, componentPath string, from, to time.Time) ([]TrendPoint, error) {
+	rows, err := r.db.Pool.Query(ctx, `
+		SELECT s.analysis_date, m.value
+		FROM measures m
+		JOIN scans s ON s.id = m.scan_id
+		WHERE m.project_id = $1
+		  AND m.metric_key = $2
+		  AND m.component_path = $3
+		  AND s.analysis_date BETWEEN $4 AND $5
+		ORDER BY s.analysis_date ASC`, projectID, metricKey, componentPath, from, to,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var points []TrendPoint
+	for rows.Next() {
+		var pt TrendPoint
+		if err := rows.Scan(&pt.Date, &pt.Value); err != nil {
+			return nil, err
+		}
+		points = append(points, pt)
+	}
+	return points, rows.Err()
+}
+
 // UpsertLive atomically inserts or updates a live measure value.
 // Uses ON CONFLICT to avoid race conditions between parallel workers.
 func (r *MeasureRepository) UpsertLive(ctx context.Context, projectID int64, scanID int64, metricKey string, componentPath string, value float64) error {

@@ -309,29 +309,50 @@ func containsString(values []string, target string) bool {
 func validateAgentConfigs(agents []aiAgentConfig) error {
 	seen := make(map[string]struct{}, len(agents))
 	for _, agent := range agents {
-		if agent.ID == "" {
-			return errors.New("AI agent id is required")
+		if err := validateSingleAgent(agent, seen); err != nil {
+			return err
 		}
-		if agent.Label == "" {
-			return fmt.Errorf("AI agent %q is missing label", agent.ID)
-		}
-		if agent.Provider == "" {
-			return fmt.Errorf("AI agent %q is missing provider", agent.ID)
-		}
-		if agent.Model == "" {
-			return fmt.Errorf("AI agent %q is missing model", agent.ID)
-		}
-		switch agent.Provider {
-		case "mock", "openai":
-		default:
-			return fmt.Errorf("AI agent %q uses unsupported provider %q", agent.ID, agent.Provider)
-		}
-		if _, ok := seen[agent.ID]; ok {
-			return fmt.Errorf("duplicate AI agent id %q", agent.ID)
-		}
-		seen[agent.ID] = struct{}{}
 	}
 	return nil
+}
+
+func validateSingleAgent(agent aiAgentConfig, seen map[string]struct{}) error {
+	if err := validateAgentRequiredFields(agent); err != nil {
+		return err
+	}
+	if err := validateAgentProvider(agent); err != nil {
+		return err
+	}
+	if _, ok := seen[agent.ID]; ok {
+		return fmt.Errorf("duplicate AI agent id %q", agent.ID)
+	}
+	seen[agent.ID] = struct{}{}
+	return nil
+}
+
+func validateAgentRequiredFields(agent aiAgentConfig) error {
+	if agent.ID == "" {
+		return errors.New("AI agent id is required")
+	}
+	if agent.Label == "" {
+		return fmt.Errorf("AI agent %q is missing label", agent.ID)
+	}
+	if agent.Provider == "" {
+		return fmt.Errorf("AI agent %q is missing provider", agent.ID)
+	}
+	if agent.Model == "" {
+		return fmt.Errorf("AI agent %q is missing model", agent.ID)
+	}
+	return nil
+}
+
+func validateAgentProvider(agent aiAgentConfig) error {
+	switch agent.Provider {
+	case "mock", "openai":
+		return nil
+	default:
+		return fmt.Errorf("AI agent %q uses unsupported provider %q", agent.ID, agent.Provider)
+	}
 }
 
 func normalizeAgentConfig(agent *aiAgentConfig) {

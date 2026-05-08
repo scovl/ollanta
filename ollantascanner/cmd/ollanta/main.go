@@ -67,8 +67,8 @@ type serverScanResult struct {
 }
 
 type gateResultSummary struct {
-	Status     string               `json:"status"`
-	Conditions []gateConditionEval  `json:"conditions"`
+	Status     string              `json:"status"`
+	Conditions []gateConditionEval `json:"conditions"`
 }
 
 type gateConditionEval struct {
