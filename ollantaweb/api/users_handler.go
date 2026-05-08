@@ -44,6 +44,12 @@ func NewUsersHandler(users *postgres.UserRepository, tokens *postgres.TokenRepos
 }
 
 // Me handles GET /api/v1/users/me.
+// @Summary Current user
+// @Description Returns the currently authenticated user
+// @Tags users
+// @Produce json
+// @Success 200 {object} userView
+// @Router /api/v1/users/me [get]
 func (h *UsersHandler) Me(w http.ResponseWriter, r *http.Request) {
 	u := UserFromContext(r.Context())
 	if u == nil {
@@ -54,6 +60,14 @@ func (h *UsersHandler) Me(w http.ResponseWriter, r *http.Request) {
 }
 
 // List handles GET /api/v1/users (requires manage_users).
+// @Summary List users
+// @Description Returns paginated list of users
+// @Tags users
+// @Produce json
+// @Param page query int false "Page number"
+// @Param page_size query int false "Page size"
+// @Success 200 {object} userListResponse
+// @Router /api/v1/users [get]
 func (h *UsersHandler) List(w http.ResponseWriter, r *http.Request) {
 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
 	size, _ := strconv.Atoi(r.URL.Query().Get("page_size"))
@@ -73,6 +87,13 @@ func (h *UsersHandler) List(w http.ResponseWriter, r *http.Request) {
 }
 
 // Get handles GET /api/v1/users/{id} (requires manage_users).
+// @Summary Get user
+// @Description Returns a single user by ID
+// @Tags users
+// @Produce json
+// @Param id path int true "User ID"
+// @Success 200 {object} userView
+// @Router /api/v1/users/{id} [get]
 func (h *UsersHandler) Get(w http.ResponseWriter, r *http.Request) {
 	id, err := parseID(r, "id")
 	if err != nil {
@@ -88,6 +109,14 @@ func (h *UsersHandler) Get(w http.ResponseWriter, r *http.Request) {
 }
 
 // Create handles POST /api/v1/users (requires manage_users).
+// @Summary Create user
+// @Description Create a new local user
+// @Tags users
+// @Accept json
+// @Produce json
+// @Param body body object{login=string,email=string,name=string,password=string} true "User data"
+// @Success 201 {object} userView
+// @Router /api/v1/users [post]
 func (h *UsersHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Login    string `json:"login"`
@@ -125,6 +154,15 @@ func (h *UsersHandler) Create(w http.ResponseWriter, r *http.Request) {
 }
 
 // Update handles PUT /api/v1/users/{id} (requires manage_users).
+// @Summary Update user
+// @Description Update user name, email, or avatar
+// @Tags users
+// @Accept json
+// @Produce json
+// @Param id path int true "User ID"
+// @Param body body object{name=string,email=string,avatar_url=string} true "User data"
+// @Success 200 {object} userView
+// @Router /api/v1/users/{id} [put]
 func (h *UsersHandler) Update(w http.ResponseWriter, r *http.Request) {
 	id, err := parseID(r, "id")
 	if err != nil {
@@ -163,6 +201,12 @@ func (h *UsersHandler) Update(w http.ResponseWriter, r *http.Request) {
 }
 
 // Deactivate handles DELETE /api/v1/users/{id} (requires manage_users).
+// @Summary Deactivate user
+// @Description Deactivate a user account
+// @Tags users
+// @Param id path int true "User ID"
+// @Success 204
+// @Router /api/v1/users/{id} [delete]
 func (h *UsersHandler) Deactivate(w http.ResponseWriter, r *http.Request) {
 	id, err := parseID(r, "id")
 	if err != nil {
@@ -177,6 +221,12 @@ func (h *UsersHandler) Deactivate(w http.ResponseWriter, r *http.Request) {
 }
 
 // Reactivate handles POST /api/v1/users/{id}/reactivate (requires manage_users).
+// @Summary Reactivate user
+// @Description Reactivate a deactivated user account
+// @Tags users
+// @Param id path int true "User ID"
+// @Success 204
+// @Router /api/v1/users/{id}/reactivate [post]
 func (h *UsersHandler) Reactivate(w http.ResponseWriter, r *http.Request) {
 	id, err := parseID(r, "id")
 	if err != nil {
@@ -191,6 +241,13 @@ func (h *UsersHandler) Reactivate(w http.ResponseWriter, r *http.Request) {
 }
 
 // ChangePassword handles PUT /api/v1/users/me/password (self-service).
+// @Summary Change password
+// @Description Change the current user's password
+// @Tags users
+// @Accept json
+// @Param body body object{old_password=string,new_password=string} true "Password data"
+// @Success 204
+// @Router /api/v1/users/me/password [put]
 func (h *UsersHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	u := UserFromContext(r.Context())
 	if u == nil {
@@ -226,6 +283,13 @@ func (h *UsersHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 }
 
 // ListTokens handles GET /api/v1/users/{id}/tokens (requires manage_users).
+// @Summary List user tokens
+// @Description List API tokens for a specific user
+// @Tags users
+// @Produce json
+// @Param id path int true "User ID"
+// @Success 200 {object} tokenListResponse
+// @Router /api/v1/users/{id}/tokens [get]
 func (h *UsersHandler) ListTokens(w http.ResponseWriter, r *http.Request) {
 	id, err := parseID(r, "id")
 	if err != nil {
@@ -241,6 +305,13 @@ func (h *UsersHandler) ListTokens(w http.ResponseWriter, r *http.Request) {
 }
 
 // DeleteToken handles DELETE /api/v1/users/{id}/tokens/{tid} (requires manage_users).
+// @Summary Delete user token
+// @Description Delete a specific token for a user
+// @Tags users
+// @Param id path int true "User ID"
+// @Param tid path int true "Token ID"
+// @Success 204
+// @Router /api/v1/users/{id}/tokens/{tid} [delete]
 func (h *UsersHandler) DeleteToken(w http.ResponseWriter, r *http.Request) {
 	userID, err := parseID(r, "id")
 	if err != nil {

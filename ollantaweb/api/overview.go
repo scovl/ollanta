@@ -130,10 +130,15 @@ func (h *OverviewHandler) fillOverviewMeasures(ctx context.Context, resp *overvi
 }
 
 // Overview handles GET /api/v1/projects/{key}/overview.
-//
-// Returns the project dashboard in a single response: project metadata,
-// latest scan, quality gate status, key measures, issue facets, and
-// new code summary. Modelled after SonarQube's unified dashboard call.
+// @Summary Project overview
+// @Description Returns the project dashboard in a single response
+// @Tags project-overview
+// @Produce json
+// @Param key path string true "Project key"
+// @Param branch query string false "Branch"
+// @Param pull_request query string false "Pull request"
+// @Success 200 {object} overviewResponse
+// @Router /api/v1/projects/{key}/overview [get]
 func (h *OverviewHandler) Overview(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	resolved, err := h.resolveOverviewScope(r)

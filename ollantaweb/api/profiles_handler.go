@@ -58,6 +58,13 @@ func NewProfilesHandler(profiles port.IProfileRepo, projects *postgres.ProjectRe
 }
 
 // List handles GET /api/v1/profiles?language=go
+// @Summary List quality profiles
+// @Description Returns quality profiles, optionally filtered by language
+// @Tags quality-profiles
+// @Produce json
+// @Param language query string false "Language"
+// @Success 200 {array} model.QualityProfile
+// @Router /api/v1/profiles [get]
 func (h *ProfilesHandler) List(w http.ResponseWriter, r *http.Request) {
 	lang := r.URL.Query().Get("language")
 	list, err := h.profiles.List(r.Context(), lang)
@@ -69,6 +76,13 @@ func (h *ProfilesHandler) List(w http.ResponseWriter, r *http.Request) {
 }
 
 // Get handles GET /api/v1/profiles/{id}
+// @Summary Get quality profile
+// @Description Returns a quality profile by ID
+// @Tags quality-profiles
+// @Produce json
+// @Param id path int true "Profile ID"
+// @Success 200 {object} model.QualityProfile
+// @Router /api/v1/profiles/{id} [get]
 func (h *ProfilesHandler) Get(w http.ResponseWriter, r *http.Request) {
 	id, err := parseID(r, "id")
 	if err != nil {
@@ -87,6 +101,14 @@ func (h *ProfilesHandler) Get(w http.ResponseWriter, r *http.Request) {
 }
 
 // Create handles POST /api/v1/profiles
+// @Summary Create quality profile
+// @Description Create a new quality profile
+// @Tags quality-profiles
+// @Accept json
+// @Produce json
+// @Param body body model.QualityProfile true "Profile data"
+// @Success 201 {object} model.QualityProfile
+// @Router /api/v1/profiles [post]
 func (h *ProfilesHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var p model.QualityProfile
 	if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
@@ -101,6 +123,15 @@ func (h *ProfilesHandler) Create(w http.ResponseWriter, r *http.Request) {
 }
 
 // Update handles PUT /api/v1/profiles/{id}
+// @Summary Update quality profile
+// @Description Update a quality profile
+// @Tags quality-profiles
+// @Accept json
+// @Produce json
+// @Param id path int true "Profile ID"
+// @Param body body model.QualityProfile true "Profile data"
+// @Success 200 {object} model.QualityProfile
+// @Router /api/v1/profiles/{id} [put]
 func (h *ProfilesHandler) Update(w http.ResponseWriter, r *http.Request) {
 	id, err := parseID(r, "id")
 	if err != nil {
@@ -121,6 +152,12 @@ func (h *ProfilesHandler) Update(w http.ResponseWriter, r *http.Request) {
 }
 
 // Delete handles DELETE /api/v1/profiles/{id}
+// @Summary Delete quality profile
+// @Description Delete a quality profile
+// @Tags quality-profiles
+// @Param id path int true "Profile ID"
+// @Success 204
+// @Router /api/v1/profiles/{id} [delete]
 func (h *ProfilesHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	id, err := parseID(r, "id")
 	if err != nil {
@@ -135,6 +172,14 @@ func (h *ProfilesHandler) Delete(w http.ResponseWriter, r *http.Request) {
 }
 
 // ActivateRule handles POST /api/v1/profiles/{id}/rules
+// @Summary Activate rule
+// @Description Activate a rule in a quality profile
+// @Tags quality-profiles
+// @Accept json
+// @Param id path int true "Profile ID"
+// @Param body body object{rule_key=string,severity=string,params=map[string]string} true "Activation data"
+// @Success 204
+// @Router /api/v1/profiles/{id}/rules [post]
 func (h *ProfilesHandler) ActivateRule(w http.ResponseWriter, r *http.Request) {
 	id, err := parseID(r, "id")
 	if err != nil {
@@ -158,6 +203,13 @@ func (h *ProfilesHandler) ActivateRule(w http.ResponseWriter, r *http.Request) {
 }
 
 // DeactivateRule handles DELETE /api/v1/profiles/{id}/rules/{rule}
+// @Summary Deactivate rule
+// @Description Deactivate a rule in a quality profile
+// @Tags quality-profiles
+// @Param id path int true "Profile ID"
+// @Param rule path string true "Rule key"
+// @Success 204
+// @Router /api/v1/profiles/{id}/rules/{rule} [delete]
 func (h *ProfilesHandler) DeactivateRule(w http.ResponseWriter, r *http.Request) {
 	id, err := parseID(r, "id")
 	if err != nil {
@@ -173,6 +225,13 @@ func (h *ProfilesHandler) DeactivateRule(w http.ResponseWriter, r *http.Request)
 }
 
 // EffectiveRules handles GET /api/v1/profiles/{id}/effective-rules
+// @Summary Effective rules
+// @Description Returns effective rules for a quality profile
+// @Tags quality-profiles
+// @Produce json
+// @Param id path int true "Profile ID"
+// @Success 200 {array} model.EffectiveRule
+// @Router /api/v1/profiles/{id}/effective-rules [get]
 func (h *ProfilesHandler) EffectiveRules(w http.ResponseWriter, r *http.Request) {
 	id, err := parseID(r, "id")
 	if err != nil {
@@ -188,6 +247,15 @@ func (h *ProfilesHandler) EffectiveRules(w http.ResponseWriter, r *http.Request)
 }
 
 // Import handles POST /api/v1/profiles/{id}/import.
+// @Summary Import rules
+// @Description Import rules into a quality profile from YAML/JSON
+// @Tags quality-profiles
+// @Accept json
+// @Produce json
+// @Param id path int true "Profile ID"
+// @Param body body profileCodeDocument true "Profile document"
+// @Success 200 {object} profileImportResponse
+// @Router /api/v1/profiles/{id}/import [post]
 func (h *ProfilesHandler) Import(w http.ResponseWriter, r *http.Request) {
 	id, err := parseID(r, "id")
 	if err != nil {
@@ -225,6 +293,13 @@ func (h *ProfilesHandler) Import(w http.ResponseWriter, r *http.Request) {
 }
 
 // Export handles GET /api/v1/profiles/{id}/export.
+// @Summary Export profile
+// @Description Export a quality profile as JSON
+// @Tags quality-profiles
+// @Produce json
+// @Param id path int true "Profile ID"
+// @Success 200 {object} profileCodeDocument
+// @Router /api/v1/profiles/{id}/export [get]
 func (h *ProfilesHandler) Export(w http.ResponseWriter, r *http.Request) {
 	id, err := parseID(r, "id")
 	if err != nil {
@@ -253,6 +328,15 @@ func (h *ProfilesHandler) Export(w http.ResponseWriter, r *http.Request) {
 }
 
 // Changelog handles GET /api/v1/profiles/{id}/changelog.
+// @Summary Profile changelog
+// @Description Returns changelog entries for a quality profile
+// @Tags quality-profiles
+// @Produce json
+// @Param id path int true "Profile ID"
+// @Param limit query int false "Limit"
+// @Param offset query int false "Offset"
+// @Success 200 {object} profileChangelogResponse
+// @Router /api/v1/profiles/{id}/changelog [get]
 func (h *ProfilesHandler) Changelog(w http.ResponseWriter, r *http.Request) {
 	id, err := parseID(r, "id")
 	if err != nil {
@@ -270,6 +354,14 @@ func (h *ProfilesHandler) Changelog(w http.ResponseWriter, r *http.Request) {
 }
 
 // AssignToProject handles POST /api/v1/projects/{key}/profiles
+// @Summary Assign profile to project
+// @Description Assign a quality profile to a project
+// @Tags quality-profiles
+// @Accept json
+// @Param key path string true "Project key"
+// @Param body body object{language=string,profile_id=int64} true "Assignment data"
+// @Success 204
+// @Router /api/v1/projects/{key}/profiles [post]
 func (h *ProfilesHandler) AssignToProject(w http.ResponseWriter, r *http.Request) {
 	key := routeParam(r, "key")
 	project, err := h.projects.GetByKey(r.Context(), key)
@@ -296,6 +388,13 @@ func (h *ProfilesHandler) AssignToProject(w http.ResponseWriter, r *http.Request
 }
 
 // ProjectProfiles handles GET /api/v1/projects/{key}/profiles.
+// @Summary Project profiles
+// @Description Returns profiles assigned to a project
+// @Tags quality-profiles
+// @Produce json
+// @Param key path string true "Project key"
+// @Success 200 {array} model.ProjectQualityProfile
+// @Router /api/v1/projects/{key}/profiles [get]
 func (h *ProfilesHandler) ProjectProfiles(w http.ResponseWriter, r *http.Request) {
 	project, ok := h.resolveProject(w, r)
 	if !ok {
@@ -310,6 +409,13 @@ func (h *ProfilesHandler) ProjectProfiles(w http.ResponseWriter, r *http.Request
 }
 
 // ProjectEffectiveProfiles handles GET /api/v1/projects/{key}/profiles/effective.
+// @Summary Project effective profiles
+// @Description Returns effective profiles for a project
+// @Tags quality-profiles
+// @Produce json
+// @Param key path string true "Project key"
+// @Success 200 {array} model.EffectiveQualityProfile
+// @Router /api/v1/projects/{key}/profiles/effective [get]
 func (h *ProfilesHandler) ProjectEffectiveProfiles(w http.ResponseWriter, r *http.Request) {
 	project, ok := h.resolveProject(w, r)
 	if !ok {
@@ -324,6 +430,15 @@ func (h *ProfilesHandler) ProjectEffectiveProfiles(w http.ResponseWriter, r *htt
 }
 
 // Copy handles POST /api/v1/profiles/{id}/copy
+// @Summary Copy profile
+// @Description Copy a quality profile
+// @Tags quality-profiles
+// @Accept json
+// @Produce json
+// @Param id path int true "Profile ID"
+// @Param body body object{name=string} true "Copy data"
+// @Success 201 {object} model.QualityProfile
+// @Router /api/v1/profiles/{id}/copy [post]
 func (h *ProfilesHandler) Copy(w http.ResponseWriter, r *http.Request) {
 	id, err := parseID(r, "id")
 	if err != nil {
@@ -346,6 +461,12 @@ func (h *ProfilesHandler) Copy(w http.ResponseWriter, r *http.Request) {
 }
 
 // SetDefault handles POST /api/v1/profiles/{id}/set-default
+// @Summary Set default profile
+// @Description Set a quality profile as the default for its language
+// @Tags quality-profiles
+// @Param id path int true "Profile ID"
+// @Success 204
+// @Router /api/v1/profiles/{id}/set-default [post]
 func (h *ProfilesHandler) SetDefault(w http.ResponseWriter, r *http.Request) {
 	id, err := parseID(r, "id")
 	if err != nil {

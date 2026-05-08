@@ -49,6 +49,12 @@ func NewTokensHandler(
 }
 
 // List handles GET /api/v1/users/me/tokens.
+// @Summary List my tokens
+// @Description Returns API tokens for the authenticated user
+// @Tags tokens
+// @Produce json
+// @Success 200 {object} tokenListResponse
+// @Router /api/v1/users/me/tokens [get]
 func (h *TokensHandler) List(w http.ResponseWriter, r *http.Request) {
 	u := UserFromContext(r.Context())
 	tokens, err := h.tokens.ListByUser(r.Context(), u.ID)
@@ -64,6 +70,14 @@ func (h *TokensHandler) List(w http.ResponseWriter, r *http.Request) {
 }
 
 // Create handles POST /api/v1/users/me/tokens.
+// @Summary Create token
+// @Description Create a new API token for the authenticated user
+// @Tags tokens
+// @Accept json
+// @Produce json
+// @Param body body object{name=string,type=string,project_key=string,expires_in=int} true "Token data"
+// @Success 201 {object} tokenCreateResponse
+// @Router /api/v1/users/me/tokens [post]
 func (h *TokensHandler) Create(w http.ResponseWriter, r *http.Request) {
 	u := UserFromContext(r.Context())
 
@@ -138,6 +152,12 @@ func (h *TokensHandler) Create(w http.ResponseWriter, r *http.Request) {
 }
 
 // Delete handles DELETE /api/v1/users/me/tokens/{id}.
+// @Summary Delete token
+// @Description Delete an API token
+// @Tags tokens
+// @Param id path int true "Token ID"
+// @Success 204
+// @Router /api/v1/users/me/tokens/{id} [delete]
 func (h *TokensHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	u := UserFromContext(r.Context())
 	id, err := parseID(r, "id")

@@ -15,6 +15,15 @@ type OutboxJobsHandler struct {
 }
 
 // ListIndexJobs handles GET /api/v1/admin/index-jobs.
+// @Summary List index jobs
+// @Description Returns paginated index jobs
+// @Tags admin
+// @Produce json
+// @Param status query string false "Status filter"
+// @Param limit query int false "Limit"
+// @Param offset query int false "Offset"
+// @Success 200 {object} outboxJobListResponse
+// @Router /api/v1/admin/index-jobs [get]
 func (h *OutboxJobsHandler) ListIndexJobs(w http.ResponseWriter, r *http.Request) {
 	status := r.URL.Query().Get("status")
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
@@ -34,6 +43,13 @@ func (h *OutboxJobsHandler) ListIndexJobs(w http.ResponseWriter, r *http.Request
 }
 
 // RetryIndexJob handles POST /api/v1/admin/index-jobs/{id}/retry.
+// @Summary Retry index job
+// @Description Retry a failed index job
+// @Tags admin
+// @Produce json
+// @Param id path int true "Job ID"
+// @Success 202 {object} idStatusResponse
+// @Router /api/v1/admin/index-jobs/{id}/retry [post]
 func (h *OutboxJobsHandler) RetryIndexJob(w http.ResponseWriter, r *http.Request) {
 	id, err := parseID(r, "id")
 	if err != nil {
@@ -51,6 +67,15 @@ func (h *OutboxJobsHandler) RetryIndexJob(w http.ResponseWriter, r *http.Request
 }
 
 // ListWebhookJobs handles GET /api/v1/admin/webhook-jobs.
+// @Summary List webhook jobs
+// @Description Returns paginated webhook jobs
+// @Tags admin
+// @Produce json
+// @Param status query string false "Status filter"
+// @Param limit query int false "Limit"
+// @Param offset query int false "Offset"
+// @Success 200 {object} outboxJobListResponse
+// @Router /api/v1/admin/webhook-jobs [get]
 func (h *OutboxJobsHandler) ListWebhookJobs(w http.ResponseWriter, r *http.Request) {
 	status := r.URL.Query().Get("status")
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
@@ -70,6 +95,13 @@ func (h *OutboxJobsHandler) ListWebhookJobs(w http.ResponseWriter, r *http.Reque
 }
 
 // RetryWebhookJob handles POST /api/v1/admin/webhook-jobs/{id}/retry.
+// @Summary Retry webhook job
+// @Description Retry a failed webhook job
+// @Tags admin
+// @Produce json
+// @Param id path int true "Job ID"
+// @Success 202 {object} idStatusResponse
+// @Router /api/v1/admin/webhook-jobs/{id}/retry [post]
 func (h *OutboxJobsHandler) RetryWebhookJob(w http.ResponseWriter, r *http.Request) {
 	id, err := parseID(r, "id")
 	if err != nil {

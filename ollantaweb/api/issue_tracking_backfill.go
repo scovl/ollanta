@@ -75,6 +75,14 @@ func (s *issueTrackingBackfillService) BackfillProject(ctx context.Context, proj
 	return result, nil
 }
 
+// BackfillProject handles POST /api/v1/projects/{key}/issues/backfill-tracking-state.
+// @Summary Backfill tracking state
+// @Description Backfill issue tracking states for a project
+// @Tags issues
+// @Produce json
+// @Param key path string true "Project key"
+// @Success 200 {object} issueTrackingBackfillResult
+// @Router /api/v1/projects/{key}/issues/backfill-tracking-state [post]
 func (h *IssueTrackingBackfillHandler) BackfillProject(w http.ResponseWriter, r *http.Request) {
 	projectKey := chi.URLParam(r, "key")
 	if projectKey == "" {

@@ -20,6 +20,12 @@ func NewNewCodePeriodHandler(periods *postgres.NewCodePeriodRepository, projects
 }
 
 // GetGlobal handles GET /api/v1/new-code-periods/global
+// @Summary Get global new code period
+// @Description Returns the global new code period configuration
+// @Tags new-code-periods
+// @Produce json
+// @Success 200 {object} postgres.NewCodePeriod
+// @Router /api/v1/new-code-periods/global [get]
 func (h *NewCodePeriodHandler) GetGlobal(w http.ResponseWriter, r *http.Request) {
 	ncp, err := h.periods.GetGlobal(r.Context())
 	if handleNotFound(w, err, "not found") {
@@ -33,6 +39,13 @@ func (h *NewCodePeriodHandler) GetGlobal(w http.ResponseWriter, r *http.Request)
 }
 
 // SetGlobal handles PUT /api/v1/new-code-periods/global
+// @Summary Set global new code period
+// @Description Update the global new code period configuration
+// @Tags new-code-periods
+// @Accept json
+// @Param body body object{strategy=string,value=string} true "New code period data"
+// @Success 204
+// @Router /api/v1/new-code-periods/global [put]
 func (h *NewCodePeriodHandler) SetGlobal(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Strategy string `json:"strategy"`
@@ -50,9 +63,13 @@ func (h *NewCodePeriodHandler) SetGlobal(w http.ResponseWriter, r *http.Request)
 }
 
 // GetForProject handles GET /api/v1/projects/{key}/new-code-period
-//
-// Returns 200 with an empty payload when the project has no override
-// (callers should fall back to the global new-code period).
+// @Summary Get project new code period
+// @Description Returns the new code period for a project
+// @Tags new-code-periods
+// @Produce json
+// @Param key path string true "Project key"
+// @Success 200 {object} postgres.NewCodePeriod
+// @Router /api/v1/projects/{key}/new-code-period [get]
 func (h *NewCodePeriodHandler) GetForProject(w http.ResponseWriter, r *http.Request) {
 	project, err := h.resolveProject(r)
 	if err != nil {
@@ -72,6 +89,14 @@ func (h *NewCodePeriodHandler) GetForProject(w http.ResponseWriter, r *http.Requ
 }
 
 // SetForProject handles PUT /api/v1/projects/{key}/new-code-period
+// @Summary Set project new code period
+// @Description Update the new code period for a project
+// @Tags new-code-periods
+// @Accept json
+// @Param key path string true "Project key"
+// @Param body body object{strategy=string,value=string} true "New code period data"
+// @Success 204
+// @Router /api/v1/projects/{key}/new-code-period [put]
 func (h *NewCodePeriodHandler) SetForProject(w http.ResponseWriter, r *http.Request) {
 	project, err := h.resolveProject(r)
 	if err != nil {
@@ -94,6 +119,12 @@ func (h *NewCodePeriodHandler) SetForProject(w http.ResponseWriter, r *http.Requ
 }
 
 // DeleteForProject handles DELETE /api/v1/projects/{key}/new-code-period
+// @Summary Delete project new code period
+// @Description Remove the project-level new code period override
+// @Tags new-code-periods
+// @Param key path string true "Project key"
+// @Success 204
+// @Router /api/v1/projects/{key}/new-code-period [delete]
 func (h *NewCodePeriodHandler) DeleteForProject(w http.ResponseWriter, r *http.Request) {
 	project, err := h.resolveProject(r)
 	if err != nil {

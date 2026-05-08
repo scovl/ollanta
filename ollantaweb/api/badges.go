@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -18,9 +19,14 @@ type BadgesHandler struct {
 
 // QualityGate handles GET /api/v1/projects/{key}/badge?metric=gate_status
 // Returns an SVG badge image suitable for embedding in Markdown.
-//
-// Supported metrics: gate_status (default), bugs, vulnerabilities,
-// code_smells, ncloc, coverage.
+// @Summary Quality badge
+// @Description Returns an SVG badge for project quality metrics
+// @Tags badges
+// @Produce image/svg+xml
+// @Param key path string true "Project key"
+// @Param metric query string false "Metric (gate_status, bugs, vulnerabilities, code_smells, ncloc, coverage)"
+// @Success 200 {string} string "SVG badge"
+// @Router /api/v1/projects/{key}/badge [get]
 func (h *BadgesHandler) QualityGate(w http.ResponseWriter, r *http.Request) {
 	key := routeParam(r, "key")
 	metric := r.URL.Query().Get("metric")
@@ -50,23 +56,7 @@ func (h *BadgesHandler) QualityGate(w http.ResponseWriter, r *http.Request) {
 
 	switch metric {
 	case "gate_status":
-		label := "quality gate"
-		status := scan.GateStatus
-		color := colorGreen
-		switch status {
-		case "OK", "PASSED":
-			status = "passed"
-		case "ERROR", "FAILED":
-			status = "failed"
-			color = colorRed
-		case "WARN":
-			status = "warning"
-			color = colorYellow
-		default:
-			status = "none"
-			color = colorGray
-		}
-		writeSVG(w, label, status, color)
+		renderGateBadge(w, scan.GateStatus)
 	case "bugs":
 		writeSVG(w, "bugs", fmt.Sprintf("%d", scan.TotalBugs), metricColor(scan.TotalBugs))
 	case "vulnerabilities":
@@ -76,15 +66,38 @@ func (h *BadgesHandler) QualityGate(w http.ResponseWriter, r *http.Request) {
 	case "ncloc":
 		writeSVG(w, "lines of code", formatCount(scan.TotalNcloc), colorBlue)
 	case "coverage":
-		m, err := h.measures.GetLatest(r.Context(), project.ID, "coverage")
-		if err != nil {
-			writeSVG(w, "coverage", "N/A", colorGray)
-			return
-		}
-		writeSVG(w, "coverage", fmt.Sprintf("%.1f%%", m.Value), coverageColor(m.Value))
+		h.renderCoverageBadge(w, r.Context(), project.ID)
 	default:
 		writeSVG(w, metric, "unknown", colorGray)
 	}
+}
+
+func renderGateBadge(w http.ResponseWriter, status string) {
+	label := "quality gate"
+	color := colorGreen
+	switch status {
+	case "OK", "PASSED":
+		status = "passed"
+	case "ERROR", "FAILED":
+		status = "failed"
+		color = colorRed
+	case "WARN":
+		status = "warning"
+		color = colorYellow
+	default:
+		status = "none"
+		color = colorGray
+	}
+	writeSVG(w, label, status, color)
+}
+
+func (h *BadgesHandler) renderCoverageBadge(w http.ResponseWriter, ctx context.Context, projectID int64) {
+	m, err := h.measures.GetLatest(ctx, projectID, "coverage")
+	if err != nil {
+		writeSVG(w, "coverage", "N/A", colorGray)
+		return
+	}
+	writeSVG(w, "coverage", fmt.Sprintf("%.1f%%", m.Value), coverageColor(m.Value))
 }
 
 // ─── SVG generation ────────────────────────────────────────────────────────────

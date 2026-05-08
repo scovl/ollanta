@@ -154,10 +154,26 @@ func NewCustomRuleAIHandler() *CustomRuleAIHandler {
 	return &CustomRuleAIHandler{client: &http.Client{Timeout: 60 * time.Second}}
 }
 
+// Models handles GET /api/v1/custom-rules/ai/models.
+// @Summary List AI models
+// @Description Returns available AI providers and models for rule drafting
+// @Tags custom-rules-ai
+// @Produce json
+// @Success 200 {object} customRuleAIProvidersResponse
+// @Router /api/v1/custom-rules/ai/models [get]
 func (h *CustomRuleAIHandler) Models(w http.ResponseWriter, r *http.Request) {
 	jsonOK(w, http.StatusOK, map[string]any{"providers": h.customRuleAIProviders(r.Context())})
 }
 
+// Suggest handles POST /api/v1/custom-rules/ai/suggest.
+// @Summary Suggest rule draft
+// @Description Ask an AI provider to suggest or improve a custom rule draft
+// @Tags custom-rules-ai
+// @Accept json
+// @Produce json
+// @Param body body customRuleAISuggestRequest true "Suggestion request"
+// @Success 200 {object} customRuleAISuggestResponse
+// @Router /api/v1/custom-rules/ai/suggest [post]
 func (h *CustomRuleAIHandler) Suggest(w http.ResponseWriter, r *http.Request) {
 	var req customRuleAISuggestRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {

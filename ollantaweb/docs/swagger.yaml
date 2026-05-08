@@ -1,0 +1,5711 @@
+basePath: /
+definitions:
+  api.activityDelta:
+    properties:
+      bugs:
+        type: integer
+      code_smells:
+        type: integer
+      issues:
+        type: integer
+      ncloc:
+        type: integer
+      vulnerabilities:
+        type: integer
+    type: object
+  api.activityEntry:
+    properties:
+      analysis_date:
+        type: string
+      branch:
+        type: string
+      closed_issues:
+        type: integer
+      commit_sha:
+        type: string
+      delta:
+        $ref: '#/definitions/api.activityDelta'
+      elapsed_ms:
+        type: integer
+      events:
+        items:
+          $ref: '#/definitions/api.activityEvent'
+        type: array
+      gate_status:
+        type: string
+      measures:
+        additionalProperties:
+          format: float64
+          type: number
+        type: object
+      new_issues:
+        type: integer
+      scan_id:
+        type: integer
+      total_bugs:
+        type: integer
+      total_code_smells:
+        type: integer
+      total_files:
+        type: integer
+      total_issues:
+        type: integer
+      total_ncloc:
+        type: integer
+      total_vulnerabilities:
+        type: integer
+      version:
+        type: string
+    type: object
+  api.activityEvent:
+    properties:
+      category:
+        description: '"QUALITY_GATE", "VERSION", "ISSUE_SPIKE", "FIRST_ANALYSIS",
+          "QUALITY_PROFILE"'
+        type: string
+      name:
+        type: string
+      value:
+        type: string
+    type: object
+  api.activityResponse:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/api.activityEntry'
+        type: array
+      limit:
+        type: integer
+      offset:
+        type: integer
+      scope:
+        $ref: '#/definitions/api.scopeResponse'
+      total:
+        type: integer
+    type: object
+  api.backgroundTaskDTO:
+    properties:
+      attempts:
+        type: integer
+      completed_at:
+        type: string
+      created_at:
+        type: string
+      details:
+        additionalProperties: {}
+        type: object
+      duration_seconds:
+        type: integer
+      id:
+        type: string
+      internal_status:
+        type: string
+      last_error:
+        type: string
+      links:
+        additionalProperties: {}
+        type: object
+      next_attempt_at:
+        type: string
+      project_id:
+        type: integer
+      project_key:
+        type: string
+      queued_age_seconds:
+        type: integer
+      scan_id:
+        type: integer
+      scanner_parameters:
+        additionalProperties: {}
+        type: object
+      source_job_id:
+        type: integer
+      stale:
+        type: boolean
+      stale_seconds:
+        type: integer
+      started_at:
+        type: string
+      status:
+        type: string
+      supported_actions:
+        items:
+          type: string
+        type: array
+      type:
+        type: string
+      updated_at:
+        type: string
+      worker_id:
+        type: string
+    type: object
+  api.backgroundTaskListResponse:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/api.backgroundTaskDTO'
+        type: array
+      limit:
+        type: integer
+      offset:
+        type: integer
+      total:
+        type: integer
+    type: object
+  api.backgroundTaskSummary:
+    properties:
+      by_type:
+        additionalProperties:
+          $ref: '#/definitions/api.backgroundTaskTypeHealth'
+        type: object
+      failed_count:
+        type: integer
+      oldest_queued_age_seconds:
+        type: integer
+      queue_depth:
+        type: integer
+      recent_completion_count:
+        type: integer
+      retry_count:
+        type: integer
+      running_count:
+        type: integer
+      stale_count:
+        type: integer
+      total:
+        type: integer
+    type: object
+  api.backgroundTaskTypeHealth:
+    properties:
+      failed_count:
+        type: integer
+      oldest_queued_age_seconds:
+        type: integer
+      queue_depth:
+        type: integer
+      recent_completion_count:
+        type: integer
+      retry_count:
+        type: integer
+      running_count:
+        type: integer
+      stale_count:
+        type: integer
+      total:
+        type: integer
+    type: object
+  api.branchesResponse:
+    properties:
+      default_branch:
+        type: string
+      items:
+        items:
+          $ref: '#/definitions/postgres.BranchSummary'
+        type: array
+    type: object
+  api.checkResult:
+    properties:
+      error:
+        type: string
+      latency:
+        type: string
+      status:
+        type: string
+    type: object
+  api.codeFileResponse:
+    properties:
+      file:
+        $ref: '#/definitions/postgres.CodeSnapshotFile'
+      issues:
+        items:
+          $ref: '#/definitions/postgres.IssueRow'
+        type: array
+      scope:
+        $ref: '#/definitions/api.scopeResponse'
+    type: object
+  api.codeTreeResponse:
+    properties:
+      code_snapshot:
+        $ref: '#/definitions/postgres.CodeSnapshotScope'
+      items:
+        items:
+          $ref: '#/definitions/postgres.CodeSnapshotFile'
+        type: array
+      scope:
+        $ref: '#/definitions/api.scopeResponse'
+    type: object
+  api.customRuleAICurrentDraft:
+    properties:
+      compliant_example:
+        type: string
+      engine:
+        type: string
+      go_ast_pattern:
+        type: string
+      language:
+        type: string
+      message:
+        type: string
+      name:
+        type: string
+      namespace:
+        type: string
+      noncompliant_example:
+        type: string
+      pack_name:
+        type: string
+      rule_id:
+        type: string
+      severity:
+        type: string
+      target:
+        type: string
+      text_pattern:
+        type: string
+      tree_sitter_query:
+        type: string
+      type:
+        type: string
+    type: object
+  api.customRuleAIModelOption:
+    properties:
+      id:
+        type: string
+      label:
+        type: string
+      local:
+        type: boolean
+      message:
+        type: string
+      setup_required:
+        type: boolean
+      status:
+        type: string
+    type: object
+  api.customRuleAIProviderOption:
+    properties:
+      base_url:
+        type: string
+      configured:
+        type: boolean
+      default_model:
+        type: string
+      diagnostics:
+        items:
+          type: string
+        type: array
+      id:
+        type: string
+      kind:
+        type: string
+      label:
+        type: string
+      local:
+        type: boolean
+      message:
+        type: string
+      model_options:
+        items:
+          $ref: '#/definitions/api.customRuleAIModelOption'
+        type: array
+      models:
+        items:
+          type: string
+        type: array
+      requires_api_key:
+        type: boolean
+      setup_required:
+        type: boolean
+      setup_url:
+        type: string
+      status:
+        type: string
+    type: object
+  api.customRuleAIProvidersResponse:
+    properties:
+      providers:
+        items:
+          $ref: '#/definitions/api.customRuleAIProviderOption'
+        type: array
+    type: object
+  api.customRuleAISuggestRequest:
+    properties:
+      current:
+        $ref: '#/definitions/api.customRuleAICurrentDraft'
+      intent:
+        type: string
+      model:
+        type: string
+      provider:
+        type: string
+    type: object
+  api.customRuleAISuggestResponse:
+    properties:
+      suggestion:
+        $ref: '#/definitions/api.customRuleAISuggestion'
+    type: object
+  api.customRuleAISuggestion:
+    properties:
+      compliant_example:
+        type: string
+      engine:
+        type: string
+      go_ast_pattern:
+        type: string
+      language:
+        type: string
+      message:
+        type: string
+      name:
+        type: string
+      noncompliant_example:
+        type: string
+      pack_name:
+        type: string
+      rule_id:
+        type: string
+      severity:
+        type: string
+      target:
+        type: string
+      text_pattern:
+        type: string
+      tree_sitter_query:
+        type: string
+      type:
+        type: string
+    type: object
+  api.customRuleListResponse:
+    properties:
+      items: {}
+    type: object
+  api.customRulePreviewResponse:
+    properties:
+      diagnostics:
+        items:
+          $ref: '#/definitions/model.CustomRuleDiagnostic'
+        type: array
+      files_scanned:
+        type: integer
+      limited:
+        type: boolean
+      match_count:
+        type: integer
+      matches:
+        items:
+          $ref: '#/definitions/model.CustomRulePreviewMatch'
+        type: array
+      rule_key:
+        type: string
+    type: object
+  api.enginesResponse:
+    properties:
+      engines: {}
+    type: object
+  api.gateDetailResponse:
+    properties:
+      conditions:
+        items:
+          $ref: '#/definitions/postgres.GateCondition'
+        type: array
+      gate:
+        $ref: '#/definitions/postgres.QualityGate'
+    type: object
+  api.groupListResponse:
+    properties:
+      groups:
+        items:
+          $ref: '#/definitions/api.groupView'
+        type: array
+    type: object
+  api.groupMembersResponse:
+    properties:
+      members:
+        items:
+          $ref: '#/definitions/api.userView'
+        type: array
+    type: object
+  api.groupView:
+    properties:
+      description:
+        type: string
+      id:
+        type: integer
+      is_builtin:
+        type: boolean
+      name:
+        type: string
+    type: object
+  api.idStatusResponse:
+    properties:
+      id:
+        type: integer
+      status:
+        type: string
+    type: object
+  api.issueChangelogResponse:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/postgres.ChangelogEntry'
+        type: array
+    type: object
+  api.issueListResponse:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/postgres.IssueRow'
+        type: array
+      limit:
+        type: integer
+      offset:
+        type: integer
+      total:
+        type: integer
+    type: object
+  api.issueTrackingBackfillResult:
+    properties:
+      issues_updated:
+        type: integer
+      project_key:
+        type: string
+      scans_processed:
+        type: integer
+      scopes_processed:
+        type: integer
+      unknown_issues:
+        type: integer
+    type: object
+  api.itemsOnlyResponse:
+    properties:
+      items: {}
+    type: object
+  api.loginResponse:
+    properties:
+      access_token:
+        type: string
+      expires_in:
+        type: integer
+      refresh_token:
+        type: string
+      user:
+        $ref: '#/definitions/api.userView'
+    type: object
+  api.measureTrendResponse:
+    properties:
+      component:
+        type: string
+      from:
+        type: string
+      metric:
+        type: string
+      points:
+        items:
+          $ref: '#/definitions/postgres.TrendPoint'
+        type: array
+      project:
+        type: string
+      to:
+        type: string
+    type: object
+  api.outboxJobListResponse:
+    properties:
+      items: {}
+      limit:
+        type: integer
+      offset:
+        type: integer
+      total:
+        type: integer
+    type: object
+  api.overviewCoverageFile:
+    properties:
+      component_path:
+        type: string
+      coverage:
+        type: number
+      covered_line_numbers:
+        items:
+          type: integer
+        type: array
+      covered_lines:
+        type: integer
+      lines_to_cover:
+        type: integer
+      uncovered_line_numbers:
+        items:
+          type: integer
+        type: array
+      uncovered_lines:
+        type: integer
+    type: object
+  api.overviewCoverageSummary:
+    properties:
+      coverage:
+        type: number
+      files:
+        items:
+          $ref: '#/definitions/api.overviewCoverageFile'
+        type: array
+      files_covered:
+        type: integer
+      files_missing:
+        type: integer
+    type: object
+  api.overviewGate:
+    properties:
+      conditions:
+        items:
+          $ref: '#/definitions/postgres.GateCondition'
+        type: array
+      status:
+        type: string
+    type: object
+  api.overviewNewCode:
+    properties:
+      closed_issues:
+        type: integer
+      new_issues:
+        type: integer
+    type: object
+  api.overviewResponse:
+    properties:
+      facets:
+        $ref: '#/definitions/postgres.IssueFacets'
+      last_scan:
+        $ref: '#/definitions/postgres.Scan'
+      measures:
+        additionalProperties:
+          format: float64
+          type: number
+        type: object
+      new_code:
+        $ref: '#/definitions/api.overviewNewCode'
+      project:
+        $ref: '#/definitions/postgres.Project'
+      quality_gate:
+        $ref: '#/definitions/api.overviewGate'
+      scope:
+        $ref: '#/definitions/api.scopeResponse'
+      summary:
+        $ref: '#/definitions/api.overviewSummary'
+    type: object
+  api.overviewSummary:
+    properties:
+      coverage:
+        $ref: '#/definitions/api.overviewCoverageSummary'
+      empty_state:
+        $ref: '#/definitions/api.overviewSummaryEmptyState'
+      impacted_files:
+        items:
+          $ref: '#/definitions/api.overviewSummaryFile'
+        type: array
+      must_fix_now:
+        items:
+          $ref: '#/definitions/api.overviewSummaryIssue'
+        type: array
+      new_code:
+        $ref: '#/definitions/api.overviewSummaryNewCode'
+      overall_code:
+        $ref: '#/definitions/api.overviewSummaryOverall'
+      review:
+        $ref: '#/definitions/api.overviewSummaryReview'
+    type: object
+  api.overviewSummaryBaseline:
+    properties:
+      label:
+        type: string
+      scope:
+        type: string
+      strategy:
+        type: string
+      value:
+        type: string
+    type: object
+  api.overviewSummaryEmptyState:
+    properties:
+      has_scans:
+        type: boolean
+      headline:
+        type: string
+      recommended_action:
+        type: string
+    type: object
+  api.overviewSummaryFile:
+    properties:
+      component_path:
+        type: string
+      coverage:
+        type: number
+      duplicated_lines_density:
+        type: number
+      issue_count:
+        type: integer
+    type: object
+  api.overviewSummaryIssue:
+    properties:
+      component_path:
+        type: string
+      issue_id:
+        type: integer
+      line:
+        type: integer
+      message:
+        type: string
+      rule_key:
+        type: string
+      severity:
+        type: string
+      tracking_state:
+        type: string
+      type:
+        type: string
+      why_selected:
+        type: string
+    type: object
+  api.overviewSummaryNewCode:
+    properties:
+      baseline:
+        $ref: '#/definitions/api.overviewSummaryBaseline'
+      metrics:
+        additionalProperties:
+          format: float64
+          type: number
+        type: object
+    type: object
+  api.overviewSummaryOverall:
+    properties:
+      metrics:
+        additionalProperties:
+          format: float64
+          type: number
+        type: object
+    type: object
+  api.overviewSummaryReason:
+    properties:
+      actual:
+        type: number
+      label:
+        type: string
+      metric:
+        type: string
+      on_new_code:
+        type: boolean
+      operator:
+        type: string
+      threshold:
+        type: number
+    type: object
+  api.overviewSummaryReview:
+    properties:
+      gate_status:
+        type: string
+      headline:
+        type: string
+      reasons:
+        items:
+          $ref: '#/definitions/api.overviewSummaryReason'
+        type: array
+      status:
+        type: string
+    type: object
+  api.paginatedItemsResponse:
+    properties:
+      items: {}
+      limit:
+        type: integer
+      offset:
+        type: integer
+      total:
+        type: integer
+    type: object
+  api.permListResponse:
+    properties:
+      permissions: {}
+    type: object
+  api.permRequest:
+    properties:
+      permission:
+        type: string
+      target:
+        description: '"user" or "group"'
+        type: string
+      target_id:
+        type: integer
+    type: object
+  api.profileChangelogResponse:
+    properties:
+      items: {}
+      limit:
+        type: integer
+      offset:
+        type: integer
+      total:
+        type: integer
+    type: object
+  api.profileCodeDocument:
+    properties:
+      language:
+        type: string
+      name:
+        type: string
+      profiles:
+        items:
+          $ref: '#/definitions/api.profileCodeLanguage'
+        type: array
+      rules:
+        items:
+          $ref: '#/definitions/api.profileCodeRule'
+        type: array
+      version:
+        type: integer
+    type: object
+  api.profileCodeLanguage:
+    properties:
+      language:
+        type: string
+      name:
+        type: string
+      rules:
+        items:
+          $ref: '#/definitions/api.profileCodeRule'
+        type: array
+    type: object
+  api.profileCodeRule:
+    properties:
+      activate:
+        type: boolean
+      active:
+        type: boolean
+      key:
+        type: string
+      params:
+        additionalProperties:
+          type: string
+        type: object
+      rule:
+        type: string
+      rule_key:
+        type: string
+      severity:
+        type: string
+    type: object
+  api.profileImportResponse:
+    properties:
+      imported_rules:
+        type: integer
+    type: object
+  api.projectInformationResponse:
+    properties:
+      code_snapshot:
+        $ref: '#/definitions/postgres.CodeSnapshotScope'
+      latest_scan:
+        $ref: '#/definitions/postgres.Scan'
+      measures:
+        additionalProperties: true
+        type: object
+      project:
+        $ref: '#/definitions/postgres.Project'
+      scope:
+        $ref: '#/definitions/api.scopeResponse'
+    type: object
+  api.projectListResponse:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/postgres.Project'
+        type: array
+      limit:
+        type: integer
+      offset:
+        type: integer
+      total:
+        type: integer
+    type: object
+  api.pullRequestsResponse:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/postgres.PullRequestSummary'
+        type: array
+    type: object
+  api.readinessResponse:
+    properties:
+      checks:
+        additionalProperties:
+          $ref: '#/definitions/api.checkResult'
+        type: object
+      status:
+        type: string
+    type: object
+  api.refreshResponse:
+    properties:
+      access_token:
+        type: string
+      expires_in:
+        type: integer
+    type: object
+  api.ruleDetail:
+    properties:
+      compliant_code:
+        type: string
+      description:
+        type: string
+      key:
+        type: string
+      language:
+        type: string
+      lifecycle:
+        type: string
+      name:
+        type: string
+      noncompliant_code:
+        type: string
+      origin:
+        type: string
+      pack_name:
+        type: string
+      params:
+        items:
+          properties:
+            default_value:
+              type: string
+            description:
+              type: string
+            key:
+              type: string
+            type:
+              type: string
+          type: object
+        type: array
+      rationale:
+        type: string
+      severity:
+        type: string
+      tags:
+        items:
+          type: string
+        type: array
+      type:
+        type: string
+      version_hash:
+        type: string
+    type: object
+  api.savedFilterCriteriaResponse:
+    properties:
+      criteria: {}
+      filter: {}
+    type: object
+  api.savedFilterListResponse:
+    properties:
+      items: {}
+      total:
+        type: integer
+    type: object
+  api.scanDetailResponse:
+    properties:
+      analysis_date:
+        type: string
+      branch:
+        type: string
+      closed_issues:
+        type: integer
+      commit_sha:
+        type: string
+      created_at:
+        type: string
+      elapsed_ms:
+        type: integer
+      gate_status:
+        type: string
+      id:
+        type: integer
+      new_issues:
+        type: integer
+      project_id:
+        type: integer
+      pull_request_base:
+        type: string
+      pull_request_key:
+        type: string
+      scope_type:
+        type: string
+      status:
+        type: string
+      test_signals:
+        items:
+          type: integer
+        type: array
+      total_bugs:
+        type: integer
+      total_code_smells:
+        type: integer
+      total_comments:
+        type: integer
+      total_files:
+        type: integer
+      total_issues:
+        type: integer
+      total_lines:
+        type: integer
+      total_ncloc:
+        type: integer
+      total_vulnerabilities:
+        type: integer
+      version:
+        type: string
+    type: object
+  api.scanListResponse:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/postgres.Scan'
+        type: array
+      limit:
+        type: integer
+      offset:
+        type: integer
+      scope:
+        $ref: '#/definitions/api.scopeResponse'
+      total:
+        type: integer
+    type: object
+  api.scopeResponse:
+    properties:
+      branch:
+        type: string
+      default_branch:
+        type: string
+      pull_request_base:
+        type: string
+      pull_request_key:
+        type: string
+      type:
+        type: string
+    type: object
+  api.searchResponse:
+    properties:
+      facet_distribution:
+        additionalProperties:
+          additionalProperties:
+            type: integer
+          type: object
+        type: object
+      hits:
+        items:
+          additionalProperties: true
+          type: object
+        type: array
+      processing_time_ms:
+        type: integer
+      total_hits:
+        type: integer
+    type: object
+  api.survivedMutantItem:
+    properties:
+      changed_code:
+        type: boolean
+      description:
+        type: string
+      end_line:
+        type: integer
+      file:
+        type: string
+      id:
+        type: string
+      line:
+        type: integer
+      module:
+        type: string
+      mutator:
+        type: string
+      status:
+        type: string
+    type: object
+  api.survivedMutantsResponse:
+    properties:
+      mutants:
+        items:
+          $ref: '#/definitions/api.survivedMutantItem'
+        type: array
+      scan_id:
+        type: integer
+      total:
+        type: integer
+    type: object
+  api.systemInfoResponse:
+    properties:
+      arch:
+        type: string
+      go_version:
+        type: string
+      num_goroutines:
+        type: integer
+      os:
+        type: string
+      search_backend:
+        type: string
+      stats:
+        $ref: '#/definitions/api.systemStats'
+      version:
+        type: string
+    type: object
+  api.systemStats:
+    properties:
+      projects:
+        type: integer
+      users:
+        type: integer
+    type: object
+  api.tagListResponse:
+    properties:
+      items: {}
+      limit:
+        type: integer
+      offset:
+        type: integer
+      total:
+        type: integer
+    type: object
+  api.tokenCreateResponse:
+    properties:
+      meta:
+        $ref: '#/definitions/api.tokenView'
+      token:
+        type: string
+    type: object
+  api.tokenListResponse:
+    properties:
+      tokens:
+        items:
+          $ref: '#/definitions/api.tokenView'
+        type: array
+    type: object
+  api.tokenView:
+    properties:
+      created_at:
+        type: string
+      expires_at:
+        type: string
+      id:
+        type: integer
+      last_used_at:
+        type: string
+      name:
+        type: string
+      project_id:
+        type: integer
+      token_type:
+        type: string
+    type: object
+  api.uiObservabilityLink:
+    properties:
+      name:
+        type: string
+      url:
+        type: string
+    type: object
+  api.uiSettingsResponse:
+    properties:
+      observability_links:
+        items:
+          $ref: '#/definitions/api.uiObservabilityLink'
+        type: array
+    type: object
+  api.userListResponse:
+    properties:
+      total:
+        type: integer
+      users:
+        items:
+          $ref: '#/definitions/api.userView'
+        type: array
+    type: object
+  api.userView:
+    properties:
+      avatar_url:
+        type: string
+      email:
+        type: string
+      id:
+        type: integer
+      is_active:
+        type: boolean
+      login:
+        type: string
+      name:
+        type: string
+      provider:
+        type: string
+    type: object
+  api.webhookTestResponse:
+    properties:
+      status:
+        type: string
+    type: object
+  ingest.IngestMeasures:
+    properties:
+      bugs:
+        type: integer
+      by_language:
+        additionalProperties:
+          type: integer
+        type: object
+      changed_mutants_killed:
+        type: integer
+      changed_mutants_survived:
+        type: integer
+      changed_mutants_total:
+        type: integer
+      changed_mutation_score:
+        type: number
+      code_smells:
+        type: integer
+      comments:
+        type: integer
+      coverage:
+        type: number
+      files:
+        type: integer
+      lines:
+        type: integer
+      mutants_error:
+        type: integer
+      mutants_killed:
+        type: integer
+      mutants_skipped:
+        type: integer
+      mutants_survived:
+        type: integer
+      mutants_timeout:
+        type: integer
+      mutants_total:
+        type: integer
+      mutation_score:
+        type: number
+      ncloc:
+        type: integer
+      test_duration_ms:
+        type: integer
+      test_errors:
+        type: integer
+      test_failures:
+        type: integer
+      test_skipped:
+        type: integer
+      tests:
+        type: integer
+      vulnerabilities:
+        type: integer
+    type: object
+  ingest.IngestMetadata:
+    properties:
+      analysis_date:
+        description: RFC 3339
+        type: string
+      branch:
+        type: string
+      commit_sha:
+        type: string
+      elapsed_ms:
+        type: integer
+      project_key:
+        type: string
+      pull_request_base:
+        type: string
+      pull_request_key:
+        type: string
+      scope_type:
+        type: string
+      version:
+        type: string
+    type: object
+  ingest.IngestRequest:
+    properties:
+      code_snapshot:
+        $ref: '#/definitions/model.CodeSnapshot'
+      issues:
+        items:
+          $ref: '#/definitions/model.Issue'
+        type: array
+      measures:
+        $ref: '#/definitions/ingest.IngestMeasures'
+      metadata:
+        $ref: '#/definitions/ingest.IngestMetadata'
+      quality_profiles:
+        items:
+          $ref: '#/definitions/model.ProfileSnapshot'
+        type: array
+      scanner_options:
+        items:
+          type: integer
+        type: array
+      test_signals:
+        items:
+          type: integer
+        type: array
+    type: object
+  model.CodeSnapshot:
+    properties:
+      files:
+        items:
+          $ref: '#/definitions/model.CodeSnapshotFile'
+        type: array
+      max_file_bytes:
+        type: integer
+      max_total_bytes:
+        type: integer
+      omitted_files:
+        type: integer
+      stored_bytes:
+        type: integer
+      stored_files:
+        type: integer
+      total_files:
+        type: integer
+      truncated_files:
+        type: integer
+    type: object
+  model.CodeSnapshotFile:
+    properties:
+      content:
+        type: string
+      is_omitted:
+        type: boolean
+      is_truncated:
+        type: boolean
+      language:
+        type: string
+      line_count:
+        type: integer
+      omitted_reason:
+        type: string
+      path:
+        type: string
+      size_bytes:
+        type: integer
+    type: object
+  model.CustomRuleCatalogSnapshot:
+    properties:
+      diagnostics:
+        items:
+          $ref: '#/definitions/model.CustomRuleDiagnostic'
+        type: array
+      hash:
+        type: string
+      pack_ids:
+        items:
+          type: integer
+        type: array
+      resolved_at:
+        type: string
+      rule_count:
+        type: integer
+      rules:
+        items:
+          $ref: '#/definitions/model.CustomRuleDefinition'
+        type: array
+      snapshot_id:
+        type: string
+      source:
+        type: string
+    type: object
+  model.CustomRuleDefinition:
+    properties:
+      created_at:
+        type: string
+      description:
+        type: string
+      engine:
+        $ref: '#/definitions/model.CustomRuleEngine'
+      engine_config:
+        additionalProperties:
+          type: string
+        type: object
+      examples:
+        items:
+          $ref: '#/definitions/model.CustomRuleExample'
+        type: array
+      id:
+        type: integer
+      key:
+        type: string
+      language:
+        type: string
+      lifecycle:
+        $ref: '#/definitions/model.CustomRuleLifecycle'
+      limits:
+        $ref: '#/definitions/model.CustomRuleLimits'
+      message:
+        type: string
+      name:
+        type: string
+      pack_id:
+        type: integer
+      pack_name:
+        type: string
+      params_schema:
+        additionalProperties:
+          $ref: '#/definitions/model.ParamDef'
+        type: object
+      published_at:
+        type: string
+      severity:
+        $ref: '#/definitions/model.Severity'
+      tags:
+        items:
+          type: string
+        type: array
+      type:
+        $ref: '#/definitions/model.IssueType'
+      updated_at:
+        type: string
+      validation_hash:
+        type: string
+      validation_result:
+        $ref: '#/definitions/model.CustomRuleValidationResult'
+      validation_status:
+        $ref: '#/definitions/model.CustomRuleValidationStatus'
+      validation_timestamp:
+        type: string
+      version:
+        type: integer
+      version_hash:
+        type: string
+    type: object
+  model.CustomRuleDiagnostic:
+    properties:
+      code:
+        type: string
+      field:
+        type: string
+      level:
+        type: string
+      message:
+        type: string
+    type: object
+  model.CustomRuleEngine:
+    enum:
+    - auto
+    - text
+    - go-ast
+    - tree-sitter
+    type: string
+    x-enum-varnames:
+    - CustomRuleEngineAuto
+    - CustomRuleEngineText
+    - CustomRuleEngineGoAST
+    - CustomRuleEngineTreeSitter
+  model.CustomRuleExample:
+    properties:
+      code:
+        type: string
+      compliant:
+        type: boolean
+      language:
+        type: string
+      name:
+        type: string
+      want_column:
+        type: integer
+      want_line:
+        type: integer
+    type: object
+  model.CustomRuleLifecycle:
+    enum:
+    - draft
+    - valid
+    - published
+    - disabled
+    - deprecated
+    - invalid
+    type: string
+    x-enum-varnames:
+    - CustomRuleDraft
+    - CustomRuleValid
+    - CustomRulePublished
+    - CustomRuleDisabled
+    - CustomRuleDeprecated
+    - CustomRuleInvalid
+  model.CustomRuleLimits:
+    properties:
+      max_file_bytes:
+        type: integer
+      max_files:
+        type: integer
+      max_matches:
+        type: integer
+      timeout_ms:
+        type: integer
+    type: object
+  model.CustomRulePack:
+    properties:
+      created_at:
+        type: string
+      description:
+        type: string
+      id:
+        type: integer
+      name:
+        type: string
+      namespace:
+        type: string
+      source_hash:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  model.CustomRulePackDocument:
+    properties:
+      pack:
+        $ref: '#/definitions/model.CustomRulePack'
+      rules:
+        items:
+          $ref: '#/definitions/model.CustomRuleDefinition'
+        type: array
+      version:
+        type: integer
+    type: object
+  model.CustomRulePreviewMatch:
+    properties:
+      column:
+        type: integer
+      file_path:
+        type: string
+      line:
+        type: integer
+      message:
+        type: string
+      snippet:
+        type: string
+    type: object
+  model.CustomRuleValidationResult:
+    properties:
+      checked_at:
+        type: string
+      diagnostics:
+        items:
+          $ref: '#/definitions/model.CustomRuleDiagnostic'
+        type: array
+      rule_key:
+        type: string
+      status:
+        $ref: '#/definitions/model.CustomRuleValidationStatus'
+      validator_capabilities:
+        items:
+          type: string
+        type: array
+      version_hash:
+        type: string
+    type: object
+  model.CustomRuleValidationStatus:
+    enum:
+    - none
+    - passed
+    - failed
+    - requires_runtime
+    type: string
+    x-enum-varnames:
+    - CustomRuleValidationNone
+    - CustomRuleValidationPassed
+    - CustomRuleValidationFailed
+    - CustomRuleValidationRequiresRuntime
+  model.EffectiveQualityProfile:
+    properties:
+      active_rule_count:
+        type: integer
+      custom_catalog_hash:
+        type: string
+      diagnostics:
+        items:
+          $ref: '#/definitions/model.ProfileDiagnostic'
+        type: array
+      has_rules:
+        type: boolean
+      language:
+        type: string
+      parser_only:
+        type: boolean
+      profile_id:
+        type: integer
+      profile_name:
+        type: string
+      rules:
+        items:
+          $ref: '#/definitions/model.EffectiveRule'
+        type: array
+      rules_hash:
+        type: string
+      source:
+        $ref: '#/definitions/model.ProfileSource'
+    type: object
+  model.EffectiveRule:
+    properties:
+      disabled:
+        type: boolean
+      origin:
+        $ref: '#/definitions/model.RuleOrigin'
+      params:
+        additionalProperties:
+          type: string
+        type: object
+      rule_key:
+        type: string
+      rule_version_hash:
+        type: string
+      severity:
+        type: string
+      source_profile_id:
+        type: integer
+      source_profile_name:
+        type: string
+    type: object
+  model.Issue:
+    properties:
+      column:
+        type: integer
+      component_path:
+        type: string
+      effort_minutes:
+        type: integer
+      end_column:
+        type: integer
+      end_line:
+        type: integer
+      engine_id:
+        type: string
+      language:
+        type: string
+      line:
+        type: integer
+      line_hash:
+        description: |-
+          LineHash is the SHA-256 hex digest of the trimmed source line. Used by the
+          issue tracker to match the same logical issue across scans
+          even when its line number shifts due to edits elsewhere in the file.
+        type: string
+      message:
+        type: string
+      quality_domain:
+        $ref: '#/definitions/model.IssueQualityDomain'
+      resolution:
+        type: string
+      rule_key:
+        type: string
+      secondary_locations:
+        items:
+          $ref: '#/definitions/model.SecondaryLocation'
+        type: array
+      severity:
+        $ref: '#/definitions/model.Severity'
+      status:
+        $ref: '#/definitions/model.Status'
+      tags:
+        items:
+          type: string
+        type: array
+      type:
+        $ref: '#/definitions/model.IssueType'
+    type: object
+  model.IssueQualityDomain:
+    enum:
+    - security
+    - reliability
+    - maintainability
+    - testability
+    type: string
+    x-enum-varnames:
+    - QualitySecurity
+    - QualityReliability
+    - QualityMaintainability
+    - QualityTestability
+  model.IssueType:
+    enum:
+    - bug
+    - vulnerability
+    - code_smell
+    - security_hotspot
+    type: string
+    x-enum-varnames:
+    - TypeBug
+    - TypeVulnerability
+    - TypeCodeSmell
+    - TypeSecurityHotspot
+  model.ParamDef:
+    properties:
+      default_value:
+        type: string
+      description:
+        type: string
+      key:
+        type: string
+      type:
+        description: Type is one of "int", "float", "string", "bool".
+        type: string
+    type: object
+  model.ProfileDiagnostic:
+    properties:
+      code:
+        type: string
+      language:
+        type: string
+      level:
+        type: string
+      message:
+        type: string
+    type: object
+  model.ProfileSnapshot:
+    properties:
+      active_rule_count:
+        type: integer
+      custom_catalog_hash:
+        type: string
+      diagnostics:
+        items:
+          $ref: '#/definitions/model.ProfileDiagnostic'
+        type: array
+      language:
+        type: string
+      metadata_available:
+        type: boolean
+      profile_id:
+        type: integer
+      profile_name:
+        type: string
+      rules_hash:
+        type: string
+      source:
+        $ref: '#/definitions/model.ProfileSource'
+    type: object
+  model.ProfileSource:
+    enum:
+    - assigned
+    - default
+    - local
+    - remote
+    - builtin
+    - unknown
+    type: string
+    x-enum-varnames:
+    - ProfileSourceAssigned
+    - ProfileSourceDefault
+    - ProfileSourceLocal
+    - ProfileSourceRemote
+    - ProfileSourceBuiltin
+    - ProfileSourceUnknown
+  model.ProjectQualityProfile:
+    properties:
+      language:
+        type: string
+      profile:
+        $ref: '#/definitions/model.QualityProfile'
+      source:
+        $ref: '#/definitions/model.ProfileSource'
+    type: object
+  model.QualityProfile:
+    properties:
+      created_at:
+        type: string
+      has_rules:
+        type: boolean
+      id:
+        type: integer
+      is_builtin:
+        type: boolean
+      is_default:
+        type: boolean
+      language:
+        type: string
+      name:
+        type: string
+      parent_id:
+        type: integer
+      parser_only:
+        type: boolean
+      rule_count:
+        type: integer
+      updated_at:
+        type: string
+    type: object
+  model.RuleOrigin:
+    enum:
+    - local
+    - inherited
+    - overridden
+    - disabled
+    type: string
+    x-enum-varnames:
+    - RuleOriginLocal
+    - RuleOriginInherited
+    - RuleOriginOverridden
+    - RuleOriginDisabled
+  model.SavedFilter:
+    properties:
+      created_at:
+        type: string
+      criteria:
+        additionalProperties: {}
+        type: object
+      description:
+        type: string
+      filter_type:
+        type: string
+      id:
+        type: integer
+      name:
+        type: string
+      owner_user_id:
+        type: integer
+      updated_at:
+        type: string
+      visibility:
+        $ref: '#/definitions/model.SavedFilterVisibility'
+    type: object
+  model.SavedFilterVisibility:
+    enum:
+    - private
+    - shared
+    type: string
+    x-enum-varnames:
+    - SavedFilterPrivate
+    - SavedFilterShared
+  model.SecondaryLocation:
+    properties:
+      end_column:
+        type: integer
+      end_line:
+        type: integer
+      file_path:
+        type: string
+      message:
+        type: string
+      start_column:
+        type: integer
+      start_line:
+        type: integer
+    type: object
+  model.Severity:
+    enum:
+    - blocker
+    - critical
+    - major
+    - minor
+    - info
+    type: string
+    x-enum-varnames:
+    - SeverityBlocker
+    - SeverityCritical
+    - SeverityMajor
+    - SeverityMinor
+    - SeverityInfo
+  model.Status:
+    enum:
+    - open
+    - confirmed
+    - closed
+    - reopened
+    type: string
+    x-enum-varnames:
+    - StatusOpen
+    - StatusConfirmed
+    - StatusClosed
+    - StatusReopened
+  model.TagAlias:
+    properties:
+      alias:
+        type: string
+      created_at:
+        type: string
+      id:
+        type: integer
+      tag_key:
+        type: string
+    type: object
+  model.TagBulkEditChange:
+    properties:
+      added_tags:
+        items:
+          type: string
+        type: array
+      after:
+        items:
+          type: string
+        type: array
+      before:
+        items:
+          type: string
+        type: array
+      removed_tags:
+        items:
+          type: string
+        type: array
+      target_id:
+        type: integer
+      target_key:
+        type: string
+    type: object
+  model.TagBulkEditPreview:
+    properties:
+      add_tags:
+        items:
+          type: string
+        type: array
+      changes:
+        items:
+          $ref: '#/definitions/model.TagBulkEditChange'
+        type: array
+      remove_tags:
+        items:
+          type: string
+        type: array
+      skipped:
+        items:
+          $ref: '#/definitions/model.TagBulkEditSkipped'
+        type: array
+      target_count:
+        type: integer
+      target_type:
+        $ref: '#/definitions/model.TagTargetType'
+      validation_errors:
+        items:
+          type: string
+        type: array
+    type: object
+  model.TagBulkEditRequest:
+    properties:
+      actor_user_id:
+        type: integer
+      add_tags:
+        items:
+          type: string
+        type: array
+      reason:
+        type: string
+      remove_tags:
+        items:
+          type: string
+        type: array
+      target_ids:
+        items:
+          type: integer
+        type: array
+      target_keys:
+        items:
+          type: string
+        type: array
+      target_type:
+        $ref: '#/definitions/model.TagTargetType'
+    type: object
+  model.TagBulkEditResult:
+    properties:
+      add_tags:
+        items:
+          type: string
+        type: array
+      changes:
+        items:
+          $ref: '#/definitions/model.TagBulkEditChange'
+        type: array
+      failed_count:
+        type: integer
+      remove_tags:
+        items:
+          type: string
+        type: array
+      skipped:
+        items:
+          $ref: '#/definitions/model.TagBulkEditSkipped'
+        type: array
+      target_count:
+        type: integer
+      target_type:
+        $ref: '#/definitions/model.TagTargetType'
+      updated_count:
+        type: integer
+      validation_errors:
+        items:
+          type: string
+        type: array
+    type: object
+  model.TagBulkEditSkipped:
+    properties:
+      reason:
+        type: string
+      target_id:
+        type: integer
+      target_key:
+        type: string
+    type: object
+  model.TagCatalogEntry:
+    properties:
+      aliases:
+        items:
+          $ref: '#/definitions/model.TagAlias'
+        type: array
+      color:
+        type: string
+      created_at:
+        type: string
+      created_by:
+        type: integer
+      description:
+        type: string
+      display_name:
+        type: string
+      id:
+        type: integer
+      key:
+        type: string
+      owner_id:
+        type: integer
+      owner_name:
+        type: string
+      owner_type:
+        $ref: '#/definitions/model.TagOwnerType'
+      replacement_key:
+        type: string
+      scope:
+        type: string
+      source:
+        $ref: '#/definitions/model.TagSource'
+      status:
+        $ref: '#/definitions/model.TagStatus'
+      updated_at:
+        type: string
+      usage:
+        $ref: '#/definitions/model.TagUsageSummary'
+    type: object
+  model.TagOwnerType:
+    enum:
+    - ""
+    - user
+    - group
+    - team
+    type: string
+    x-enum-varnames:
+    - TagOwnerNone
+    - TagOwnerUser
+    - TagOwnerGroup
+    - TagOwnerTeam
+  model.TagSource:
+    enum:
+    - manual
+    - scan
+    - backfill
+    - assignment
+    type: string
+    x-enum-varnames:
+    - TagSourceManual
+    - TagSourceScan
+    - TagSourceBackfill
+    - TagSourceAssignment
+  model.TagStatus:
+    enum:
+    - active
+    - discovered
+    - deprecated
+    type: string
+    x-enum-varnames:
+    - TagStatusActive
+    - TagStatusDiscovered
+    - TagStatusDeprecated
+  model.TagTargetType:
+    enum:
+    - issue
+    - project
+    - rule
+    - custom_rule
+    type: string
+    x-enum-varnames:
+    - TagTargetIssue
+    - TagTargetProject
+    - TagTargetRule
+    - TagTargetCustomRule
+  model.TagUsageSummary:
+    properties:
+      custom_rule_count:
+        type: integer
+      issue_count:
+        type: integer
+      project_count:
+        type: integer
+      rule_count:
+        type: integer
+      saved_filter_count:
+        type: integer
+    type: object
+  postgres.BranchSummary:
+    properties:
+      is_default:
+        type: boolean
+      latest_scan:
+        $ref: '#/definitions/postgres.Scan'
+      name:
+        type: string
+    type: object
+  postgres.ChangelogEntry:
+    properties:
+      created_at:
+        type: string
+      field:
+        type: string
+      id:
+        type: integer
+      issue_id:
+        type: integer
+      new_value:
+        type: string
+      old_value:
+        type: string
+      user_id:
+        type: integer
+    type: object
+  postgres.CodeSnapshotFile:
+    properties:
+      content:
+        type: string
+      is_omitted:
+        type: boolean
+      is_truncated:
+        type: boolean
+      language:
+        type: string
+      line_count:
+        type: integer
+      omitted_reason:
+        type: string
+      path:
+        type: string
+      size_bytes:
+        type: integer
+      updated_at:
+        type: string
+    type: object
+  postgres.CodeSnapshotScope:
+    properties:
+      branch:
+        type: string
+      max_file_bytes:
+        type: integer
+      max_total_bytes:
+        type: integer
+      omitted_files:
+        type: integer
+      project_id:
+        type: integer
+      pull_request_base:
+        type: string
+      pull_request_key:
+        type: string
+      scan_id:
+        type: integer
+      scope_key:
+        type: string
+      scope_type:
+        type: string
+      stored_bytes:
+        type: integer
+      stored_files:
+        type: integer
+      total_files:
+        type: integer
+      truncated_files:
+        type: integer
+      updated_at:
+        type: string
+    type: object
+  postgres.GateCondition:
+    properties:
+      gate_id:
+        type: integer
+      id:
+        type: integer
+      metric:
+        type: string
+      on_new_code:
+        type: boolean
+      operator:
+        description: GT, LT, GTE, LTE, EQ, NE
+        type: string
+      threshold:
+        type: number
+      warning_threshold:
+        type: number
+    type: object
+  postgres.IssueFacets:
+    properties:
+      by_directory:
+        additionalProperties:
+          type: integer
+        type: object
+      by_engine_id:
+        additionalProperties:
+          type: integer
+        type: object
+      by_file:
+        additionalProperties:
+          type: integer
+        type: object
+      by_language:
+        additionalProperties:
+          type: integer
+        type: object
+      by_lifecycle:
+        additionalProperties:
+          type: integer
+        type: object
+      by_quality:
+        additionalProperties:
+          type: integer
+        type: object
+      by_rule:
+        additionalProperties:
+          type: integer
+        type: object
+      by_security_category:
+        additionalProperties:
+          type: integer
+        type: object
+      by_severity:
+        additionalProperties:
+          type: integer
+        type: object
+      by_status:
+        additionalProperties:
+          type: integer
+        type: object
+      by_tags:
+        additionalProperties:
+          type: integer
+        type: object
+      by_type:
+        additionalProperties:
+          type: integer
+        type: object
+    type: object
+  postgres.IssueRow:
+    properties:
+      column:
+        type: integer
+      component_path:
+        type: string
+      created_at:
+        type: string
+      effort_minutes:
+        type: integer
+      end_column:
+        type: integer
+      end_line:
+        type: integer
+      engine_id:
+        type: string
+      id:
+        type: integer
+      language:
+        type: string
+      line:
+        type: integer
+      line_hash:
+        type: string
+      message:
+        type: string
+      project_id:
+        type: integer
+      quality_domain:
+        type: string
+      resolution:
+        type: string
+      rule_key:
+        type: string
+      scan_id:
+        type: integer
+      secondary_locations:
+        items:
+          type: integer
+        type: array
+      severity:
+        type: string
+      status:
+        type: string
+      tags:
+        items:
+          type: string
+        type: array
+      tracking_state:
+        type: string
+      type:
+        type: string
+    type: object
+  postgres.NewCodePeriod:
+    properties:
+      branch:
+        type: string
+      created_at:
+        type: string
+      id:
+        type: integer
+      project_id:
+        type: integer
+      scope:
+        description: global | project | branch
+        type: string
+      strategy:
+        description: auto | previous_version | number_of_days | specific_analysis
+          | reference_branch
+        type: string
+      updated_at:
+        type: string
+      value:
+        type: string
+    type: object
+  postgres.Project:
+    properties:
+      created_at:
+        type: string
+      description:
+        type: string
+      id:
+        type: integer
+      key:
+        type: string
+      main_branch:
+        type: string
+      name:
+        type: string
+      tags:
+        items:
+          type: string
+        type: array
+      updated_at:
+        type: string
+    type: object
+  postgres.PullRequestSummary:
+    properties:
+      base_branch:
+        type: string
+      branch:
+        type: string
+      key:
+        type: string
+      latest_scan:
+        $ref: '#/definitions/postgres.Scan'
+    type: object
+  postgres.QualityGate:
+    properties:
+      created_at:
+        type: string
+      id:
+        type: integer
+      is_builtin:
+        type: boolean
+      is_default:
+        type: boolean
+      name:
+        type: string
+      small_changeset_lines:
+        type: integer
+      updated_at:
+        type: string
+    type: object
+  postgres.Scan:
+    properties:
+      analysis_date:
+        type: string
+      branch:
+        type: string
+      closed_issues:
+        type: integer
+      commit_sha:
+        type: string
+      created_at:
+        type: string
+      elapsed_ms:
+        type: integer
+      gate_status:
+        type: string
+      id:
+        type: integer
+      new_issues:
+        type: integer
+      project_id:
+        type: integer
+      pull_request_base:
+        type: string
+      pull_request_key:
+        type: string
+      scope_type:
+        type: string
+      status:
+        type: string
+      total_bugs:
+        type: integer
+      total_code_smells:
+        type: integer
+      total_comments:
+        type: integer
+      total_files:
+        type: integer
+      total_issues:
+        type: integer
+      total_lines:
+        type: integer
+      total_ncloc:
+        type: integer
+      total_vulnerabilities:
+        type: integer
+      version:
+        type: string
+    type: object
+  postgres.ScanJob:
+    properties:
+      attempts:
+        type: integer
+      completed_at:
+        type: string
+      created_at:
+        type: string
+      id:
+        type: integer
+      last_error:
+        type: string
+      project_key:
+        type: string
+      scan_id:
+        type: integer
+      started_at:
+        type: string
+      status:
+        type: string
+      updated_at:
+        type: string
+      worker_id:
+        type: string
+    type: object
+  postgres.TrendPoint:
+    properties:
+      date:
+        type: string
+      value:
+        type: number
+    type: object
+  postgres.Webhook:
+    properties:
+      created_at:
+        type: string
+      enabled:
+        type: boolean
+      events:
+        items:
+          type: string
+        type: array
+      id:
+        type: integer
+      name:
+        type: string
+      project_id:
+        type: integer
+      updated_at:
+        type: string
+      url:
+        type: string
+    type: object
+  postgres.WebhookDelivery:
+    properties:
+      attempt:
+        type: integer
+      delivered_at:
+        type: string
+      event:
+        type: string
+      id:
+        type: integer
+      payload:
+        items:
+          type: integer
+        type: array
+      response_body:
+        type: string
+      response_code:
+        type: integer
+      success:
+        type: boolean
+      webhook_id:
+        type: integer
+    type: object
+  tagging.CreateTagRequest:
+    properties:
+      color:
+        type: string
+      description:
+        type: string
+      display_name:
+        type: string
+      key:
+        type: string
+      owner_id:
+        type: integer
+      owner_name:
+        type: string
+      owner_type:
+        $ref: '#/definitions/model.TagOwnerType'
+      scope:
+        type: string
+    type: object
+  tagging.SavedFilterRequest:
+    properties:
+      criteria:
+        additionalProperties: {}
+        type: object
+      description:
+        type: string
+      filter_type:
+        type: string
+      name:
+        type: string
+      visibility:
+        $ref: '#/definitions/model.SavedFilterVisibility'
+    type: object
+  tagging.UpdateTagRequest:
+    properties:
+      aliases:
+        items:
+          type: string
+        type: array
+      color:
+        type: string
+      description:
+        type: string
+      display_name:
+        type: string
+      owner_id:
+        type: integer
+      owner_name:
+        type: string
+      owner_type:
+        $ref: '#/definitions/model.TagOwnerType'
+      replacement_key:
+        type: string
+      scope:
+        type: string
+      status:
+        $ref: '#/definitions/model.TagStatus'
+    type: object
+info:
+  contact: {}
+  description: Ollanta REST API documentation.
+  title: Ollanta API
+  version: "1.0"
+paths:
+  /api/v1/admin/background-tasks:
+    get:
+      description: Returns paginated background tasks
+      parameters:
+      - description: Task type
+        in: query
+        name: type
+        type: string
+      - description: Status
+        in: query
+        name: status
+        type: string
+      - description: Project key
+        in: query
+        name: project_key
+        type: string
+      - description: Scan ID
+        in: query
+        name: scan_id
+        type: integer
+      - description: Worker ID
+        in: query
+        name: worker_id
+        type: string
+      - description: Failed only
+        in: query
+        name: failed_only
+        type: boolean
+      - description: Stale only
+        in: query
+        name: stale_only
+        type: boolean
+      - default: 25
+        description: Limit
+        in: query
+        name: limit
+        type: integer
+      - description: Offset
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.backgroundTaskListResponse'
+      summary: List background tasks
+      tags:
+      - admin
+  /api/v1/admin/background-tasks/{taskID}:
+    get:
+      description: Returns a single background task by ID
+      parameters:
+      - description: Task ID
+        in: path
+        name: taskID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.backgroundTaskDTO'
+      summary: Background task detail
+      tags:
+      - admin
+  /api/v1/admin/background-tasks/{taskID}/cancel:
+    post:
+      description: Cancel a queued background task
+      parameters:
+      - description: Task ID
+        in: path
+        name: taskID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/api.backgroundTaskDTO'
+      summary: Cancel background task
+      tags:
+      - admin
+  /api/v1/admin/background-tasks/{taskID}/requeue:
+    post:
+      description: Requeue a stale background task
+      parameters:
+      - description: Task ID
+        in: path
+        name: taskID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/api.backgroundTaskDTO'
+      summary: Requeue background task
+      tags:
+      - admin
+  /api/v1/admin/background-tasks/{taskID}/retry:
+    post:
+      description: Retry a failed background task
+      parameters:
+      - description: Task ID
+        in: path
+        name: taskID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/api.backgroundTaskDTO'
+      summary: Retry background task
+      tags:
+      - admin
+  /api/v1/admin/background-tasks/summary:
+    get:
+      description: Returns summary statistics for background tasks
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.backgroundTaskSummary'
+      summary: Background tasks summary
+      tags:
+      - admin
+  /api/v1/admin/index-jobs:
+    get:
+      description: Returns paginated index jobs
+      parameters:
+      - description: Status filter
+        in: query
+        name: status
+        type: string
+      - description: Limit
+        in: query
+        name: limit
+        type: integer
+      - description: Offset
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.outboxJobListResponse'
+      summary: List index jobs
+      tags:
+      - admin
+  /api/v1/admin/index-jobs/{id}/retry:
+    post:
+      description: Retry a failed index job
+      parameters:
+      - description: Job ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/api.idStatusResponse'
+      summary: Retry index job
+      tags:
+      - admin
+  /api/v1/admin/webhook-jobs:
+    get:
+      description: Returns paginated webhook jobs
+      parameters:
+      - description: Status filter
+        in: query
+        name: status
+        type: string
+      - description: Limit
+        in: query
+        name: limit
+        type: integer
+      - description: Offset
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.outboxJobListResponse'
+      summary: List webhook jobs
+      tags:
+      - admin
+  /api/v1/admin/webhook-jobs/{id}/retry:
+    post:
+      description: Retry a failed webhook job
+      parameters:
+      - description: Job ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/api.idStatusResponse'
+      summary: Retry webhook job
+      tags:
+      - admin
+  /api/v1/auth/github:
+    get:
+      description: Redirects to GitHub OAuth authorization page
+      responses:
+        "302":
+          description: Found
+      summary: GitHub OAuth redirect
+      tags:
+      - auth
+  /api/v1/auth/github/callback:
+    get:
+      description: Handles GitHub OAuth callback and issues tokens
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.loginResponse'
+      summary: GitHub OAuth callback
+      tags:
+      - auth
+  /api/v1/auth/gitlab:
+    get:
+      description: Redirects to GitLab OAuth authorization page
+      responses:
+        "302":
+          description: Found
+      summary: GitLab OAuth redirect
+      tags:
+      - auth
+  /api/v1/auth/gitlab/callback:
+    get:
+      description: Handles GitLab OAuth callback and issues tokens
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.loginResponse'
+      summary: GitLab OAuth callback
+      tags:
+      - auth
+  /api/v1/auth/google:
+    get:
+      description: Redirects to Google OAuth authorization page
+      responses:
+        "302":
+          description: Found
+      summary: Google OAuth redirect
+      tags:
+      - auth
+  /api/v1/auth/google/callback:
+    get:
+      description: Handles Google OAuth callback and issues tokens
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.loginResponse'
+      summary: Google OAuth callback
+      tags:
+      - auth
+  /api/v1/auth/login:
+    post:
+      consumes:
+      - application/json
+      description: Authenticate with username and password
+      parameters:
+      - description: Credentials
+        in: body
+        name: body
+        required: true
+        schema:
+          properties:
+            login:
+              type: string
+            password:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.loginResponse'
+      summary: Login
+      tags:
+      - auth
+  /api/v1/auth/logout:
+    post:
+      consumes:
+      - application/json
+      description: Invalidate the current session
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+      summary: Logout
+      tags:
+      - auth
+  /api/v1/auth/refresh:
+    post:
+      consumes:
+      - application/json
+      description: Exchange a refresh token for a new access token
+      parameters:
+      - description: Refresh token
+        in: body
+        name: body
+        required: true
+        schema:
+          properties:
+            refresh_token:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.refreshResponse'
+      summary: Refresh access token
+      tags:
+      - auth
+  /api/v1/custom-rules:
+    get:
+      description: Returns all custom rules
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.customRuleListResponse'
+      summary: List custom rules
+      tags:
+      - custom-rules
+    post:
+      consumes:
+      - application/json
+      description: Import a custom rule pack document
+      parameters:
+      - description: Rule pack document
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.CustomRulePackDocument'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/api.customRuleListResponse'
+      summary: Create custom rules
+      tags:
+      - custom-rules
+  /api/v1/custom-rules/{id}:
+    get:
+      description: Returns a custom rule by ID
+      parameters:
+      - description: Rule ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.CustomRuleDefinition'
+      summary: Get custom rule
+      tags:
+      - custom-rules
+    put:
+      consumes:
+      - application/json
+      description: Update a custom rule draft
+      parameters:
+      - description: Rule ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Rule data
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.CustomRuleDefinition'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.CustomRuleDefinition'
+      summary: Update custom rule
+      tags:
+      - custom-rules
+  /api/v1/custom-rules/{id}/audit:
+    get:
+      description: Returns audit log for a custom rule
+      parameters:
+      - description: Rule ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Limit
+        in: query
+        name: limit
+        type: integer
+      - description: Offset
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.paginatedItemsResponse'
+      summary: Custom rule audit
+      tags:
+      - custom-rules
+  /api/v1/custom-rules/{id}/deprecate:
+    post:
+      description: Deprecate a custom rule
+      parameters:
+      - description: Rule ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.CustomRuleDefinition'
+      summary: Deprecate custom rule
+      tags:
+      - custom-rules
+  /api/v1/custom-rules/{id}/disable:
+    post:
+      description: Disable a published custom rule
+      parameters:
+      - description: Rule ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.CustomRuleDefinition'
+      summary: Disable custom rule
+      tags:
+      - custom-rules
+  /api/v1/custom-rules/{id}/export:
+    get:
+      description: Export a custom rule as a document
+      parameters:
+      - description: Rule ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.CustomRulePackDocument'
+      summary: Export custom rule
+      tags:
+      - custom-rules
+  /api/v1/custom-rules/{id}/preview:
+    post:
+      consumes:
+      - application/json
+      description: Preview a custom rule against sample code
+      parameters:
+      - description: Rule ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Preview data
+        in: body
+        name: body
+        required: true
+        schema:
+          properties:
+            file_path:
+              type: string
+            source:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.customRulePreviewResponse'
+      summary: Preview custom rule
+      tags:
+      - custom-rules
+  /api/v1/custom-rules/{id}/publish:
+    post:
+      description: Publish a custom rule draft
+      parameters:
+      - description: Rule ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.CustomRuleDefinition'
+      summary: Publish custom rule
+      tags:
+      - custom-rules
+  /api/v1/custom-rules/{id}/validate:
+    post:
+      description: Validate a custom rule definition
+      parameters:
+      - description: Rule ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.CustomRuleDefinition'
+      summary: Validate custom rule
+      tags:
+      - custom-rules
+  /api/v1/custom-rules/ai/models:
+    get:
+      description: Returns available AI providers and models for rule drafting
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.customRuleAIProvidersResponse'
+      summary: List AI models
+      tags:
+      - custom-rules-ai
+  /api/v1/custom-rules/ai/suggest:
+    post:
+      consumes:
+      - application/json
+      description: Ask an AI provider to suggest or improve a custom rule draft
+      parameters:
+      - description: Suggestion request
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.customRuleAISuggestRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.customRuleAISuggestResponse'
+      summary: Suggest rule draft
+      tags:
+      - custom-rules-ai
+  /api/v1/custom-rules/catalog:
+    get:
+      description: Returns the published custom rules catalog
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.CustomRuleCatalogSnapshot'
+      summary: Custom rules catalog
+      tags:
+      - custom-rules
+  /api/v1/custom-rules/import:
+    post:
+      consumes:
+      - application/json
+      description: Import custom rules from a document
+      parameters:
+      - description: Rule pack document
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.CustomRulePackDocument'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/api.customRuleListResponse'
+      summary: Import custom rules
+      tags:
+      - custom-rules
+  /api/v1/groups:
+    get:
+      description: Returns all groups
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.groupListResponse'
+      summary: List groups
+      tags:
+      - groups
+    post:
+      consumes:
+      - application/json
+      description: Create a new group
+      parameters:
+      - description: Group data
+        in: body
+        name: body
+        required: true
+        schema:
+          properties:
+            description:
+              type: string
+            name:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/api.groupView'
+      summary: Create group
+      tags:
+      - groups
+  /api/v1/groups/{id}:
+    delete:
+      description: Delete a group
+      parameters:
+      - description: Group ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      responses:
+        "204":
+          description: No Content
+      summary: Delete group
+      tags:
+      - groups
+    put:
+      consumes:
+      - application/json
+      description: Update a group
+      parameters:
+      - description: Group ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Group data
+        in: body
+        name: body
+        required: true
+        schema:
+          properties:
+            description:
+              type: string
+            name:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.groupView'
+      summary: Update group
+      tags:
+      - groups
+  /api/v1/groups/{id}/members:
+    get:
+      description: List members of a group
+      parameters:
+      - description: Group ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.groupMembersResponse'
+      summary: List group members
+      tags:
+      - groups
+    post:
+      consumes:
+      - application/json
+      description: Add a user to a group
+      parameters:
+      - description: Group ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Member data
+        in: body
+        name: body
+        required: true
+        schema:
+          properties:
+            user_id:
+              format: int64
+              type: integer
+          type: object
+      responses:
+        "204":
+          description: No Content
+      summary: Add group member
+      tags:
+      - groups
+  /api/v1/groups/{id}/members/{uid}:
+    delete:
+      description: Remove a user from a group
+      parameters:
+      - description: Group ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: User ID
+        in: path
+        name: uid
+        required: true
+        type: integer
+      responses:
+        "204":
+          description: No Content
+      summary: Remove group member
+      tags:
+      - groups
+  /api/v1/issues:
+    get:
+      description: Returns paginated issues with optional filters
+      parameters:
+      - description: Project ID
+        in: query
+        name: project_id
+        type: integer
+      - description: Scan ID
+        in: query
+        name: scan_id
+        type: integer
+      - description: Rule key
+        in: query
+        name: rule_key
+        type: string
+      - description: Severity
+        in: query
+        name: severity
+        type: string
+      - description: Issue type
+        in: query
+        name: type
+        type: string
+      - description: Quality domain
+        in: query
+        name: quality
+        type: string
+      - description: Status
+        in: query
+        name: status
+        type: string
+      - description: Tracking state
+        in: query
+        name: tracking_state
+        type: string
+      - description: Language
+        in: query
+        name: language
+        type: string
+      - description: Tag
+        in: query
+        name: tag
+        type: string
+      - description: Security category
+        in: query
+        name: security_category
+        type: string
+      - description: Directory
+        in: query
+        name: directory
+        type: string
+      - description: File path
+        in: query
+        name: file
+        type: string
+      - description: Limit
+        in: query
+        name: limit
+        type: integer
+      - description: Offset
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.issueListResponse'
+      summary: List issues
+      tags:
+      - issues
+  /api/v1/issues/{id}/changelog:
+    get:
+      description: Returns change history for an issue
+      parameters:
+      - description: Issue ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.issueChangelogResponse'
+      summary: Issue changelog
+      tags:
+      - issues
+  /api/v1/issues/{id}/transition:
+    post:
+      consumes:
+      - application/json
+      description: Change issue status/resolution
+      parameters:
+      - description: Issue ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Transition data
+        in: body
+        name: body
+        required: true
+        schema:
+          properties:
+            comment:
+              type: string
+            resolution:
+              type: string
+          type: object
+      responses:
+        "204":
+          description: No Content
+      summary: Transition issue
+      tags:
+      - issues
+  /api/v1/issues/facets:
+    get:
+      description: Returns aggregated issue counts by dimension
+      parameters:
+      - description: Project ID
+        in: query
+        name: project_id
+        type: integer
+      - description: Scan ID
+        in: query
+        name: scan_id
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/postgres.IssueFacets'
+      summary: Issue facets
+      tags:
+      - issues
+  /api/v1/new-code-periods/global:
+    get:
+      description: Returns the global new code period configuration
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/postgres.NewCodePeriod'
+      summary: Get global new code period
+      tags:
+      - new-code-periods
+    put:
+      consumes:
+      - application/json
+      description: Update the global new code period configuration
+      parameters:
+      - description: New code period data
+        in: body
+        name: body
+        required: true
+        schema:
+          properties:
+            strategy:
+              type: string
+            value:
+              type: string
+          type: object
+      responses:
+        "204":
+          description: No Content
+      summary: Set global new code period
+      tags:
+      - new-code-periods
+  /api/v1/permissions/global:
+    get:
+      description: List all global permission grants
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.permListResponse'
+      summary: List global permissions
+      tags:
+      - permissions
+  /api/v1/permissions/global/grant:
+    post:
+      consumes:
+      - application/json
+      description: Grant a global permission to a user or group
+      parameters:
+      - description: Permission grant
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.permRequest'
+      responses:
+        "204":
+          description: No Content
+      summary: Grant global permission
+      tags:
+      - permissions
+  /api/v1/permissions/global/revoke:
+    post:
+      consumes:
+      - application/json
+      description: Revoke a global permission from a user or group
+      parameters:
+      - description: Permission revoke
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.permRequest'
+      responses:
+        "204":
+          description: No Content
+      summary: Revoke global permission
+      tags:
+      - permissions
+  /api/v1/profiles:
+    get:
+      description: Returns quality profiles, optionally filtered by language
+      parameters:
+      - description: Language
+        in: query
+        name: language
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/model.QualityProfile'
+            type: array
+      summary: List quality profiles
+      tags:
+      - quality-profiles
+    post:
+      consumes:
+      - application/json
+      description: Create a new quality profile
+      parameters:
+      - description: Profile data
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.QualityProfile'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/model.QualityProfile'
+      summary: Create quality profile
+      tags:
+      - quality-profiles
+  /api/v1/profiles/{id}:
+    delete:
+      description: Delete a quality profile
+      parameters:
+      - description: Profile ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      responses:
+        "204":
+          description: No Content
+      summary: Delete quality profile
+      tags:
+      - quality-profiles
+    get:
+      description: Returns a quality profile by ID
+      parameters:
+      - description: Profile ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.QualityProfile'
+      summary: Get quality profile
+      tags:
+      - quality-profiles
+    put:
+      consumes:
+      - application/json
+      description: Update a quality profile
+      parameters:
+      - description: Profile ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Profile data
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.QualityProfile'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.QualityProfile'
+      summary: Update quality profile
+      tags:
+      - quality-profiles
+  /api/v1/profiles/{id}/changelog:
+    get:
+      description: Returns changelog entries for a quality profile
+      parameters:
+      - description: Profile ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Limit
+        in: query
+        name: limit
+        type: integer
+      - description: Offset
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.profileChangelogResponse'
+      summary: Profile changelog
+      tags:
+      - quality-profiles
+  /api/v1/profiles/{id}/copy:
+    post:
+      consumes:
+      - application/json
+      description: Copy a quality profile
+      parameters:
+      - description: Profile ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Copy data
+        in: body
+        name: body
+        required: true
+        schema:
+          properties:
+            name:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/model.QualityProfile'
+      summary: Copy profile
+      tags:
+      - quality-profiles
+  /api/v1/profiles/{id}/effective-rules:
+    get:
+      description: Returns effective rules for a quality profile
+      parameters:
+      - description: Profile ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/model.EffectiveRule'
+            type: array
+      summary: Effective rules
+      tags:
+      - quality-profiles
+  /api/v1/profiles/{id}/export:
+    get:
+      description: Export a quality profile as JSON
+      parameters:
+      - description: Profile ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.profileCodeDocument'
+      summary: Export profile
+      tags:
+      - quality-profiles
+  /api/v1/profiles/{id}/import:
+    post:
+      consumes:
+      - application/json
+      description: Import rules into a quality profile from YAML/JSON
+      parameters:
+      - description: Profile ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Profile document
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.profileCodeDocument'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.profileImportResponse'
+      summary: Import rules
+      tags:
+      - quality-profiles
+  /api/v1/profiles/{id}/rules:
+    post:
+      consumes:
+      - application/json
+      description: Activate a rule in a quality profile
+      parameters:
+      - description: Profile ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Activation data
+        in: body
+        name: body
+        required: true
+        schema:
+          properties:
+            params:
+              additionalProperties:
+                type: string
+              type: object
+            rule_key:
+              type: string
+            severity:
+              type: string
+          type: object
+      responses:
+        "204":
+          description: No Content
+      summary: Activate rule
+      tags:
+      - quality-profiles
+  /api/v1/profiles/{id}/rules/{rule}:
+    delete:
+      description: Deactivate a rule in a quality profile
+      parameters:
+      - description: Profile ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Rule key
+        in: path
+        name: rule
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+      summary: Deactivate rule
+      tags:
+      - quality-profiles
+  /api/v1/profiles/{id}/set-default:
+    post:
+      description: Set a quality profile as the default for its language
+      parameters:
+      - description: Profile ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      responses:
+        "204":
+          description: No Content
+      summary: Set default profile
+      tags:
+      - quality-profiles
+  /api/v1/projects:
+    get:
+      description: Returns paginated list of projects
+      parameters:
+      - default: 20
+        description: Limit
+        in: query
+        name: limit
+        type: integer
+      - description: Offset
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.projectListResponse'
+      summary: List projects
+      tags:
+      - projects
+    post:
+      consumes:
+      - application/json
+      description: Create or update a project
+      parameters:
+      - description: Project data
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/postgres.Project'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/postgres.Project'
+      summary: Create project
+      tags:
+      - projects
+  /api/v1/projects/{key}:
+    delete:
+      description: Delete a project
+      parameters:
+      - description: Project key
+        in: path
+        name: key
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+      summary: Delete project
+      tags:
+      - projects
+    get:
+      description: Get a project by key
+      parameters:
+      - description: Project key
+        in: path
+        name: key
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/postgres.Project'
+      summary: Get project
+      tags:
+      - projects
+    put:
+      consumes:
+      - application/json
+      description: Update project metadata
+      parameters:
+      - description: Project key
+        in: path
+        name: key
+        required: true
+        type: string
+      - description: Project data
+        in: body
+        name: body
+        required: true
+        schema:
+          properties:
+            description:
+              type: string
+            main_branch:
+              type: string
+            name:
+              type: string
+            tags:
+              items:
+                type: string
+              type: array
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/postgres.Project'
+      summary: Update project
+      tags:
+      - projects
+  /api/v1/projects/{key}/activity:
+    get:
+      description: Returns a chronological timeline of scans with events
+      parameters:
+      - description: Project key
+        in: path
+        name: key
+        required: true
+        type: string
+      - description: Branch
+        in: query
+        name: branch
+        type: string
+      - description: Pull request
+        in: query
+        name: pull_request
+        type: string
+      - default: 20
+        description: Limit
+        in: query
+        name: limit
+        type: integer
+      - description: Offset
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.activityResponse'
+      summary: Project activity
+      tags:
+      - project-overview
+  /api/v1/projects/{key}/badge:
+    get:
+      description: Returns an SVG badge for project quality metrics
+      parameters:
+      - description: Project key
+        in: path
+        name: key
+        required: true
+        type: string
+      - description: Metric (gate_status, bugs, vulnerabilities, code_smells, ncloc,
+          coverage)
+        in: query
+        name: metric
+        type: string
+      produces:
+      - image/svg+xml
+      responses:
+        "200":
+          description: SVG badge
+          schema:
+            type: string
+      summary: Quality badge
+      tags:
+      - badges
+  /api/v1/projects/{key}/branches:
+    get:
+      description: Returns branches for a project
+      parameters:
+      - description: Project key
+        in: path
+        name: key
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.branchesResponse'
+      summary: List branches
+      tags:
+      - project-scope
+  /api/v1/projects/{key}/code/file:
+    get:
+      description: Returns a single file with issues for a project scope
+      parameters:
+      - description: Project key
+        in: path
+        name: key
+        required: true
+        type: string
+      - description: File path
+        in: query
+        name: path
+        required: true
+        type: string
+      - description: Branch
+        in: query
+        name: branch
+        type: string
+      - description: Pull request
+        in: query
+        name: pull_request
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.codeFileResponse'
+      summary: Code file
+      tags:
+      - project-scope
+  /api/v1/projects/{key}/code/tree:
+    get:
+      description: Returns the file tree for a project scope
+      parameters:
+      - description: Project key
+        in: path
+        name: key
+        required: true
+        type: string
+      - description: Branch
+        in: query
+        name: branch
+        type: string
+      - description: Pull request
+        in: query
+        name: pull_request
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.codeTreeResponse'
+      summary: Code tree
+      tags:
+      - project-scope
+  /api/v1/projects/{key}/information:
+    get:
+      description: Returns project scope information and latest scan
+      parameters:
+      - description: Project key
+        in: path
+        name: key
+        required: true
+        type: string
+      - description: Branch
+        in: query
+        name: branch
+        type: string
+      - description: Pull request
+        in: query
+        name: pull_request
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.projectInformationResponse'
+      summary: Project information
+      tags:
+      - project-scope
+  /api/v1/projects/{key}/issues/backfill-tracking-state:
+    post:
+      description: Backfill issue tracking states for a project
+      parameters:
+      - description: Project key
+        in: path
+        name: key
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.issueTrackingBackfillResult'
+      summary: Backfill tracking state
+      tags:
+      - issues
+  /api/v1/projects/{key}/measures/trend:
+    get:
+      description: Returns historical measure values for a project
+      parameters:
+      - description: Project key
+        in: path
+        name: key
+        required: true
+        type: string
+      - description: Metric key
+        in: query
+        name: metric
+        required: true
+        type: string
+      - description: From date (RFC3339)
+        in: query
+        name: from
+        type: string
+      - description: To date (RFC3339)
+        in: query
+        name: to
+        type: string
+      - description: Component path
+        in: query
+        name: component
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.measureTrendResponse'
+      summary: Measure trend
+      tags:
+      - measures
+  /api/v1/projects/{key}/new-code-period:
+    delete:
+      description: Remove the project-level new code period override
+      parameters:
+      - description: Project key
+        in: path
+        name: key
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+      summary: Delete project new code period
+      tags:
+      - new-code-periods
+    get:
+      description: Returns the new code period for a project
+      parameters:
+      - description: Project key
+        in: path
+        name: key
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/postgres.NewCodePeriod'
+      summary: Get project new code period
+      tags:
+      - new-code-periods
+    put:
+      consumes:
+      - application/json
+      description: Update the new code period for a project
+      parameters:
+      - description: Project key
+        in: path
+        name: key
+        required: true
+        type: string
+      - description: New code period data
+        in: body
+        name: body
+        required: true
+        schema:
+          properties:
+            strategy:
+              type: string
+            value:
+              type: string
+          type: object
+      responses:
+        "204":
+          description: No Content
+      summary: Set project new code period
+      tags:
+      - new-code-periods
+  /api/v1/projects/{key}/overview:
+    get:
+      description: Returns the project dashboard in a single response
+      parameters:
+      - description: Project key
+        in: path
+        name: key
+        required: true
+        type: string
+      - description: Branch
+        in: query
+        name: branch
+        type: string
+      - description: Pull request
+        in: query
+        name: pull_request
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.overviewResponse'
+      summary: Project overview
+      tags:
+      - project-overview
+  /api/v1/projects/{key}/permissions:
+    get:
+      description: List permissions for a specific project
+      parameters:
+      - description: Project key
+        in: path
+        name: key
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.permListResponse'
+      summary: List project permissions
+      tags:
+      - permissions
+  /api/v1/projects/{key}/permissions/grant:
+    post:
+      consumes:
+      - application/json
+      description: Grant a project-level permission
+      parameters:
+      - description: Project key
+        in: path
+        name: key
+        required: true
+        type: string
+      - description: Permission grant
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.permRequest'
+      responses:
+        "204":
+          description: No Content
+      summary: Grant project permission
+      tags:
+      - permissions
+  /api/v1/projects/{key}/permissions/revoke:
+    post:
+      consumes:
+      - application/json
+      description: Revoke a project-level permission
+      parameters:
+      - description: Project key
+        in: path
+        name: key
+        required: true
+        type: string
+      - description: Permission revoke
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.permRequest'
+      responses:
+        "204":
+          description: No Content
+      summary: Revoke project permission
+      tags:
+      - permissions
+  /api/v1/projects/{key}/profiles:
+    get:
+      description: Returns profiles assigned to a project
+      parameters:
+      - description: Project key
+        in: path
+        name: key
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/model.ProjectQualityProfile'
+            type: array
+      summary: Project profiles
+      tags:
+      - quality-profiles
+    post:
+      consumes:
+      - application/json
+      description: Assign a quality profile to a project
+      parameters:
+      - description: Project key
+        in: path
+        name: key
+        required: true
+        type: string
+      - description: Assignment data
+        in: body
+        name: body
+        required: true
+        schema:
+          properties:
+            language:
+              type: string
+            profile_id:
+              format: int64
+              type: integer
+          type: object
+      responses:
+        "204":
+          description: No Content
+      summary: Assign profile to project
+      tags:
+      - quality-profiles
+  /api/v1/projects/{key}/profiles/effective:
+    get:
+      description: Returns effective profiles for a project
+      parameters:
+      - description: Project key
+        in: path
+        name: key
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/model.EffectiveQualityProfile'
+            type: array
+      summary: Project effective profiles
+      tags:
+      - quality-profiles
+  /api/v1/projects/{key}/pull-requests:
+    get:
+      description: Returns pull requests for a project
+      parameters:
+      - description: Project key
+        in: path
+        name: key
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.pullRequestsResponse'
+      summary: List pull requests
+      tags:
+      - project-scope
+  /api/v1/projects/{key}/quality-gate:
+    post:
+      consumes:
+      - application/json
+      description: Assign a quality gate to a project
+      parameters:
+      - description: Project key
+        in: path
+        name: key
+        required: true
+        type: string
+      - description: Assignment data
+        in: body
+        name: body
+        required: true
+        schema:
+          properties:
+            gate_id:
+              format: int64
+              type: integer
+          type: object
+      responses:
+        "204":
+          description: No Content
+      summary: Assign quality gate to project
+      tags:
+      - quality-gates
+  /api/v1/projects/{key}/scans:
+    get:
+      description: Returns paginated scans for a project
+      parameters:
+      - description: Project key
+        in: path
+        name: key
+        required: true
+        type: string
+      - description: Branch
+        in: query
+        name: branch
+        type: string
+      - description: Pull request
+        in: query
+        name: pull_request
+        type: string
+      - default: 20
+        description: Limit
+        in: query
+        name: limit
+        type: integer
+      - description: Offset
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.scanListResponse'
+      summary: List project scans
+      tags:
+      - scans
+  /api/v1/projects/{key}/scans/latest:
+    get:
+      description: Returns the latest scan for a project scope
+      parameters:
+      - description: Project key
+        in: path
+        name: key
+        required: true
+        type: string
+      - description: Branch
+        in: query
+        name: branch
+        type: string
+      - description: Pull request
+        in: query
+        name: pull_request
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/postgres.Scan'
+      summary: Latest scan
+      tags:
+      - scans
+  /api/v1/quality-gates:
+    get:
+      description: Returns all quality gates
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/postgres.QualityGate'
+            type: array
+      summary: List quality gates
+      tags:
+      - quality-gates
+    post:
+      consumes:
+      - application/json
+      description: Create a new quality gate with default conditions
+      parameters:
+      - description: Gate data
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/postgres.QualityGate'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/postgres.QualityGate'
+      summary: Create quality gate
+      tags:
+      - quality-gates
+  /api/v1/quality-gates/{id}:
+    delete:
+      description: Delete a quality gate
+      parameters:
+      - description: Gate ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      responses:
+        "204":
+          description: No Content
+      summary: Delete quality gate
+      tags:
+      - quality-gates
+    get:
+      description: Returns a quality gate with its conditions
+      parameters:
+      - description: Gate ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.gateDetailResponse'
+      summary: Get quality gate
+      tags:
+      - quality-gates
+    put:
+      consumes:
+      - application/json
+      description: Update a quality gate
+      parameters:
+      - description: Gate ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Gate data
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/postgres.QualityGate'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/postgres.QualityGate'
+      summary: Update quality gate
+      tags:
+      - quality-gates
+  /api/v1/quality-gates/{id}/conditions:
+    post:
+      consumes:
+      - application/json
+      description: Add a condition to a quality gate
+      parameters:
+      - description: Gate ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Condition data
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/postgres.GateCondition'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/postgres.GateCondition'
+      summary: Add condition
+      tags:
+      - quality-gates
+  /api/v1/quality-gates/{id}/conditions/{cid}:
+    delete:
+      description: Remove a condition from a quality gate
+      parameters:
+      - description: Gate ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Condition ID
+        in: path
+        name: cid
+        required: true
+        type: integer
+      responses:
+        "204":
+          description: No Content
+      summary: Remove condition
+      tags:
+      - quality-gates
+    put:
+      consumes:
+      - application/json
+      description: Update a quality gate condition
+      parameters:
+      - description: Gate ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Condition ID
+        in: path
+        name: cid
+        required: true
+        type: integer
+      - description: Condition data
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/postgres.GateCondition'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/postgres.GateCondition'
+      summary: Update condition
+      tags:
+      - quality-gates
+  /api/v1/quality-gates/{id}/copy:
+    post:
+      consumes:
+      - application/json
+      description: Copy an existing quality gate
+      parameters:
+      - description: Gate ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Copy data
+        in: body
+        name: body
+        required: true
+        schema:
+          properties:
+            name:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/postgres.QualityGate'
+      summary: Copy quality gate
+      tags:
+      - quality-gates
+  /api/v1/quality-gates/{id}/set-default:
+    post:
+      description: Set a quality gate as the default
+      parameters:
+      - description: Gate ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      responses:
+        "204":
+          description: No Content
+      summary: Set default gate
+      tags:
+      - quality-gates
+  /api/v1/rule-engines:
+    get:
+      description: Returns available custom rule engines
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.enginesResponse'
+      summary: List rule engines
+      tags:
+      - custom-rules
+  /api/v1/rules:
+    get:
+      description: Returns metadata for all registered rules
+      parameters:
+      - description: Filter by language
+        in: query
+        name: language
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/api.ruleDetail'
+            type: array
+      summary: List rules
+      tags:
+      - rules
+  /api/v1/rules/{rule_key}:
+    get:
+      description: Returns metadata for a single rule by key
+      parameters:
+      - description: Rule key
+        in: path
+        name: rule_key
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.ruleDetail'
+      summary: Get rule
+      tags:
+      - rules
+  /api/v1/saved-filters:
+    get:
+      description: Returns saved filters for the current user
+      parameters:
+      - description: Visibility
+        in: query
+        name: visibility
+        type: string
+      - description: Filter type
+        in: query
+        name: filter_type
+        type: string
+      - description: Limit
+        in: query
+        name: limit
+        type: integer
+      - description: Offset
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.savedFilterListResponse'
+      summary: List saved filters
+      tags:
+      - saved-filters
+    post:
+      consumes:
+      - application/json
+      description: Create a new saved filter
+      parameters:
+      - description: Filter data
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/tagging.SavedFilterRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/model.SavedFilter'
+      summary: Create saved filter
+      tags:
+      - saved-filters
+  /api/v1/saved-filters/{id}:
+    delete:
+      description: Delete a saved filter
+      parameters:
+      - description: Filter ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      responses:
+        "204":
+          description: No Content
+      summary: Delete saved filter
+      tags:
+      - saved-filters
+    get:
+      description: Returns a saved filter by ID
+      parameters:
+      - description: Filter ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.SavedFilter'
+      summary: Get saved filter
+      tags:
+      - saved-filters
+    put:
+      consumes:
+      - application/json
+      description: Update a saved filter
+      parameters:
+      - description: Filter ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Filter data
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/tagging.SavedFilterRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.SavedFilter'
+      summary: Update saved filter
+      tags:
+      - saved-filters
+  /api/v1/saved-filters/{id}/apply:
+    post:
+      description: Apply a saved filter and return criteria
+      parameters:
+      - description: Filter ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.savedFilterCriteriaResponse'
+      summary: Apply saved filter
+      tags:
+      - saved-filters
+  /api/v1/scan-jobs/{id}:
+    get:
+      description: Returns a durable scan job by ID
+      parameters:
+      - description: Scan job ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/postgres.ScanJob'
+      summary: Get scan job
+      tags:
+      - scan-jobs
+  /api/v1/scans:
+    post:
+      consumes:
+      - application/json
+      description: Receive a scan report and enqueue processing
+      parameters:
+      - description: Scan report
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/ingest.IngestRequest'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/postgres.ScanJob'
+      summary: Ingest scan
+      tags:
+      - scans
+  /api/v1/scans/{id}:
+    get:
+      description: Get a scan by ID
+      parameters:
+      - description: Scan ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.scanDetailResponse'
+      summary: Get scan
+      tags:
+      - scans
+  /api/v1/scans/{id}/survived-mutants:
+    get:
+      description: Returns mutation testing survived mutants for a scan
+      parameters:
+      - description: Scan ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.survivedMutantsResponse'
+      summary: List survived mutants
+      tags:
+      - scans
+  /api/v1/search:
+    get:
+      description: Full-text search across issues or projects
+      parameters:
+      - description: Query string
+        in: query
+        name: q
+        type: string
+      - description: Index (issues|projects)
+        in: query
+        name: index
+        type: string
+      - description: Severity filter
+        in: query
+        name: severity
+        type: string
+      - description: Type filter
+        in: query
+        name: type
+        type: string
+      - description: Status filter
+        in: query
+        name: status
+        type: string
+      - description: Project ID filter
+        in: query
+        name: project_id
+        type: string
+      - description: Rule key filter
+        in: query
+        name: rule_key
+        type: string
+      - default: 20
+        description: Limit
+        in: query
+        name: limit
+        type: integer
+      - description: Offset
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.searchResponse'
+      summary: Search
+      tags:
+      - search
+  /api/v1/system/info:
+    get:
+      description: Returns system metadata for administrators
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.systemInfoResponse'
+      summary: System info
+      tags:
+      - system
+  /api/v1/tags:
+    get:
+      description: Returns tags with optional filters
+      parameters:
+      - description: Search query
+        in: query
+        name: search
+        type: string
+      - description: Status
+        in: query
+        name: status
+        type: string
+      - description: Owner
+        in: query
+        name: owner
+        type: string
+      - description: Scope
+        in: query
+        name: scope
+        type: string
+      - description: Limit
+        in: query
+        name: limit
+        type: integer
+      - description: Offset
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.tagListResponse'
+      summary: List tags
+      tags:
+      - tags
+    post:
+      consumes:
+      - application/json
+      description: Create a new tag
+      parameters:
+      - description: Tag data
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/tagging.CreateTagRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/model.TagCatalogEntry'
+      summary: Create tag
+      tags:
+      - tags
+  /api/v1/tags/{key}:
+    get:
+      description: Returns tag details by key
+      parameters:
+      - description: Tag key
+        in: path
+        name: key
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.TagCatalogEntry'
+      summary: Get tag
+      tags:
+      - tags
+    put:
+      consumes:
+      - application/json
+      description: Update a tag
+      parameters:
+      - description: Tag key
+        in: path
+        name: key
+        required: true
+        type: string
+      - description: Tag data
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/tagging.UpdateTagRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.TagCatalogEntry'
+      summary: Update tag
+      tags:
+      - tags
+  /api/v1/tags/{key}/audit:
+    get:
+      description: Returns audit log for a tag
+      parameters:
+      - description: Tag key
+        in: path
+        name: key
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.itemsOnlyResponse'
+      summary: Tag audit
+      tags:
+      - tags
+  /api/v1/tags/{key}/deprecate:
+    post:
+      consumes:
+      - application/json
+      description: Deprecate a tag
+      parameters:
+      - description: Tag key
+        in: path
+        name: key
+        required: true
+        type: string
+      - description: Deprecate data
+        in: body
+        name: body
+        required: true
+        schema:
+          properties:
+            replacement_key:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.TagCatalogEntry'
+      summary: Deprecate tag
+      tags:
+      - tags
+  /api/v1/tags/{key}/merge:
+    post:
+      consumes:
+      - application/json
+      description: Merge a tag into another
+      parameters:
+      - description: Tag key
+        in: path
+        name: key
+        required: true
+        type: string
+      - description: Merge data
+        in: body
+        name: body
+        required: true
+        schema:
+          properties:
+            target_key:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.TagCatalogEntry'
+      summary: Merge tag
+      tags:
+      - tags
+  /api/v1/tags/bulk/apply:
+    post:
+      consumes:
+      - application/json
+      description: Apply bulk tag edit
+      parameters:
+      - description: Bulk edit request
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.TagBulkEditRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.TagBulkEditResult'
+      summary: Bulk apply
+      tags:
+      - tags
+  /api/v1/tags/bulk/preview:
+    post:
+      consumes:
+      - application/json
+      description: Preview bulk tag edit results
+      parameters:
+      - description: Bulk edit request
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.TagBulkEditRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.TagBulkEditPreview'
+      summary: Bulk preview
+      tags:
+      - tags
+  /api/v1/ui/settings:
+    get:
+      description: Returns public UI configuration
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.uiSettingsResponse'
+      summary: UI settings
+      tags:
+      - system
+  /api/v1/users:
+    get:
+      description: Returns paginated list of users
+      parameters:
+      - description: Page number
+        in: query
+        name: page
+        type: integer
+      - description: Page size
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.userListResponse'
+      summary: List users
+      tags:
+      - users
+    post:
+      consumes:
+      - application/json
+      description: Create a new local user
+      parameters:
+      - description: User data
+        in: body
+        name: body
+        required: true
+        schema:
+          properties:
+            email:
+              type: string
+            login:
+              type: string
+            name:
+              type: string
+            password:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/api.userView'
+      summary: Create user
+      tags:
+      - users
+  /api/v1/users/{id}:
+    delete:
+      description: Deactivate a user account
+      parameters:
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      responses:
+        "204":
+          description: No Content
+      summary: Deactivate user
+      tags:
+      - users
+    get:
+      description: Returns a single user by ID
+      parameters:
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.userView'
+      summary: Get user
+      tags:
+      - users
+    put:
+      consumes:
+      - application/json
+      description: Update user name, email, or avatar
+      parameters:
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: User data
+        in: body
+        name: body
+        required: true
+        schema:
+          properties:
+            avatar_url:
+              type: string
+            email:
+              type: string
+            name:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.userView'
+      summary: Update user
+      tags:
+      - users
+  /api/v1/users/{id}/reactivate:
+    post:
+      description: Reactivate a deactivated user account
+      parameters:
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      responses:
+        "204":
+          description: No Content
+      summary: Reactivate user
+      tags:
+      - users
+  /api/v1/users/{id}/tokens:
+    get:
+      description: List API tokens for a specific user
+      parameters:
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.tokenListResponse'
+      summary: List user tokens
+      tags:
+      - users
+  /api/v1/users/{id}/tokens/{tid}:
+    delete:
+      description: Delete a specific token for a user
+      parameters:
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Token ID
+        in: path
+        name: tid
+        required: true
+        type: integer
+      responses:
+        "204":
+          description: No Content
+      summary: Delete user token
+      tags:
+      - users
+  /api/v1/users/me:
+    get:
+      description: Returns the currently authenticated user
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.userView'
+      summary: Current user
+      tags:
+      - users
+  /api/v1/users/me/password:
+    put:
+      consumes:
+      - application/json
+      description: Change the current user's password
+      parameters:
+      - description: Password data
+        in: body
+        name: body
+        required: true
+        schema:
+          properties:
+            new_password:
+              type: string
+            old_password:
+              type: string
+          type: object
+      responses:
+        "204":
+          description: No Content
+      summary: Change password
+      tags:
+      - users
+  /api/v1/users/me/tokens:
+    get:
+      description: Returns API tokens for the authenticated user
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.tokenListResponse'
+      summary: List my tokens
+      tags:
+      - tokens
+    post:
+      consumes:
+      - application/json
+      description: Create a new API token for the authenticated user
+      parameters:
+      - description: Token data
+        in: body
+        name: body
+        required: true
+        schema:
+          properties:
+            expires_in:
+              type: integer
+            name:
+              type: string
+            project_key:
+              type: string
+            type:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/api.tokenCreateResponse'
+      summary: Create token
+      tags:
+      - tokens
+  /api/v1/users/me/tokens/{id}:
+    delete:
+      description: Delete an API token
+      parameters:
+      - description: Token ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      responses:
+        "204":
+          description: No Content
+      summary: Delete token
+      tags:
+      - tokens
+  /api/v1/webhooks:
+    get:
+      description: Returns webhooks, optionally filtered by project
+      parameters:
+      - description: Project key
+        in: query
+        name: project_key
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/postgres.Webhook'
+            type: array
+      summary: List webhooks
+      tags:
+      - webhooks
+    post:
+      consumes:
+      - application/json
+      description: Create a new webhook
+      parameters:
+      - description: Webhook data
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/postgres.Webhook'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/postgres.Webhook'
+      summary: Create webhook
+      tags:
+      - webhooks
+  /api/v1/webhooks/{id}:
+    delete:
+      description: Delete a webhook
+      parameters:
+      - description: Webhook ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      responses:
+        "204":
+          description: No Content
+      summary: Delete webhook
+      tags:
+      - webhooks
+    put:
+      consumes:
+      - application/json
+      description: Update a webhook
+      parameters:
+      - description: Webhook ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Webhook data
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/postgres.Webhook'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/postgres.Webhook'
+      summary: Update webhook
+      tags:
+      - webhooks
+  /api/v1/webhooks/{id}/deliveries:
+    get:
+      description: Returns delivery history for a webhook
+      parameters:
+      - description: Webhook ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Limit
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/postgres.WebhookDelivery'
+            type: array
+      summary: List webhook deliveries
+      tags:
+      - webhooks
+  /api/v1/webhooks/{id}/test:
+    post:
+      description: Fire a test event to a webhook
+      parameters:
+      - description: Webhook ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.webhookTestResponse'
+      summary: Test webhook
+      tags:
+      - webhooks
+  /branding/ollanta-mark.png:
+    get:
+      description: Returns the Ollanta brand mark image
+      produces:
+      - image/png
+      responses:
+        "200":
+          description: PNG image
+          schema:
+            type: file
+      summary: Brand mark
+      tags:
+      - branding
+  /healthz:
+    get:
+      description: Returns 200 while the process is alive
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Liveness probe
+      tags:
+      - health
+  /readyz:
+    get:
+      description: Returns readiness status with component checks
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.readinessResponse'
+      summary: Readiness probe
+      tags:
+      - health
+swagger: "2.0"

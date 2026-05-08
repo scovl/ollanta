@@ -30,6 +30,12 @@ func NewGroupsHandler(groups *postgres.GroupRepository) *GroupsHandler {
 }
 
 // List handles GET /api/v1/groups.
+// @Summary List groups
+// @Description Returns all groups
+// @Tags groups
+// @Produce json
+// @Success 200 {object} groupListResponse
+// @Router /api/v1/groups [get]
 func (h *GroupsHandler) List(w http.ResponseWriter, r *http.Request) {
 	groups, err := h.groups.List(r.Context())
 	if err != nil {
@@ -44,6 +50,14 @@ func (h *GroupsHandler) List(w http.ResponseWriter, r *http.Request) {
 }
 
 // Create handles POST /api/v1/groups.
+// @Summary Create group
+// @Description Create a new group
+// @Tags groups
+// @Accept json
+// @Produce json
+// @Param body body object{name=string,description=string} true "Group data"
+// @Success 201 {object} groupView
+// @Router /api/v1/groups [post]
 func (h *GroupsHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name        string `json:"name"`
@@ -62,6 +76,15 @@ func (h *GroupsHandler) Create(w http.ResponseWriter, r *http.Request) {
 }
 
 // Update handles PUT /api/v1/groups/{id}.
+// @Summary Update group
+// @Description Update a group
+// @Tags groups
+// @Accept json
+// @Produce json
+// @Param id path int true "Group ID"
+// @Param body body object{name=string,description=string} true "Group data"
+// @Success 200 {object} groupView
+// @Router /api/v1/groups/{id} [put]
 func (h *GroupsHandler) Update(w http.ResponseWriter, r *http.Request) {
 	id, err := parseID(r, "id")
 	if err != nil {
@@ -85,6 +108,12 @@ func (h *GroupsHandler) Update(w http.ResponseWriter, r *http.Request) {
 }
 
 // Delete handles DELETE /api/v1/groups/{id}.
+// @Summary Delete group
+// @Description Delete a group
+// @Tags groups
+// @Param id path int true "Group ID"
+// @Success 204
+// @Router /api/v1/groups/{id} [delete]
 func (h *GroupsHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	id, err := parseID(r, "id")
 	if err != nil {
@@ -99,6 +128,14 @@ func (h *GroupsHandler) Delete(w http.ResponseWriter, r *http.Request) {
 }
 
 // AddMember handles POST /api/v1/groups/{id}/members.
+// @Summary Add group member
+// @Description Add a user to a group
+// @Tags groups
+// @Accept json
+// @Param id path int true "Group ID"
+// @Param body body object{user_id=int64} true "Member data"
+// @Success 204
+// @Router /api/v1/groups/{id}/members [post]
 func (h *GroupsHandler) AddMember(w http.ResponseWriter, r *http.Request) {
 	groupID, err := parseID(r, "id")
 	if err != nil {
@@ -120,6 +157,13 @@ func (h *GroupsHandler) AddMember(w http.ResponseWriter, r *http.Request) {
 }
 
 // RemoveMember handles DELETE /api/v1/groups/{id}/members/{uid}.
+// @Summary Remove group member
+// @Description Remove a user from a group
+// @Tags groups
+// @Param id path int true "Group ID"
+// @Param uid path int true "User ID"
+// @Success 204
+// @Router /api/v1/groups/{id}/members/{uid} [delete]
 func (h *GroupsHandler) RemoveMember(w http.ResponseWriter, r *http.Request) {
 	groupID, err := parseID(r, "id")
 	if err != nil {
@@ -139,6 +183,13 @@ func (h *GroupsHandler) RemoveMember(w http.ResponseWriter, r *http.Request) {
 }
 
 // ListMembers handles GET /api/v1/groups/{id}/members.
+// @Summary List group members
+// @Description List members of a group
+// @Tags groups
+// @Produce json
+// @Param id path int true "Group ID"
+// @Success 200 {object} groupMembersResponse
+// @Router /api/v1/groups/{id}/members [get]
 func (h *GroupsHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 	groupID, err := parseID(r, "id")
 	if err != nil {

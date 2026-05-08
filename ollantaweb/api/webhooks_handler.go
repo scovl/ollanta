@@ -26,6 +26,13 @@ func NewWebhooksHandler(
 }
 
 // List handles GET /api/v1/webhooks?project_key=
+// @Summary List webhooks
+// @Description Returns webhooks, optionally filtered by project
+// @Tags webhooks
+// @Produce json
+// @Param project_key query string false "Project key"
+// @Success 200 {array} postgres.Webhook
+// @Router /api/v1/webhooks [get]
 func (h *WebhooksHandler) List(w http.ResponseWriter, r *http.Request) {
 	var projectID int64
 	if key := r.URL.Query().Get("project_key"); key != "" {
@@ -48,6 +55,14 @@ func (h *WebhooksHandler) List(w http.ResponseWriter, r *http.Request) {
 }
 
 // Create handles POST /api/v1/webhooks
+// @Summary Create webhook
+// @Description Create a new webhook
+// @Tags webhooks
+// @Accept json
+// @Produce json
+// @Param body body postgres.Webhook true "Webhook data"
+// @Success 201 {object} postgres.Webhook
+// @Router /api/v1/webhooks [post]
 func (h *WebhooksHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var wh postgres.Webhook
 	if err := json.NewDecoder(r.Body).Decode(&wh); err != nil {
@@ -63,6 +78,15 @@ func (h *WebhooksHandler) Create(w http.ResponseWriter, r *http.Request) {
 }
 
 // Update handles PUT /api/v1/webhooks/{id}
+// @Summary Update webhook
+// @Description Update a webhook
+// @Tags webhooks
+// @Accept json
+// @Produce json
+// @Param id path int true "Webhook ID"
+// @Param body body postgres.Webhook true "Webhook data"
+// @Success 200 {object} postgres.Webhook
+// @Router /api/v1/webhooks/{id} [put]
 func (h *WebhooksHandler) Update(w http.ResponseWriter, r *http.Request) {
 	id, err := parseID(r, "id")
 	if err != nil {
@@ -83,6 +107,12 @@ func (h *WebhooksHandler) Update(w http.ResponseWriter, r *http.Request) {
 }
 
 // Delete handles DELETE /api/v1/webhooks/{id}
+// @Summary Delete webhook
+// @Description Delete a webhook
+// @Tags webhooks
+// @Param id path int true "Webhook ID"
+// @Success 204
+// @Router /api/v1/webhooks/{id} [delete]
 func (h *WebhooksHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	id, err := parseID(r, "id")
 	if err != nil {
@@ -97,6 +127,14 @@ func (h *WebhooksHandler) Delete(w http.ResponseWriter, r *http.Request) {
 }
 
 // Deliveries handles GET /api/v1/webhooks/{id}/deliveries
+// @Summary List webhook deliveries
+// @Description Returns delivery history for a webhook
+// @Tags webhooks
+// @Produce json
+// @Param id path int true "Webhook ID"
+// @Param limit query int false "Limit"
+// @Success 200 {array} postgres.WebhookDelivery
+// @Router /api/v1/webhooks/{id}/deliveries [get]
 func (h *WebhooksHandler) Deliveries(w http.ResponseWriter, r *http.Request) {
 	id, err := parseID(r, "id")
 	if err != nil {
@@ -114,6 +152,13 @@ func (h *WebhooksHandler) Deliveries(w http.ResponseWriter, r *http.Request) {
 }
 
 // Test handles POST /api/v1/webhooks/{id}/test — fires a test event.
+// @Summary Test webhook
+// @Description Fire a test event to a webhook
+// @Tags webhooks
+// @Produce json
+// @Param id path int true "Webhook ID"
+// @Success 200 {object} webhookTestResponse
+// @Router /api/v1/webhooks/{id}/test [post]
 func (h *WebhooksHandler) Test(w http.ResponseWriter, r *http.Request) {
 	if h.dispatcher == nil {
 		jsonError(w, http.StatusServiceUnavailable, "webhook dispatcher is not running in the web role")

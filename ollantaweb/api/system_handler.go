@@ -17,6 +17,12 @@ type SystemHandler struct {
 }
 
 // Info handles GET /api/v1/system/info — returns system metadata.
+// @Summary System info
+// @Description Returns system metadata for administrators
+// @Tags system
+// @Produce json
+// @Success 200 {object} systemInfoResponse
+// @Router /api/v1/system/info [get]
 func (h *SystemHandler) Info(w http.ResponseWriter, r *http.Request) {
 	userCount, err := h.users.Count(r.Context())
 	if err != nil {
@@ -44,6 +50,12 @@ func (h *SystemHandler) Info(w http.ResponseWriter, r *http.Request) {
 }
 
 // UISettings handles GET /api/v1/ui/settings and returns web UI configuration.
+// @Summary UI settings
+// @Description Returns public UI configuration
+// @Tags system
+// @Produce json
+// @Success 200 {object} uiSettingsResponse
+// @Router /api/v1/ui/settings [get]
 func (h *SystemHandler) UISettings(w http.ResponseWriter, r *http.Request) {
 	links := h.config.ObservabilityLinks
 	if links == nil {

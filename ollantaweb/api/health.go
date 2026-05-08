@@ -32,6 +32,12 @@ func SetHealthDeps(db *postgres.DB, indexer search.IIndexer) {
 }
 
 // Liveness handles GET /healthz — always 200 while the process is alive.
+// @Summary Liveness probe
+// @Description Returns 200 while the process is alive
+// @Tags health
+// @Produce json
+// @Success 200 {object} map[string]string
+// @Router /healthz [get]
 func Liveness(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -49,6 +55,12 @@ type checkResult struct {
 // Returns 200 "ready" when all components are up.
 // Returns 200 "degraded" when postgres is up but search is down.
 // Returns 503 "not_ready" when postgres is down.
+// @Summary Readiness probe
+// @Description Returns readiness status with component checks
+// @Tags health
+// @Produce json
+// @Success 200 {object} readinessResponse
+// @Router /readyz [get]
 func Readiness(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 

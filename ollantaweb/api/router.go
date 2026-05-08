@@ -6,15 +6,22 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	httpSwagger "github.com/swaggo/http-swagger"
 	telemetry "github.com/scovl/ollanta/adapter/secondary/telemetry"
 	"github.com/scovl/ollanta/application/tagging"
 	"github.com/scovl/ollanta/ollantacore/branding"
 	"github.com/scovl/ollanta/ollantastore/postgres"
 	"github.com/scovl/ollanta/ollantastore/search"
 	"github.com/scovl/ollanta/ollantaweb/config"
+	_ "github.com/scovl/ollanta/ollantaweb/docs"
 	"github.com/scovl/ollanta/ollantaweb/ingest"
 	"github.com/scovl/ollanta/ollantaweb/webhook"
 )
+
+// @title Ollanta API
+// @version 1.0
+// @description Ollanta REST API documentation.
+// @BasePath /
 
 const (
 	projectByKeyPath   = "/projects/{key}"
@@ -69,6 +76,9 @@ func NewRouter(d *RouterDeps) http.Handler {
 	r.Get("/readyz", Readiness)
 	r.Get("/metrics", d.MetricsReg.Handler())
 
+	// ── Swagger UI ─────────────────────────────────────────────────────────
+	r.Get("/swagger/*", httpSwagger.WrapHandler)
+
 	// ── Public badges (embeddable in READMEs, no auth) ─────────────────
 	bh := &BadgesHandler{projects: d.Projects, scans: d.Scans, measures: d.Measures}
 	r.Get("/api/v1/projects/{key}/badge", bh.QualityGate)
@@ -98,6 +108,7 @@ func NewRouter(d *RouterDeps) http.Handler {
 	sh := &ScansHandler{
 		scans:    d.Scans,
 		projects: d.Projects,
+		scanJobs: d.ScanJobs,
 		jobs:     jobService,
 		backpressure: ingest.ScanBackpressureConfig{
 			MaxAccepted:          d.Config.ScanQueueMaxAccepted,
@@ -129,12 +140,12 @@ func NewRouter(d *RouterDeps) http.Handler {
 		r.Get("/auth/google", authH.GoogleRedirect)
 		r.Get("/auth/google/callback", authH.GoogleCallback)
 
+		// UI settings — public config, no auth required
+		r.Get("/ui/settings", sysH.UISettings)
+
 		// Protected: all other routes require a valid JWT or API token
 		r.Group(func(r chi.Router) {
 			r.Use(authMW.Authenticate)
-
-			// UI settings
-			r.Get("/ui/settings", sysH.UISettings)
 
 			// Auth management
 			r.Post("/auth/logout", authH.Logout)
@@ -220,6 +231,7 @@ func NewRouter(d *RouterDeps) http.Handler {
 			// Scans
 			r.Post("/scans", sh.Ingest)
 			r.Get("/scans/{id}", sh.Get)
+			r.Get("/scans/{id}/survived-mutants", sh.SurvivedMutants)
 			r.Get("/scan-jobs/{id}", sjh.Get)
 			r.Get("/projects/{key}/scans", sh.ListByProject)
 			r.Get("/projects/{key}/scans/latest", sh.Latest)
@@ -367,6 +379,12 @@ func NewRouter(d *RouterDeps) http.Handler {
 	r.Group(func(r chi.Router) {
 		r.Use(authMW.Authenticate)
 		r.Use(RequirePermission(d.Perms, "admin"))
+			// @Summary Trigger reindex
+		// @Description Triggers a background full reindex
+		// @Tags admin
+		// @Produce json
+		// @Success 202 {object} reindexResponse
+		// @Router /admin/reindex [post]
 		r.Post("/admin/reindex", func(w http.ResponseWriter, r *http.Request) {
 			go func() {
 				ctx := r.Context()
@@ -384,6 +402,13 @@ func NewRouter(d *RouterDeps) http.Handler {
 	return r
 }
 
+// serveBrandMark serves the Ollanta brand mark PNG.
+// @Summary Brand mark
+// @Description Returns the Ollanta brand mark image
+// @Tags branding
+// @Produce image/png
+// @Success 200 {file} binary "PNG image"
+// @Router /branding/ollanta-mark.png [get]
 func serveBrandMark(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "image/png")
 	w.Header().Set("Cache-Control", "public, max-age=86400")

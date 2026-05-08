@@ -14,6 +14,14 @@ type ProjectsHandler struct {
 }
 
 // Create handles POST /api/v1/projects — upsert a project by key.
+// @Summary Create project
+// @Description Create or update a project
+// @Tags projects
+// @Accept json
+// @Produce json
+// @Param body body postgres.Project true "Project data"
+// @Success 201 {object} postgres.Project
+// @Router /api/v1/projects [post]
 func (h *ProjectsHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var p postgres.Project
 	if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
@@ -32,6 +40,13 @@ func (h *ProjectsHandler) Create(w http.ResponseWriter, r *http.Request) {
 }
 
 // Get handles GET /api/v1/projects/{key}.
+// @Summary Get project
+// @Description Get a project by key
+// @Tags projects
+// @Produce json
+// @Param key path string true "Project key"
+// @Success 200 {object} postgres.Project
+// @Router /api/v1/projects/{key} [get]
 func (h *ProjectsHandler) Get(w http.ResponseWriter, r *http.Request) {
 	key := routeParam(r, "key")
 	p, err := h.repo.GetByKey(r.Context(), key)
@@ -46,6 +61,14 @@ func (h *ProjectsHandler) Get(w http.ResponseWriter, r *http.Request) {
 }
 
 // List handles GET /api/v1/projects?limit=20&offset=0.
+// @Summary List projects
+// @Description Returns paginated list of projects
+// @Tags projects
+// @Produce json
+// @Param limit query int false "Limit" default(20)
+// @Param offset query int false "Offset"
+// @Success 200 {object} projectListResponse
+// @Router /api/v1/projects [get]
 func (h *ProjectsHandler) List(w http.ResponseWriter, r *http.Request) {
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
@@ -67,6 +90,15 @@ func (h *ProjectsHandler) List(w http.ResponseWriter, r *http.Request) {
 }
 
 // Update handles PUT /api/v1/projects/{key}.
+// @Summary Update project
+// @Description Update project metadata
+// @Tags projects
+// @Accept json
+// @Produce json
+// @Param key path string true "Project key"
+// @Param body body object{name=string,description=string,main_branch=string,tags=[]string} true "Project data"
+// @Success 200 {object} postgres.Project
+// @Router /api/v1/projects/{key} [put]
 func (h *ProjectsHandler) Update(w http.ResponseWriter, r *http.Request) {
 	key := routeParam(r, "key")
 	p, err := h.repo.GetByKey(r.Context(), key)
@@ -107,6 +139,12 @@ func (h *ProjectsHandler) Update(w http.ResponseWriter, r *http.Request) {
 }
 
 // Delete handles DELETE /api/v1/projects/{key}.
+// @Summary Delete project
+// @Description Delete a project
+// @Tags projects
+// @Param key path string true "Project key"
+// @Success 204
+// @Router /api/v1/projects/{key} [delete]
 func (h *ProjectsHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	key := routeParam(r, "key")
 	p, err := h.repo.GetByKey(r.Context(), key)

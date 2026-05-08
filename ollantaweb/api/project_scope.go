@@ -17,6 +17,13 @@ type ProjectScopeHandler struct {
 }
 
 // Branches handles GET /api/v1/projects/{key}/branches.
+// @Summary List branches
+// @Description Returns branches for a project
+// @Tags project-scope
+// @Produce json
+// @Param key path string true "Project key"
+// @Success 200 {object} branchesResponse
+// @Router /api/v1/projects/{key}/branches [get]
 func (h *ProjectScopeHandler) Branches(w http.ResponseWriter, r *http.Request) {
 	project, err := h.projects.GetByKey(r.Context(), routeParam(r, "key"))
 	if handleNotFound(w, err, "project not found") {
@@ -43,6 +50,13 @@ func (h *ProjectScopeHandler) Branches(w http.ResponseWriter, r *http.Request) {
 }
 
 // PullRequests handles GET /api/v1/projects/{key}/pull-requests.
+// @Summary List pull requests
+// @Description Returns pull requests for a project
+// @Tags project-scope
+// @Produce json
+// @Param key path string true "Project key"
+// @Success 200 {object} pullRequestsResponse
+// @Router /api/v1/projects/{key}/pull-requests [get]
 func (h *ProjectScopeHandler) PullRequests(w http.ResponseWriter, r *http.Request) {
 	project, err := h.projects.GetByKey(r.Context(), routeParam(r, "key"))
 	if handleNotFound(w, err, "project not found") {
@@ -61,6 +75,15 @@ func (h *ProjectScopeHandler) PullRequests(w http.ResponseWriter, r *http.Reques
 }
 
 // Information handles GET /api/v1/projects/{key}/information.
+// @Summary Project information
+// @Description Returns project scope information and latest scan
+// @Tags project-scope
+// @Produce json
+// @Param key path string true "Project key"
+// @Param branch query string false "Branch"
+// @Param pull_request query string false "Pull request"
+// @Success 200 {object} projectInformationResponse
+// @Router /api/v1/projects/{key}/information [get]
 func (h *ProjectScopeHandler) Information(w http.ResponseWriter, r *http.Request) {
 	requested, err := parseScopeQuery(r)
 	if err != nil {
@@ -112,6 +135,15 @@ func (h *ProjectScopeHandler) Information(w http.ResponseWriter, r *http.Request
 }
 
 // CodeTree handles GET /api/v1/projects/{key}/code/tree.
+// @Summary Code tree
+// @Description Returns the file tree for a project scope
+// @Tags project-scope
+// @Produce json
+// @Param key path string true "Project key"
+// @Param branch query string false "Branch"
+// @Param pull_request query string false "Pull request"
+// @Success 200 {object} codeTreeResponse
+// @Router /api/v1/projects/{key}/code/tree [get]
 func (h *ProjectScopeHandler) CodeTree(w http.ResponseWriter, r *http.Request) {
 	requested, err := parseScopeQuery(r)
 	if err != nil {
@@ -160,6 +192,16 @@ func (h *ProjectScopeHandler) CodeTree(w http.ResponseWriter, r *http.Request) {
 }
 
 // CodeFile handles GET /api/v1/projects/{key}/code/file?path=... .
+// @Summary Code file
+// @Description Returns a single file with issues for a project scope
+// @Tags project-scope
+// @Produce json
+// @Param key path string true "Project key"
+// @Param path query string true "File path"
+// @Param branch query string false "Branch"
+// @Param pull_request query string false "Pull request"
+// @Success 200 {object} codeFileResponse
+// @Router /api/v1/projects/{key}/code/file [get]
 func (h *ProjectScopeHandler) CodeFile(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimSpace(r.URL.Query().Get("path"))
 	if path == "" {

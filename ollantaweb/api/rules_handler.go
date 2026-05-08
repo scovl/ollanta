@@ -85,6 +85,13 @@ func catalogToDetail(rule *coredomain.Rule) *ruleDetail {
 }
 
 // Get handles GET /api/v1/rules/* — returns the full metadata for a single rule.
+// @Summary Get rule
+// @Description Returns metadata for a single rule by key
+// @Tags rules
+// @Produce json
+// @Param rule_key path string true "Rule key"
+// @Success 200 {object} ruleDetail
+// @Router /api/v1/rules/{rule_key} [get]
 func (h *RulesHandler) Get(w http.ResponseWriter, r *http.Request) {
 	raw := strings.TrimPrefix(chi.URLParam(r, "*"), "/")
 	key, _ := url.PathUnescape(raw)
@@ -105,6 +112,13 @@ func (h *RulesHandler) Get(w http.ResponseWriter, r *http.Request) {
 }
 
 // List handles GET /api/v1/rules — returns metadata for all registered rules.
+// @Summary List rules
+// @Description Returns metadata for all registered rules
+// @Tags rules
+// @Produce json
+// @Param language query string false "Filter by language"
+// @Success 200 {object} ruleListResponse
+// @Router /api/v1/rules [get]
 func (h *RulesHandler) List(w http.ResponseWriter, r *http.Request) {
 	lang := r.URL.Query().Get("language")
 	if lang == "" {

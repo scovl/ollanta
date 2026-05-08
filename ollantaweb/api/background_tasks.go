@@ -170,6 +170,21 @@ type backgroundTaskParams struct {
 }
 
 // List handles GET /api/v1/admin/background-tasks.
+// @Summary List background tasks
+// @Description Returns paginated background tasks
+// @Tags admin
+// @Produce json
+// @Param type query string false "Task type"
+// @Param status query string false "Status"
+// @Param project_key query string false "Project key"
+// @Param scan_id query int false "Scan ID"
+// @Param worker_id query string false "Worker ID"
+// @Param failed_only query bool false "Failed only"
+// @Param stale_only query bool false "Stale only"
+// @Param limit query int false "Limit" default(25)
+// @Param offset query int false "Offset"
+// @Success 200 {object} backgroundTaskListResponse
+// @Router /api/v1/admin/background-tasks [get]
 func (h *BackgroundTasksHandler) List(w http.ResponseWriter, r *http.Request) {
 	filter := parseBackgroundTaskFilter(r)
 	tasks, err := h.loadBackgroundTasks(r.Context(), filter)
@@ -188,6 +203,12 @@ func (h *BackgroundTasksHandler) List(w http.ResponseWriter, r *http.Request) {
 }
 
 // Summary handles GET /api/v1/admin/background-tasks/summary.
+// @Summary Background tasks summary
+// @Description Returns summary statistics for background tasks
+// @Tags admin
+// @Produce json
+// @Success 200 {object} backgroundTaskSummary
+// @Router /api/v1/admin/background-tasks/summary [get]
 func (h *BackgroundTasksHandler) Summary(w http.ResponseWriter, r *http.Request) {
 	filter := parseBackgroundTaskFilter(r)
 	filter.Limit = 500
@@ -203,6 +224,13 @@ func (h *BackgroundTasksHandler) Summary(w http.ResponseWriter, r *http.Request)
 }
 
 // Detail handles GET /api/v1/admin/background-tasks/{taskID}.
+// @Summary Background task detail
+// @Description Returns a single background task by ID
+// @Tags admin
+// @Produce json
+// @Param taskID path string true "Task ID"
+// @Success 200 {object} backgroundTaskDTO
+// @Router /api/v1/admin/background-tasks/{taskID} [get]
 func (h *BackgroundTasksHandler) Detail(w http.ResponseWriter, r *http.Request) {
 	task, err := h.loadBackgroundTaskByID(r.Context(), routeParam(r, "taskID"))
 	if handleNotFound(w, err, "background task not found") {
@@ -216,16 +244,37 @@ func (h *BackgroundTasksHandler) Detail(w http.ResponseWriter, r *http.Request) 
 }
 
 // Retry handles POST /api/v1/admin/background-tasks/{taskID}/retry.
+// @Summary Retry background task
+// @Description Retry a failed background task
+// @Tags admin
+// @Produce json
+// @Param taskID path string true "Task ID"
+// @Success 202 {object} backgroundTaskDTO
+// @Router /api/v1/admin/background-tasks/{taskID}/retry [post]
 func (h *BackgroundTasksHandler) Retry(w http.ResponseWriter, r *http.Request) {
 	h.runAction(w, r, backgroundActionRetry)
 }
 
 // Requeue handles POST /api/v1/admin/background-tasks/{taskID}/requeue.
+// @Summary Requeue background task
+// @Description Requeue a stale background task
+// @Tags admin
+// @Produce json
+// @Param taskID path string true "Task ID"
+// @Success 202 {object} backgroundTaskDTO
+// @Router /api/v1/admin/background-tasks/{taskID}/requeue [post]
 func (h *BackgroundTasksHandler) Requeue(w http.ResponseWriter, r *http.Request) {
 	h.runAction(w, r, backgroundActionRequeue)
 }
 
 // Cancel handles POST /api/v1/admin/background-tasks/{taskID}/cancel.
+// @Summary Cancel background task
+// @Description Cancel a queued background task
+// @Tags admin
+// @Produce json
+// @Param taskID path string true "Task ID"
+// @Success 202 {object} backgroundTaskDTO
+// @Router /api/v1/admin/background-tasks/{taskID}/cancel [post]
 func (h *BackgroundTasksHandler) Cancel(w http.ResponseWriter, r *http.Request) {
 	h.runAction(w, r, backgroundActionCancel)
 }

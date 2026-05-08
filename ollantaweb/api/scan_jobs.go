@@ -14,6 +14,13 @@ type ScanJobsHandler struct {
 }
 
 // Get handles GET /api/v1/scan-jobs/{id}.
+// @Summary Get scan job
+// @Description Returns a durable scan job by ID
+// @Tags scan-jobs
+// @Produce json
+// @Param id path int true "Scan job ID"
+// @Success 200 {object} postgres.ScanJob
+// @Router /api/v1/scan-jobs/{id} [get]
 func (h *ScanJobsHandler) Get(w http.ResponseWriter, r *http.Request) {
 	id, err := parseID(r, "id")
 	if err != nil {

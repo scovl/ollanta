@@ -142,8 +142,27 @@ func writeEmptyIssuesResponse(w http.ResponseWriter, filter postgres.IssueFilter
 }
 
 // List handles GET /api/v1/issues with optional filter query params.
-//
-// Query params: project_id, scan_id, rule_key, severity, type, quality, status, tracking_state, language, tag, security_category, directory, file, limit, offset
+// @Summary List issues
+// @Description Returns paginated issues with optional filters
+// @Tags issues
+// @Produce json
+// @Param project_id query int false "Project ID"
+// @Param scan_id query int false "Scan ID"
+// @Param rule_key query string false "Rule key"
+// @Param severity query string false "Severity"
+// @Param type query string false "Issue type"
+// @Param quality query string false "Quality domain"
+// @Param status query string false "Status"
+// @Param tracking_state query string false "Tracking state"
+// @Param language query string false "Language"
+// @Param tag query string false "Tag"
+// @Param security_category query string false "Security category"
+// @Param directory query string false "Directory"
+// @Param file query string false "File path"
+// @Param limit query int false "Limit"
+// @Param offset query int false "Offset"
+// @Success 200 {object} issueListResponse
+// @Router /api/v1/issues [get]
 func (h *IssuesHandler) List(w http.ResponseWriter, r *http.Request) {
 	f, projectKey := parseIssueFilter(r.URL.Query())
 	if err := h.resolveTagFilter(r, &f); err != nil {
@@ -187,6 +206,14 @@ func (h *IssuesHandler) List(w http.ResponseWriter, r *http.Request) {
 }
 
 // Facets handles GET /api/v1/issues/facets?project_id=1&scan_id=2.
+// @Summary Issue facets
+// @Description Returns aggregated issue counts by dimension
+// @Tags issues
+// @Produce json
+// @Param project_id query int false "Project ID"
+// @Param scan_id query int false "Scan ID"
+// @Success 200 {object} postgres.IssueFacets
+// @Router /api/v1/issues/facets [get]
 func (h *IssuesHandler) Facets(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 
@@ -268,6 +295,14 @@ func optionalInt64(value int64) *int64 {
 
 // Transition handles POST /api/v1/issues/{id}/transition.
 // Allowed resolutions: false_positive, wont_fix, confirmed, fixed, "" (reopen).
+// @Summary Transition issue
+// @Description Change issue status/resolution
+// @Tags issues
+// @Accept json
+// @Param id path int true "Issue ID"
+// @Param body body object{resolution=string,comment=string} true "Transition data"
+// @Success 204
+// @Router /api/v1/issues/{id}/transition [post]
 func (h *IssuesHandler) Transition(w http.ResponseWriter, r *http.Request) {
 	id, err := parseID(r, "id")
 	if err != nil {
@@ -339,7 +374,13 @@ func (h *IssuesHandler) Transition(w http.ResponseWriter, r *http.Request) {
 
 // Changelog handles GET /api/v1/issues/{id}/changelog.
 // Returns the complete change history for an issue, most recent first.
-// Inspired by SonarQube's api/issues/changelog.
+// @Summary Issue changelog
+// @Description Returns change history for an issue
+// @Tags issues
+// @Produce json
+// @Param id path int true "Issue ID"
+// @Success 200 {object} issueChangelogResponse
+// @Router /api/v1/issues/{id}/changelog [get]
 func (h *IssuesHandler) Changelog(w http.ResponseWriter, r *http.Request) {
 	id, err := parseID(r, "id")
 	if err != nil {

@@ -14,10 +14,21 @@ type SearchHandler struct {
 }
 
 // Search handles GET /api/v1/search
-//
-// Query params: q (query string), index (issues|projects, default issues),
-//
-//	severity, type, project_id (filters), limit, offset
+// @Summary Search
+// @Description Full-text search across issues or projects
+// @Tags search
+// @Produce json
+// @Param q query string false "Query string"
+// @Param index query string false "Index (issues|projects)"
+// @Param severity query string false "Severity filter"
+// @Param type query string false "Type filter"
+// @Param status query string false "Status filter"
+// @Param project_id query string false "Project ID filter"
+// @Param rule_key query string false "Rule key filter"
+// @Param limit query int false "Limit" default(20)
+// @Param offset query int false "Offset"
+// @Success 200 {object} searchResponse
+// @Router /api/v1/search [get]
 func (h *SearchHandler) Search(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 

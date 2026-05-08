@@ -64,6 +64,14 @@ type loginResponse struct {
 }
 
 // Login handles POST /api/v1/auth/login with a local login (username) + password.
+// @Summary Login
+// @Description Authenticate with username and password
+// @Tags auth
+// @Accept json
+// @Produce json
+// @Param body body object{login=string,password=string} true "Credentials"
+// @Success 200 {object} loginResponse
+// @Router /api/v1/auth/login [post]
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Login    string `json:"login"`
@@ -102,6 +110,14 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 }
 
 // Refresh handles POST /api/v1/auth/refresh.
+// @Summary Refresh access token
+// @Description Exchange a refresh token for a new access token
+// @Tags auth
+// @Accept json
+// @Produce json
+// @Param body body object{refresh_token=string} true "Refresh token"
+// @Success 200 {object} refreshResponse
+// @Router /api/v1/auth/refresh [post]
 func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		RefreshToken string `json:"refresh_token"`
@@ -142,6 +158,13 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 }
 
 // Logout handles POST /api/v1/auth/logout.
+// @Summary Logout
+// @Description Invalidate the current session
+// @Tags auth
+// @Accept json
+// @Produce json
+// @Success 204
+// @Router /api/v1/auth/logout [post]
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	// Best-effort: accept either refresh token in body, or just invalidate by user ID.
 	var req struct {
@@ -156,31 +179,64 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 }
 
 // GitHubRedirect handles GET /api/v1/auth/github.
+// @Summary GitHub OAuth redirect
+// @Description Redirects to GitHub OAuth authorization page
+// @Tags auth
+// @Success 302
+// @Router /api/v1/auth/github [get]
 func (h *AuthHandler) GitHubRedirect(w http.ResponseWriter, r *http.Request) {
 	h.oauthRedirect(w, r, h.github, "github")
 }
 
 // GitHubCallback handles GET /api/v1/auth/github/callback.
+// @Summary GitHub OAuth callback
+// @Description Handles GitHub OAuth callback and issues tokens
+// @Tags auth
+// @Produce json
+// @Success 200 {object} loginResponse
+// @Router /api/v1/auth/github/callback [get]
 func (h *AuthHandler) GitHubCallback(w http.ResponseWriter, r *http.Request) {
 	h.oauthCallback(w, r, h.github, "github")
 }
 
 // GitLabRedirect handles GET /api/v1/auth/gitlab.
+// @Summary GitLab OAuth redirect
+// @Description Redirects to GitLab OAuth authorization page
+// @Tags auth
+// @Success 302
+// @Router /api/v1/auth/gitlab [get]
 func (h *AuthHandler) GitLabRedirect(w http.ResponseWriter, r *http.Request) {
 	h.oauthRedirect(w, r, h.gitlab, "gitlab")
 }
 
 // GitLabCallback handles GET /api/v1/auth/gitlab/callback.
+// @Summary GitLab OAuth callback
+// @Description Handles GitLab OAuth callback and issues tokens
+// @Tags auth
+// @Produce json
+// @Success 200 {object} loginResponse
+// @Router /api/v1/auth/gitlab/callback [get]
 func (h *AuthHandler) GitLabCallback(w http.ResponseWriter, r *http.Request) {
 	h.oauthCallback(w, r, h.gitlab, "gitlab")
 }
 
 // GoogleRedirect handles GET /api/v1/auth/google.
+// @Summary Google OAuth redirect
+// @Description Redirects to Google OAuth authorization page
+// @Tags auth
+// @Success 302
+// @Router /api/v1/auth/google [get]
 func (h *AuthHandler) GoogleRedirect(w http.ResponseWriter, r *http.Request) {
 	h.oauthRedirect(w, r, h.google, "google")
 }
 
 // GoogleCallback handles GET /api/v1/auth/google/callback.
+// @Summary Google OAuth callback
+// @Description Handles Google OAuth callback and issues tokens
+// @Tags auth
+// @Produce json
+// @Success 200 {object} loginResponse
+// @Router /api/v1/auth/google/callback [get]
 func (h *AuthHandler) GoogleCallback(w http.ResponseWriter, r *http.Request) {
 	h.oauthCallback(w, r, h.google, "google")
 }
