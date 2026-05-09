@@ -431,5 +431,5 @@ func countLines(path string) (total, ncloc, comments int) {
 			ncloc++
 		}
 	}
-	return
+	return total, ncloc, comments
 }

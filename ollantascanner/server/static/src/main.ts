@@ -285,6 +285,44 @@ function renderMeasures(): void {
   coverageCard.addEventListener("click", () => {
     switchTab("coverage");
   });
+
+  makeMetricLink("card-bugs", () => navigateToIssues("bug"));
+  makeMetricLink("card-vulns", () => navigateToIssues("vulnerability"));
+  makeMetricLink("card-smells", () => navigateToIssues("code_smell"));
+  makeMetricLink("card-test-failures", () => switchTab("mutants"));
+  makeMetricLink("card-mutants-error", () => switchTab("mutants"));
+}
+
+function makeMetricLink(id: string, onClick: () => void): void {
+  const card = el(id);
+  card.classList.add("clickable");
+  card.setAttribute("role", "button");
+  card.setAttribute("tabindex", "0");
+  card.setAttribute("aria-label", `View ${card.querySelector(".metric-label")?.textContent ?? ""} details`);
+  card.addEventListener("click", () => {
+    console.log("[Ollanta] Clicked metric card:", id);
+    onClick();
+  });
+  card.addEventListener("keydown", (e: Event) => {
+    const ke = e as KeyboardEvent;
+    if (ke.key === "Enter" || ke.key === " ") {
+      ke.preventDefault();
+      onClick();
+    }
+  });
+  // Add arrow indicator
+  const arrow = document.createElement("span");
+  arrow.className = "metric-arrow";
+  arrow.setAttribute("aria-hidden", "true");
+  arrow.textContent = "\u2192";
+  card.appendChild(arrow);
+}
+
+function navigateToIssues(type: string): void {
+  filterType = type;
+  (el("filter-type") as HTMLSelectElement).value = type;
+  applyFilters();
+  switchTab("issues");
 }
 
 function setMetric(id: string, val: number): void {

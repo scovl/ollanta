@@ -39,22 +39,37 @@ func (h *IssuesHandler) resolveIssueProject(r *http.Request, projectID *int64, p
 }
 
 func (h *IssuesHandler) resolveScopedIssueSelection(r *http.Request, projectID *int64, projectKey string) (*scopedIssueSelection, error) {
-	if r.URL.Query().Get("branch") == "" && r.URL.Query().Get("pull_request") == "" {
+	// When scan_id is passed explicitly, let the caller use it directly.
+	if r.URL.Query().Get("scan_id") != "" {
 		return nil, nil
 	}
-	requested, err := parseScopeQuery(r)
-	if err != nil {
-		return nil, err
+
+	hasScope := r.URL.Query().Get("branch") != "" || r.URL.Query().Get("pull_request") != ""
+	hasProject := projectID != nil || projectKey != ""
+	if !hasScope && !hasProject {
+		return nil, nil
 	}
+
 	project, err := h.resolveIssueProject(r, projectID, projectKey)
 	if err != nil {
 		return nil, err
 	}
-	resolved, err := resolveProjectScopeForProject(r.Context(), project, h.scans, requested)
-	if err != nil {
-		return nil, err
+
+	var scope model.AnalysisScope
+	if hasScope {
+		requested, err := parseScopeQuery(r)
+		if err != nil {
+			return nil, err
+		}
+		resolved, err := resolveProjectScopeForProject(r.Context(), project, h.scans, requested)
+		if err != nil {
+			return nil, err
+		}
+		scope = resolved.Scope
 	}
-	scan, err := h.scans.GetLatestInScope(r.Context(), project.ID, resolved.Scope, resolved.DefaultBranch)
+
+	defaultBranch, _, _ := h.scans.ResolveDefaultBranch(r.Context(), project.ID, project.MainBranch)
+	scan, err := h.scans.GetLatestInScope(r.Context(), project.ID, scope, defaultBranch)
 	if errors.Is(err, postgres.ErrNotFound) {
 		return &scopedIssueSelection{projectID: project.ID, found: false}, nil
 	}

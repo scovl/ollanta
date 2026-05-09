@@ -209,7 +209,7 @@ func buildIssueFilter(f IssueFilter) (conds []string, args []interface{}) {
 		args = append(args, *f.EngineID)
 		n++
 	}
-	return
+	return conds, args
 }
 
 func qualityDomainCondition(quality string, argIndex int) string {
