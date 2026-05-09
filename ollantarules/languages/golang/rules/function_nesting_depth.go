@@ -52,34 +52,38 @@ func maxNestingDepth(node ast.Node, currentDepth int) (int, token.Pos) {
 		if n == node {
 			return true
 		}
-		var body ast.Node
-		switch v := n.(type) {
-		case *ast.IfStmt:
-			body = v.Body
-		case *ast.ForStmt:
-			body = v.Body
-		case *ast.RangeStmt:
-			body = v.Body
-		case *ast.SwitchStmt:
-			body = v.Body
-		case *ast.TypeSwitchStmt:
-			body = v.Body
-		case *ast.SelectStmt:
-			body = v.Body
-		case *ast.FuncLit:
-			// nested func literal resets depth context
-			return false
-		default:
-			return true
-		}
+		body, walkChildren := nestingConstructBody(n)
 		if body != nil {
 			d, pos := maxNestingDepth(body, currentDepth+1)
 			if d > maxDepth {
 				maxDepth = d
 				deepestPos = pos
 			}
+			return false
 		}
-		return false // already recursed
+		return walkChildren
 	})
 	return maxDepth, deepestPos
+}
+
+// nestingConstructBody returns the body of a nesting construct (if/for/range/switch/select).
+// Returns (nil, false) for FuncLit (depth reset) and (nil, true) for other nodes.
+func nestingConstructBody(n ast.Node) (body ast.Node, walkChildren bool) {
+	switch v := n.(type) {
+	case *ast.IfStmt:
+		return v.Body, false
+	case *ast.ForStmt:
+		return v.Body, false
+	case *ast.RangeStmt:
+		return v.Body, false
+	case *ast.SwitchStmt:
+		return v.Body, false
+	case *ast.TypeSwitchStmt:
+		return v.Body, false
+	case *ast.SelectStmt:
+		return v.Body, false
+	case *ast.FuncLit:
+		return nil, false
+	}
+	return nil, true
 }
