@@ -30,49 +30,58 @@ type Step struct {
 // run executes fn within the step's timeout, applying the error strategy.
 // Returns an error only when strategy is Abort.
 func (s Step) run(ctx context.Context, fn func(ctx context.Context) error) error {
-	attempt := func() error {
-		stepCtx, cancel := context.WithTimeout(ctx, s.Timeout)
-		defer cancel()
-		return fn(stepCtx)
-	}
-
 	switch s.Strategy {
 	case StrategyAbort:
-		if err := attempt(); err != nil {
-			return fmt.Errorf("step %s: %w", s.Name, err)
-		}
-		return nil
-
+		return s.runAbort(ctx, fn)
 	case StrategySkip:
-		if err := attempt(); err != nil {
-			slog.Warn("step skipped", "step", s.Name, "error", err)
-		}
-		return nil
-
+		return s.runSkip(ctx, fn)
 	case StrategyRetry:
-		maxR := s.MaxRetry
-		if maxR <= 0 {
-			maxR = 3
-		}
-		var lastErr error
-		for i := 1; i <= maxR; i++ {
-			if err := attempt(); err != nil {
-				lastErr = err
-				backoff := time.Duration(i) * 500 * time.Millisecond
-				slog.Warn("step attempt failed", "step", s.Name, "attempt", i, "max_attempts", maxR, "error", err, "retry_in", backoff)
-				select {
-				case <-ctx.Done():
-					return fmt.Errorf("step %s: context cancelled: %w", s.Name, ctx.Err())
-				case <-time.After(backoff):
-				}
-				continue
-			}
-			return nil
-		}
-		// After all retries, abort.
-		return fmt.Errorf("step %s: all %d retries failed: %w", s.Name, maxR, lastErr)
+		return s.runRetry(ctx, fn)
 	}
 	return nil
+}
+
+func (s Step) runAbort(ctx context.Context, fn func(ctx context.Context) error) error {
+	if err := s.runAttempt(ctx, fn); err != nil {
+		return fmt.Errorf("step %s: %w", s.Name, err)
+	}
+	return nil
+}
+
+func (s Step) runSkip(ctx context.Context, fn func(ctx context.Context) error) error {
+	if err := s.runAttempt(ctx, fn); err != nil {
+		slog.Warn("step skipped", "step", s.Name, "error", err)
+	}
+	return nil
+}
+
+func (s Step) runRetry(ctx context.Context, fn func(ctx context.Context) error) error {
+	maxR := s.MaxRetry
+	if maxR <= 0 {
+		maxR = 3
+	}
+	var lastErr error
+	for i := 1; i <= maxR; i++ {
+		if err := s.runAttempt(ctx, fn); err != nil {
+			lastErr = err
+			backoff := time.Duration(i) * 500 * time.Millisecond
+			slog.Warn("step attempt failed", "step", s.Name, "attempt", i, "max_attempts", maxR, "error", err, "retry_in", backoff)
+			select {
+			case <-ctx.Done():
+				return fmt.Errorf("step %s: context cancelled: %w", s.Name, ctx.Err())
+			case <-time.After(backoff):
+			}
+			continue
+		}
+		return nil
+	}
+	return fmt.Errorf("step %s: all %d retries failed: %w", s.Name, maxR, lastErr)
+}
+
+func (s Step) runAttempt(ctx context.Context, fn func(ctx context.Context) error) error {
+	stepCtx, cancel := context.WithTimeout(ctx, s.Timeout)
+	defer cancel()
+	return fn(stepCtx)
 }
 
 // pipelineSteps defines the canonical step configuration for the ingest pipeline.

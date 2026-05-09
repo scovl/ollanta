@@ -183,7 +183,6 @@ func EvaluatePersistent(conditions []PersistentCondition, req EvalRequest) *Gate
 			ErrorThreshold: pc.Threshold,
 		}
 
-		// Skip on small changeset.
 		if isSmall && pc.OnNewCode && smallChangesetExcludes[pc.MetricKey] {
 			results = append(results, ConditionResult{
 				Condition: cond,
@@ -198,22 +197,11 @@ func EvaluatePersistent(conditions []PersistentCondition, req EvalRequest) *Gate
 			measures = req.NewMeasures
 		}
 
-		actual, ok := measures[pc.MetricKey]
-		cr := ConditionResult{
-			Condition:   cond,
-			ActualValue: actual,
-			HasValue:    ok,
-		}
-		if !ok {
-			cr.Status = ConditionOK
-		} else if ollantacore.Violated(actual, string(pc.Op), pc.Threshold) {
-			cr.Status = ConditionError
+		cr := evalPersistentCondition(cond, pc, measures)
+		if cr.Status == ConditionError {
 			anyError = true
-		} else if pc.WarningThreshold != nil && ollantacore.Violated(actual, string(pc.Op), *pc.WarningThreshold) {
-			cr.Status = ConditionWarn
+		} else if cr.Status == ConditionWarn {
 			anyWarn = true
-		} else {
-			cr.Status = ConditionOK
 		}
 		results = append(results, cr)
 	}
@@ -225,4 +213,27 @@ func EvaluatePersistent(conditions []PersistentCondition, req EvalRequest) *Gate
 		status = GateWarn
 	}
 	return &GateStatus{Status: status, Conditions: results}
+}
+
+// evalPersistentCondition evaluates a single condition against measures.
+// Returns ConditionError if the error threshold is violated,
+// ConditionWarn if the warning threshold is violated,
+// or ConditionOK otherwise.
+func evalPersistentCondition(cond Condition, pc PersistentCondition, measures map[string]float64) ConditionResult {
+	actual, ok := measures[pc.MetricKey]
+	cr := ConditionResult{
+		Condition:   cond,
+		ActualValue: actual,
+		HasValue:    ok,
+	}
+	if !ok {
+		cr.Status = ConditionOK
+	} else if ollantacore.Violated(actual, string(pc.Op), pc.Threshold) {
+		cr.Status = ConditionError
+	} else if pc.WarningThreshold != nil && ollantacore.Violated(actual, string(pc.Op), *pc.WarningThreshold) {
+		cr.Status = ConditionWarn
+	} else {
+		cr.Status = ConditionOK
+	}
+	return cr
 }

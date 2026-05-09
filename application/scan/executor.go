@@ -104,34 +104,14 @@ func (e *Executor) Run(ctx context.Context, files []DiscoveredFile, policy *Prof
 		policy = AllowAllProfilePolicy()
 	}
 
-	type result struct{ issues []*model.Issue }
-
 	sem := make(chan struct{}, e.workers)
-	out := make(chan result, len(files))
+	out := make(chan []*model.Issue, len(files))
 
 	var wg sync.WaitGroup
 	for _, f := range files {
 		f := f
 		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			select {
-			case sem <- struct{}{}:
-				defer func() { <-sem }()
-			case <-ctx.Done():
-				out <- result{}
-				return
-			}
-
-			defer func() {
-				if r := recover(); r != nil {
-					slog.Warn("panic analyzing file", "path", f.Path, "panic", r)
-					out <- result{}
-				}
-			}()
-
-			out <- result{issues: e.analyzeFile(ctx, f, policy)}
-		}()
+		go e.runFile(ctx, f, policy, sem, out, &wg)
 	}
 
 	go func() {
@@ -140,10 +120,31 @@ func (e *Executor) Run(ctx context.Context, files []DiscoveredFile, policy *Prof
 	}()
 
 	var all []*model.Issue
-	for r := range out {
-		all = append(all, r.issues...)
+	for issues := range out {
+		all = append(all, issues...)
 	}
 	return all, nil
+}
+
+// runFile acquires a semaphore slot and analyzes a single file.
+func (e *Executor) runFile(ctx context.Context, f DiscoveredFile, policy *ProfilePolicy, sem chan struct{}, out chan<- []*model.Issue, wg *sync.WaitGroup) {
+	defer wg.Done()
+	select {
+	case sem <- struct{}{}:
+		defer func() { <-sem }()
+	case <-ctx.Done():
+		out <- nil
+		return
+	}
+
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Warn("panic analyzing file", "path", f.Path, "panic", r)
+			out <- nil
+		}
+	}()
+
+	out <- e.analyzeFile(ctx, f, policy)
 }
 
 func cloneParams(params map[string]string) map[string]string {
