@@ -92,10 +92,23 @@ up:
 down:
 	docker compose --profile $(COMPOSE_PROFILE) down
 
+# recreate: destroy everything and start from zero.
+# Stops all containers, deletes volumes (DB + search index + observability),
+# removes project images, rebuilds with no cache, and starts fresh.
 recreate:
-	docker compose --profile $(COMPOSE_PROFILE) down --remove-orphans
+	@echo "=== Stopping all ollanta containers ==="
+	docker compose --profile $(COMPOSE_PROFILE) down --remove-orphans --volumes
+	@echo "=== Removing ollanta images ==="
+	-@docker images ollanta-scanner -q | xargs -r docker rmi -f
+	-@docker images ollanta-server -q | xargs -r docker rmi -f
+	@echo "=== Pruning dangling build cache ==="
+	-docker builder prune -a -f
+	@echo "=== Building images from scratch ==="
 	docker compose --profile $(COMPOSE_PROFILE) build --no-cache
+	docker compose --profile scanner build --no-cache
+	@echo "=== Starting services ==="
 	docker compose --profile $(COMPOSE_PROFILE) up -d --force-recreate
+	@echo "=== Status ==="
 	docker compose --profile $(COMPOSE_PROFILE) ps
 
 logs:

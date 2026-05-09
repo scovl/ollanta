@@ -245,6 +245,28 @@ Adding a new tab or route in the SPA requires checking **four places**: (a) tab 
 
 The scanner frontend keeps source code in `src/` and compiled artifacts in `dist/`. After any change to `src/main.ts`, `src/types.ts`, `src/index.html`, or `src/style.css`, run `npm run build` in `ollantascanner/server/static` and commit the updated `dist/`. The scanner binary embeds `dist/`, not `src/`.
 
+### 13. Every Rule Needs a Negative Test
+
+A positive test proves a rule detects bad code. A negative test proves it does **not** fire on clean code. Both are required.
+
+Tree-sitter predicates (`#eq?`, `#match?`, `#not-eq?`, `#not-match?`) are evaluated by the Go binding layer, not by tree-sitter C — if the binding step is missing or broken, every rule with predicates silently returns false positives. A negative test catches that.
+
+```go
+// Test positive — must fire
+func TestTreeSitterSensor_JS_DetectEval(t *testing.T) {
+    src := []byte("const r = eval(input);\n")
+    // ... assert js:detect-eval is found
+}
+
+// Test negative — must NOT fire
+func TestTreeSitterSensor_JS_DetectEval_NoFalsePositive(t *testing.T) {
+    src := []byte("configureProjectFlowFeature({ render });\n")
+    // ... assert js:detect-eval is NOT found
+}
+```
+
+Naming convention: append `_NoFalsePositive` to the test name (or `_NoFalsePositive{Condition}` for multiple scenarios).
+
 ## Conventions
 
 | Convention | Example |
