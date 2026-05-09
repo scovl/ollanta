@@ -43,6 +43,10 @@ func (qr *QueryRunner) Run(f *ParsedFile, query string, lang Language) ([]QueryM
 		if !ok {
 			break
 		}
+		m = cursor.FilterPredicates(m, f.Source)
+		if len(m.Captures) == 0 {
+			continue
+		}
 		qm := QueryMatch{Captures: make(map[string]*sitter.Node, len(m.Captures))}
 		for _, cap := range m.Captures {
 			name := q.CaptureNameForId(cap.Index)

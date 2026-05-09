@@ -191,6 +191,34 @@ func TestTreeSitterSensor_JS_DetectEval(t *testing.T) {
 	}
 }
 
+func TestTreeSitterSensor_JS_DetectEval_NoFalsePositive(t *testing.T) {
+	src := []byte("configureProjectFlowFeature({ render });\n")
+	s := defaultSensor()
+	issues, err := s.Analyze("test.js", src, "javascript", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, iss := range issues {
+		if iss.RuleKey == "js:detect-eval" {
+			t.Errorf("false positive: js:detect-eval flagged non-eval call %q at line %d", iss.Message, iss.Line)
+		}
+	}
+}
+
+func TestTreeSitterSensor_JS_DetectEval_NoFalsePositiveOtherCalls(t *testing.T) {
+	src := []byte("bootBrowserApp();\napiFetch('/foo');\nrenderView();\n")
+	s := defaultSensor()
+	issues, err := s.Analyze("test.js", src, "javascript", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, iss := range issues {
+		if iss.RuleKey == "js:detect-eval" {
+			t.Errorf("false positive: js:detect-eval flagged non-eval call %q at line %d", iss.Message, iss.Line)
+		}
+	}
+}
+
 func TestTreeSitterSensor_JS_LeftoverDebugging(t *testing.T) {
 	src := []byte("function f() { debugger; }\n")
 	s := defaultSensor()
@@ -247,6 +275,20 @@ func TestTreeSitterSensor_PY_DangerousSubprocess(t *testing.T) {
 	}
 	if !found {
 		t.Error("expected py:dangerous-subprocess issue")
+	}
+}
+
+func TestTreeSitterSensor_PY_DangerousSubprocess_NoFalsePositive(t *testing.T) {
+	src := []byte("import mypkg\nmypkg.run('ls')\n")
+	s := defaultSensor()
+	issues, err := s.Analyze("test.py", src, "python", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, iss := range issues {
+		if iss.RuleKey == "py:dangerous-subprocess" {
+			t.Errorf("false positive: py:dangerous-subprocess flagged non-subprocess call %q at line %d", iss.Message, iss.Line)
+		}
 	}
 }
 
