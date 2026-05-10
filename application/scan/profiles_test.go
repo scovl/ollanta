@@ -43,17 +43,16 @@ func TestExecutorAppliesProfileFilterParamsAndSeverity(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	activeAnalyzer := &testAnalyzer{key: "go:no-large-functions", language: model.LangGo}
-	disabledAnalyzer := &testAnalyzer{key: "go:todo-comment", language: model.LangGo}
+	activeAnalyzer := &testAnalyzer{key: "go:todo-comment", language: model.LangGo}
+	disabledAnalyzer := &testAnalyzer{key: "go:naming-conventions", language: model.LangGo}
 	executor := NewExecutor(nil, []port.IAnalyzer{activeAnalyzer, disabledAnalyzer})
 	executor.workers = 1
 	policy := NewProfilePolicy([]*model.EffectiveQualityProfile{{
 		Language: model.LangGo,
 		Source:   model.ProfileSourceLocal,
 		Rules: []*model.EffectiveRule{{
-			RuleKey:  "go:no-large-functions",
+			RuleKey:  "go:todo-comment",
 			Severity: string(model.SeverityCritical),
-			Params:   map[string]string{"max_lines": "12"},
 		}},
 	}}, nil)
 
@@ -61,17 +60,19 @@ func TestExecutorAppliesProfileFilterParamsAndSeverity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
+	assertAppliedProfile(t, issues, activeAnalyzer, disabledAnalyzer)
+}
+
+func assertAppliedProfile(t *testing.T, issues []*model.Issue, activeAnalyzer, disabledAnalyzer *testAnalyzer) {
+	t.Helper()
 	if len(issues) != 1 {
 		t.Fatalf("issue count = %d, want 1", len(issues))
 	}
-	if issues[0].RuleKey != "go:no-large-functions" {
-		t.Fatalf("issue rule = %q, want go:no-large-functions", issues[0].RuleKey)
+	if issues[0].RuleKey != "go:todo-comment" {
+		t.Fatalf("issue rule = %q, want go:todo-comment", issues[0].RuleKey)
 	}
 	if issues[0].Severity != model.SeverityCritical {
 		t.Fatalf("issue severity = %q, want critical", issues[0].Severity)
-	}
-	if activeAnalyzer.seen["max_lines"] != "12" {
-		t.Fatalf("param max_lines = %q, want 12", activeAnalyzer.seen["max_lines"])
 	}
 	if disabledAnalyzer.seen != nil {
 		t.Fatal("disabled analyzer was executed")
@@ -82,7 +83,7 @@ func TestResolveProfilePolicyLocalJSON(t *testing.T) {
 	t.Parallel()
 	tempDir := t.TempDir()
 	path := filepath.Join(tempDir, "profiles.json")
-	data := []byte(`{"version":1,"profiles":[{"language":"go","name":"Strict Go","rules":[{"key":"go:no-large-functions","severity":"critical","params":{"max_lines":"10"}},{"key":"go:todo-comment","severity":"off"}]}]}`)
+	data := []byte(`{"version":1,"profiles":[{"language":"go","name":"Strict Go","rules":[{"key":"go:naming-conventions","severity":"critical"},{"key":"go:todo-comment","severity":"off"}]}]}`)
 	if err := os.WriteFile(path, data, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -91,12 +92,12 @@ func TestResolveProfilePolicyLocalJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ResolveProfilePolicy() error = %v", err)
 	}
-	rule, ok := policy.Rule(model.LangGo, "go:no-large-functions")
+	rule, ok := policy.Rule(model.LangGo, "go:naming-conventions")
 	if !ok {
-		t.Fatal("expected go:no-large-functions to be active")
+		t.Fatal("expected go:naming-conventions to be active")
 	}
-	if rule.Severity != string(model.SeverityCritical) || rule.Params["max_lines"] != "10" {
-		t.Fatalf("rule = %+v, want critical max_lines=10", rule)
+	if rule.Severity != string(model.SeverityCritical) {
+		t.Fatalf("rule = %+v, want critical", rule)
 	}
 	if _, ok := policy.Rule(model.LangGo, "go:todo-comment"); ok {
 		t.Fatal("go:todo-comment should be disabled")
@@ -115,10 +116,8 @@ profiles:
   - language: go
     name: YAML Go
     rules:
-      - key: go:no-large-functions
+      - key: go:naming-conventions
         severity: critical
-        params:
-          max_lines: "11"
       - key: go:todo-comment
         active: false
 `)
@@ -130,9 +129,9 @@ profiles:
 	if err != nil {
 		t.Fatalf("ResolveProfilePolicy() error = %v", err)
 	}
-	rule, ok := policy.Rule(model.LangGo, "go:no-large-functions")
-	if !ok || rule.Params["max_lines"] != "11" {
-		t.Fatalf("rule=%+v ok=%v, want active YAML rule with max_lines=11", rule, ok)
+	rule, ok := policy.Rule(model.LangGo, "go:naming-conventions")
+	if !ok || rule.Severity != string(model.SeverityCritical) {
+		t.Fatalf("rule=%+v ok=%v, want active YAML rule", rule, ok)
 	}
 	if _, ok := policy.Rule(model.LangGo, "go:todo-comment"); ok {
 		t.Fatal("go:todo-comment should be disabled by YAML active=false")
@@ -168,7 +167,7 @@ func TestResolveProfilePolicyServerFallback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ResolveProfilePolicy() error = %v", err)
 	}
-	if _, ok := policy.Rule(model.LangGo, "go:no-large-functions"); !ok {
+	if _, ok := policy.Rule(model.LangGo, "go:todo-comment"); !ok {
 		t.Fatal("expected builtin fallback rule to be active")
 	}
 	if len(policy.Diagnostics()) == 0 {

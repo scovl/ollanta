@@ -52,61 +52,68 @@ func Track(current, previous []*model.Issue) *TrackingResult {
 		return result
 	}
 	if len(current) == 0 {
-		for _, p := range previous {
-			if p.Status == model.StatusOpen || p.Status == model.StatusConfirmed {
-				result.Closed = append(result.Closed, p)
-			}
-		}
+		result.Closed = closeAllOpen(previous)
 		return result
 	}
 
-	// Build tier-1 index: open/confirmed previous issues.
-	openIdx := map[string]*model.Issue{}
-	for _, p := range previous {
-		if p.Status == model.StatusOpen || p.Status == model.StatusConfirmed {
-			openIdx[matchKey(p)] = p
-		}
-	}
-
-	// Build tier-2 index: closed/resolved previous issues.
-	closedIdx := map[string]*model.Issue{}
-	for _, p := range previous {
-		if p.Status == model.StatusClosed || p.Status == model.StatusReopened {
-			closedIdx[matchKey(p)] = p
-		}
-	}
-
+	openIdx, closedIdx := buildIssueIndex(previous)
 	matchedOpenKeys := map[string]bool{}
 
 	for _, cur := range current {
 		key := matchKey(cur)
 
-		// Tier 1: open match
 		if prev, ok := openIdx[key]; ok {
 			result.Unchanged = append(result.Unchanged, IssuePair{Current: cur, Previous: prev})
 			matchedOpenKeys[key] = true
 			continue
 		}
 
-		// Tier 2: closed match → reopened
 		if prev, ok := closedIdx[key]; ok {
 			result.Reopened = append(result.Reopened, IssuePair{Current: cur, Previous: prev})
 			continue
 		}
 
-		// No match → new
 		result.New = append(result.New, cur)
 	}
 
-	// Unmatched open issues → closed
+	result.Closed = unmatchedOpenIssues(previous, matchedOpenKeys)
+	return result
+}
+
+func closeAllOpen(previous []*model.Issue) []*model.Issue {
+	var closed []*model.Issue
 	for _, p := range previous {
-		if (p.Status == model.StatusOpen || p.Status == model.StatusConfirmed) &&
-			!matchedOpenKeys[matchKey(p)] {
-			result.Closed = append(result.Closed, p)
+		if p.Status == model.StatusOpen || p.Status == model.StatusConfirmed {
+			closed = append(closed, p)
 		}
 	}
+	return closed
+}
 
-	return result
+func buildIssueIndex(previous []*model.Issue) (openIdx, closedIdx map[string]*model.Issue) {
+	openIdx = map[string]*model.Issue{}
+	closedIdx = map[string]*model.Issue{}
+	for _, p := range previous {
+		key := matchKey(p)
+		switch p.Status {
+		case model.StatusOpen, model.StatusConfirmed:
+			openIdx[key] = p
+		case model.StatusClosed, model.StatusReopened:
+			closedIdx[key] = p
+		}
+	}
+	return openIdx, closedIdx
+}
+
+func unmatchedOpenIssues(previous []*model.Issue, matchedKeys map[string]bool) []*model.Issue {
+	var closed []*model.Issue
+	for _, p := range previous {
+		if (p.Status == model.StatusOpen || p.Status == model.StatusConfirmed) &&
+			!matchedKeys[matchKey(p)] {
+			closed = append(closed, p)
+		}
+	}
+	return closed
 }
 
 // matchKey builds the matching key for an issue.

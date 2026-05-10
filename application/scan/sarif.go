@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/scovl/ollanta/domain/model"
 )
 
 // sarifLog is the root object of a SARIF 2.1.0 log file.
@@ -80,38 +82,49 @@ var severityLevel = map[string]string{
 
 // toSARIF converts a Report to a SARIF 2.1.0 log.
 func toSARIF(r *Report) *sarifLog {
+	return &sarifLog{
+		Schema:  "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+		Version: "2.1.0",
+		Runs: []sarifRun{{
+			Tool: sarifTool{Driver: sarifDriver{
+				Name:           "Ollanta",
+				Version:        Version,
+				InformationURI: "https://github.com/scovl/ollanta",
+				Rules:          buildSARIFRules(r.Issues),
+			}},
+			Results: buildSARIFResults(r.Issues),
+		}},
+	}
+}
+
+func buildSARIFRules(issues []*model.Issue) []sarifRule {
 	seen := map[string]bool{}
 	var rules []sarifRule
-	for _, iss := range r.Issues {
+	for _, iss := range issues {
 		if seen[iss.RuleKey] {
 			continue
 		}
 		seen[iss.RuleKey] = true
-		lvl := severityLevel[string(iss.Severity)]
-		if lvl == "" {
-			lvl = "warning"
-		}
 		rules = append(rules, sarifRule{
 			ID:               iss.RuleKey,
 			Name:             iss.RuleKey,
 			ShortDescription: sarifMessage{Text: iss.RuleKey},
-			DefaultConfig:    sarifRuleConfig{Level: lvl},
+			DefaultConfig:    sarifRuleConfig{Level: sarifLevel(iss.Severity)},
 		})
 	}
+	return rules
+}
 
-	results := make([]sarifResult, 0, len(r.Issues))
-	for _, iss := range r.Issues {
-		lvl := severityLevel[string(iss.Severity)]
-		if lvl == "" {
-			lvl = "warning"
-		}
+func buildSARIFResults(issues []*model.Issue) []sarifResult {
+	results := make([]sarifResult, 0, len(issues))
+	for _, iss := range issues {
 		endLine := iss.EndLine
 		if endLine == 0 {
 			endLine = iss.Line
 		}
 		results = append(results, sarifResult{
 			RuleID:  iss.RuleKey,
-			Level:   lvl,
+			Level:   sarifLevel(iss.Severity),
 			Message: sarifMessage{Text: iss.Message},
 			Locations: []sarifLocation{{
 				PhysicalLocation: sarifPhysicalLocation{
@@ -121,20 +134,15 @@ func toSARIF(r *Report) *sarifLog {
 			}},
 		})
 	}
+	return results
+}
 
-	return &sarifLog{
-		Schema:  "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
-		Version: "2.1.0",
-		Runs: []sarifRun{{
-			Tool: sarifTool{Driver: sarifDriver{
-				Name:           "Ollanta",
-				Version:        Version,
-				InformationURI: "https://github.com/scovl/ollanta",
-				Rules:          rules,
-			}},
-			Results: results,
-		}},
+func sarifLevel(severity model.Severity) string {
+	lvl := severityLevel[string(severity)]
+	if lvl == "" {
+		return "warning"
 	}
+	return lvl
 }
 
 // SaveSARIF writes the report as SARIF 2.1.0 to <baseDir>/.ollanta/report.sarif.

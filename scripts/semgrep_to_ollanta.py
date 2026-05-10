@@ -28,20 +28,21 @@ Dependencies:
 """
 
 import argparse
+import importlib.util
 import json
 import os
 import re
+import subprocess
 import sys
 import textwrap
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, List, Tuple
 
-try:
-    import yaml
-except ImportError:
+if importlib.util.find_spec("yaml") is None:
     print("ERROR: PyYAML is required. Install with: pip install pyyaml", file=sys.stderr)
     sys.exit(1)
+import yaml
 
 
 TAINT_KEYWORDS = {"pattern-sources", "pattern-sinks", "pattern-sanitizers", "mode"}
@@ -370,9 +371,10 @@ class SemgrepToOllantaConverter:
             "compliant_code": meta.compliant_code,
         }
 
-        for field_name in ["rationale", "noncompliant_code", "compliant_code"]:
-            if not json_content[field_name]:
-                del json_content[field_name]
+        json_content = {
+            k: v for k, v in json_content.items()
+            if k not in ["rationale", "noncompliant_code", "compliant_code"] or v
+        }
 
         json_file.write_text(json.dumps(json_content, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 

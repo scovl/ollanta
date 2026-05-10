@@ -1,8 +1,6 @@
 package treesitter
 
 import (
-	"strings"
-
 	"github.com/scovl/ollanta/ollantacore/domain"
 	ollantarules "github.com/scovl/ollanta/ollantarules"
 )
@@ -56,40 +54,5 @@ var DetectRedosJS = ollantarules.Rule{
 }
 
 func hasNestedQuantifiersJS(pattern string) bool {
-	depth := 0
-	for i := 0; i < len(pattern); i++ {
-		c := pattern[i]
-		switch c {
-		case '(':
-			depth++
-		case ')':
-			if depth > 0 && i+1 < len(pattern) {
-				next := pattern[i+1]
-				if next == '*' || next == '+' || next == '?' || next == '{' {
-					groupStart := findMatchingOpenJS(pattern, i)
-					if groupStart >= 0 && strings.ContainsAny(pattern[groupStart:i], "*+?{") {
-						return true
-					}
-				}
-			}
-			depth--
-		}
-	}
-	return false
-}
-
-func findMatchingOpenJS(pattern string, closeIdx int) int {
-	depth := 1
-	for i := closeIdx - 1; i >= 0; i-- {
-		switch pattern[i] {
-		case ')':
-			depth++
-		case '(':
-			depth--
-			if depth == 0 {
-				return i
-			}
-		}
-	}
-	return -1
+	return hasNestedQuantifiers(pattern)
 }

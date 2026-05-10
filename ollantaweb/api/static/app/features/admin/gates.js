@@ -131,7 +131,7 @@ export function bindGatesContent() {
                 <td>${gateConditionLabel(condition.metric)}</td>
                 <td>${escHtml(operatorLabel(condition.operator))}</td>
                 <td class="mono">${conditionMetricSuffix(condition.threshold, condition.metric)}</td>
-                <td class="mono">${condition.warning_threshold != null ? conditionMetricSuffix(condition.warning_threshold, condition.metric) : '\u2014'}</td>
+                <td class="mono">${condition.warning_threshold !== null ? conditionMetricSuffix(condition.warning_threshold, condition.metric) : '\u2014'}</td>
                 <td>${condition.on_new_code ? '\u2713' : ''}</td>
                 <td><button class="btn-sm btn-danger del-cond-btn" data-cond-id="${condition.id}" data-gate-id="${id}">Remove</button></td>
               </tr>`).join('')}</tbody>

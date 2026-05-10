@@ -18,14 +18,16 @@ func TestGoSensor_Language(t *testing.T) {
 func TestGoSensor_AnalyzeLargeFunction(t *testing.T) {
 	src := `package p
 func Big() {
-` + strings.Repeat("\t_ = 1\n", 42) + `}`
+` + strings.Repeat("\t_ = 1\n", 62) + `}`
 	s := gosensor.NewGoSensor(defaults.NewRegistry())
 	issues, err := s.Analyze("test.go", []byte(src), nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(issues) == 0 {
-		t.Error("expected issues for large function")
+	// go:no-large-functions was removed (unreferenced). The function has no
+	// other issues — no underscores, no if/else, no connectors.
+	if len(issues) != 0 {
+		t.Errorf("expected 0 issues (size rules removed), got %d", len(issues))
 	}
 }
 
@@ -54,7 +56,7 @@ func Broken( {`
 func TestGoSensor_ActiveRulesFilter(t *testing.T) {
 	src := `package p
 func Big() {
-` + strings.Repeat("\t_ = 1\n", 42) + `}`
+` + strings.Repeat("\t_ = 1\n", 62) + `}`
 	s := gosensor.NewGoSensor(defaults.NewRegistry())
 	// Only allow naming-conventions — no-large-functions should be skipped
 	activeRules := map[string]bool{"go:naming-conventions": true}
@@ -72,7 +74,7 @@ func Big() {
 func TestGoSensor_IssueFields(t *testing.T) {
 	src := `package p
 func Big() {
-` + strings.Repeat("\t_ = 1\n", 42) + `}`
+` + strings.Repeat("\t_ = 1\n", 62) + `}`
 	s := gosensor.NewGoSensor(defaults.NewRegistry())
 	issues, err := s.Analyze("src/test.go", []byte(src), nil)
 	if err != nil {

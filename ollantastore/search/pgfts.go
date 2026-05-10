@@ -159,12 +159,20 @@ func (b *PgFTSBackend) SearchIssues(ctx context.Context, req SearchRequest) (*Se
 	}
 
 	// Facets
-	facets := map[string]map[string]int{}
-	for _, facet := range req.Facets {
+	facets := buildFacets(ctx, b.pool, req.Facets, whereClause, args[:len(args)-2])
+	return &SearchResult{
+		Hits:              hits,
+		TotalHits:         total,
+		FacetDistribution: facets,
+	}, nil
+}
+
+func buildFacets(ctx context.Context, pool *pgxpool.Pool, facets []string, whereClause string, args []interface{}) map[string]map[string]int {
+	out := map[string]map[string]int{}
+	for _, facet := range facets {
 		col := sanitiseColumn(facet)
-		facetSQL := fmt.Sprintf(
-			"SELECT %s, COUNT(*) FROM issues WHERE %s GROUP BY %s", col, whereClause, col)
-		frows, err := b.pool.Query(ctx, facetSQL, args[:len(args)-2]...) // exclude LIMIT/OFFSET
+		facetSQL := fmt.Sprintf("SELECT %s, COUNT(*) FROM issues WHERE %s GROUP BY %s", col, whereClause, col)
+		frows, err := pool.Query(ctx, facetSQL, args...)
 		if err != nil {
 			continue
 		}
@@ -177,14 +185,9 @@ func (b *PgFTSBackend) SearchIssues(ctx context.Context, req SearchRequest) (*Se
 			}
 		}
 		frows.Close()
-		facets[facet] = m
+		out[facet] = m
 	}
-
-	return &SearchResult{
-		Hits:              hits,
-		TotalHits:         total,
-		FacetDistribution: facets,
-	}, nil
+	return out
 }
 
 // SearchProjects performs a full-text search against the projects table.

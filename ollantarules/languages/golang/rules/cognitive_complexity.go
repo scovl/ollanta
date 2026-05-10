@@ -48,46 +48,50 @@ var CognitiveComplexity = ollantarules.Rule{
 	},
 }
 
-// cognitiveScore computes the cognitive complexity score for a block recursively.
 func cognitiveScore(node ast.Node, depth int) int {
 	score := 0
 	ast.Inspect(node, func(n ast.Node) bool {
 		if n == node {
-			return true // don't double-count the root
-		}
-		switch v := n.(type) {
-		case *ast.IfStmt:
-			score += 1 + depth
-			score += cognitiveScore(v.Body, depth+1)
-			if v.Else != nil {
-				score++ // else or else-if
-				score += cognitiveScore(v.Else, depth+1)
-			}
-			return false // already recursed
-		case *ast.ForStmt, *ast.RangeStmt:
-			score += 1 + depth
-			if fs, ok := n.(*ast.ForStmt); ok {
-				score += cognitiveScore(fs.Body, depth+1)
-			} else if rs, ok := n.(*ast.RangeStmt); ok {
-				score += cognitiveScore(rs.Body, depth+1)
-			}
-			return false
-		case *ast.SwitchStmt, *ast.TypeSwitchStmt, *ast.SelectStmt:
-			score += 1 + depth
-			return true // let ast.Inspect recurse into case clauses
-		case *ast.CaseClause, *ast.CommClause:
-			score += 1 + depth
 			return true
-		case *ast.BinaryExpr:
-			if v.Op.String() == "&&" || v.Op.String() == "||" {
-				score++
-			}
-		case *ast.FuncLit:
-			// nested function literal: recurse with increased depth
-			score += cognitiveScore(v.Body, depth+1)
-			return false
 		}
-		return true
+		score += nodeScore(n, depth)
+		return descendInto(n)
 	})
 	return score
+}
+
+func nodeScore(n ast.Node, depth int) int {
+	switch v := n.(type) {
+	case *ast.IfStmt:
+		s := 1 + depth
+		s += cognitiveScore(v.Body, depth+1)
+		if v.Else != nil {
+			s++
+			s += cognitiveScore(v.Else, depth+1)
+		}
+		return s
+	case *ast.ForStmt:
+		return 1 + depth + cognitiveScore(v.Body, depth+1)
+	case *ast.RangeStmt:
+		return 1 + depth + cognitiveScore(v.Body, depth+1)
+	case *ast.SwitchStmt, *ast.TypeSwitchStmt, *ast.SelectStmt:
+		return 1 + depth
+	case *ast.CaseClause, *ast.CommClause:
+		return 1 + depth
+	case *ast.BinaryExpr:
+		if v.Op.String() == "&&" || v.Op.String() == "||" {
+			return 1
+		}
+	case *ast.FuncLit:
+		return cognitiveScore(v.Body, depth+1)
+	}
+	return 0
+}
+
+func descendInto(n ast.Node) bool {
+	switch n.(type) {
+	case *ast.IfStmt, *ast.ForStmt, *ast.RangeStmt, *ast.FuncLit:
+		return false
+	}
+	return true
 }

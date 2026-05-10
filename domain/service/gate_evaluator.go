@@ -198,9 +198,10 @@ func EvaluatePersistent(conditions []PersistentCondition, req EvalRequest) *Gate
 		}
 
 		cr := evalPersistentCondition(cond, pc, measures)
-		if cr.Status == ConditionError {
+		switch cr.Status {
+		case ConditionError:
 			anyError = true
-		} else if cr.Status == ConditionWarn {
+		case ConditionWarn:
 			anyWarn = true
 		}
 		results = append(results, cr)

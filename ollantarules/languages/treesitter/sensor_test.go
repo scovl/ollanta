@@ -658,3 +658,29 @@ func TestTreeSitterSensor_JS_IncompleteSanitization(t *testing.T) {
 		t.Error("expected js:incomplete-sanitization issue")
 	}
 }
+
+// TestTreeSitterSensor_JS_IncompleteSanitization_escHtml demonstrates the
+// rule produces a false positive on escHtml's comprehensive HTML escaping
+// chain. Each individual .replace() is part of a complete OWASP escape
+// (covering & < > " '), but the rule flags each single-character pattern
+// because it cannot see the chain context.
+func TestTreeSitterSensor_JS_IncompleteSanitization_escHtml(t *testing.T) {
+	src := []byte("function escHtml(s) {\n  return String(s)\n    .replace(/&/g, '&amp;')\n    .replace(/</g, '&lt;')\n    .replace(/>/g, '&gt;')\n    .replace(/\"/g, '&quot;')\n    .replace(/'/g, '&#39;');\n}\n")
+	s := defaultSensor()
+	issues, err := s.Analyze("test.js", src, "javascript", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	fpCount := 0
+	for _, iss := range issues {
+		if iss.RuleKey == "js:incomplete-sanitization" {
+			fpCount++
+		}
+	}
+	// The rule flags each replace individually (5 false positives).
+	// This test documents the known limitation — the rule does not
+	// understand that single-character patterns are part of a chain.
+	if fpCount == 0 {
+		t.Error("expected false positives: escHtml chain should trigger the heuristic")
+	}
+}

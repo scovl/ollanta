@@ -154,43 +154,58 @@ func parseOptions(args []string) (*appscan.ScanOptions, error) {
 		return nil, err
 	}
 
-	var cfg rootConfig
-	if _, found, err := configfile.Load(configPath, &cfg); err != nil {
+	if err := loadAndApplyConfig(opts, configPath, provided); err != nil {
 		return nil, err
-	} else if found {
-		opts.ConfigPath = configPath
-		if err := resolvePlaceholders(&cfg); err != nil {
-			return nil, fmt.Errorf("config interpolation: %w", err)
-		}
-		if err := applyScannerConfig(opts, cfg.Scanner, provided); err != nil {
-			return nil, err
-		}
-		if err := applyTestsConfig(opts, cfg.Tests, provided); err != nil {
-			return nil, err
-		}
-		if err := applyMutationsConfig(opts, cfg.Mutations, provided); err != nil {
-			return nil, err
-		}
 	}
 
-	if globalConfigPath != "" {
-		var globalCfg rootConfig
-		if _, found, err := configfile.Load(globalConfigPath, &globalCfg); err != nil {
-			if !errors.Is(err, os.ErrNotExist) {
-				return nil, err
-			}
-		} else if found {
-			if err := resolvePlaceholders(&globalCfg); err != nil {
-				return nil, fmt.Errorf("global config interpolation: %w", err)
-			}
-			applyGlobalConfig(opts, globalCfg.Scanner, provided)
-		}
+	if err := loadAndApplyGlobalConfig(opts, globalConfigPath, provided); err != nil {
+		return nil, err
 	}
 
 	if err := appscan.ValidateOptions(opts); err != nil {
 		return nil, err
 	}
 	return opts, nil
+}
+
+func loadAndApplyConfig(opts *appscan.ScanOptions, configPath string, provided map[string]bool) error {
+	var cfg rootConfig
+	if _, found, err := configfile.Load(configPath, &cfg); err != nil {
+		return err
+	} else if found {
+		opts.ConfigPath = configPath
+		if err := resolvePlaceholders(&cfg); err != nil {
+			return fmt.Errorf("config interpolation: %w", err)
+		}
+		if err := applyScannerConfig(opts, cfg.Scanner, provided); err != nil {
+			return err
+		}
+		if err := applyTestsConfig(opts, cfg.Tests, provided); err != nil {
+			return err
+		}
+		if err := applyMutationsConfig(opts, cfg.Mutations, provided); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func loadAndApplyGlobalConfig(opts *appscan.ScanOptions, globalConfigPath string, provided map[string]bool) error {
+	if globalConfigPath == "" {
+		return nil
+	}
+	var globalCfg rootConfig
+	if _, found, err := configfile.Load(globalConfigPath, &globalCfg); err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	} else if found {
+		if err := resolvePlaceholders(&globalCfg); err != nil {
+			return fmt.Errorf("global config interpolation: %w", err)
+		}
+		applyGlobalConfig(opts, globalCfg.Scanner, provided)
+	}
+	return nil
 }
 
 func applyMutationsConfig(opts *appscan.ScanOptions, cfg mutationsConfig, provided map[string]bool) error {
@@ -286,32 +301,22 @@ func extractConfigPaths(args []string) ([]string, string, string, error) {
 
 	for index := 0; index < len(args); index++ {
 		arg := args[index]
-		switch {
-		case arg == "-config" || arg == "--config":
-			if index+1 >= len(args) {
-				return nil, "", "", fmt.Errorf("missing value for %s", arg)
-			}
-			configPath = args[index+1]
-			index++
-		case strings.HasPrefix(arg, "-config="):
-			configPath = strings.TrimPrefix(arg, "-config=")
-		case strings.HasPrefix(arg, "--config="):
-			configPath = strings.TrimPrefix(arg, "--config=")
-		case arg == "-global-config" || arg == "--global-config":
-			if index+1 >= len(args) {
-				return nil, "", "", fmt.Errorf("missing value for %s", arg)
-			}
-			globalConfigPath = args[index+1]
-			index++
-		case strings.HasPrefix(arg, "-global-config="):
-			globalConfigPath = strings.TrimPrefix(arg, "-global-config=")
-		case strings.HasPrefix(arg, "--global-config="):
-			globalConfigPath = strings.TrimPrefix(arg, "--global-config=")
-		default:
-			filtered = append(filtered, arg)
+		if val, next, err := extractConfigFlag(arg, args, index); err != nil {
+			return nil, "", "", err
+		} else if val != "" {
+			configPath = val
+			index = next
+			continue
 		}
+		if val, next, err := extractGlobalConfigFlag(arg, args, index); err != nil {
+			return nil, "", "", err
+		} else if val != "" {
+			globalConfigPath = val
+			index = next
+			continue
+		}
+		filtered = append(filtered, arg)
 	}
-
 	if configPath == "" {
 		configPath = os.Getenv("OLLANTA_CONFIG_FILE")
 	}
@@ -319,6 +324,39 @@ func extractConfigPaths(args []string) ([]string, string, string, error) {
 		globalConfigPath = defaultGlobalConfigPath()
 	}
 	return filtered, configPath, globalConfigPath, nil
+}
+
+func extractConfigFlag(arg string, args []string, index int) (string, int, error) {
+	if strings.HasPrefix(arg, "-config=") || strings.HasPrefix(arg, "--config=") {
+		return extractEqualsValue(arg), index, nil
+	}
+	if arg == "-config" || arg == "--config" {
+		if index+1 >= len(args) {
+			return "", index, fmt.Errorf("missing value for %s", arg)
+		}
+		return args[index+1], index + 1, nil
+	}
+	return "", index, nil
+}
+
+func extractGlobalConfigFlag(arg string, args []string, index int) (string, int, error) {
+	if strings.HasPrefix(arg, "-global-config=") || strings.HasPrefix(arg, "--global-config=") {
+		return extractEqualsValue(arg), index, nil
+	}
+	if arg == "-global-config" || arg == "--global-config" {
+		if index+1 >= len(args) {
+			return "", index, fmt.Errorf("missing value for %s", arg)
+		}
+		return args[index+1], index + 1, nil
+	}
+	return "", index, nil
+}
+
+func extractEqualsValue(arg string) string {
+	if idx := strings.Index(arg, "="); idx >= 0 {
+		return arg[idx+1:]
+	}
+	return ""
 }
 
 func defaultGlobalConfigPath() string {
@@ -449,27 +487,22 @@ func expandValue(value string, env map[string]string) string {
 			return "$"
 		}
 		if strings.HasPrefix(key, "env.") {
-			k := strings.TrimPrefix(key, "env.")
-			if idx := strings.Index(k, ":-"); idx >= 0 {
-				name := k[:idx]
-				def := k[idx+2:]
-				if v, ok := env[name]; ok {
-					return v
-				}
-				return def
-			}
-			return env[k]
+			return envLookup(strings.TrimPrefix(key, "env."), env)
 		}
-		if idx := strings.Index(key, ":-"); idx >= 0 {
-			name := key[:idx]
-			def := key[idx+2:]
-			if v, ok := env[name]; ok {
-				return v
-			}
-			return def
-		}
-		return env[key]
+		return envLookup(key, env)
 	})
+}
+
+func envLookup(key string, env map[string]string) string {
+	if idx := strings.Index(key, ":-"); idx >= 0 {
+		name := key[:idx]
+		def := key[idx+2:]
+		if v, ok := env[name]; ok {
+			return v
+		}
+		return def
+	}
+	return env[key]
 }
 
 func envMap() map[string]string {

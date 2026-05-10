@@ -115,30 +115,7 @@ func Serve(reportPath, bind string, port int) error {
 	}
 	aiFixService := newAIFixService(projectRoot, rules, logger)
 
-	mux.HandleFunc("/rules/", func(w http.ResponseWriter, r *http.Request) {
-		key, _ := url.PathUnescape(strings.TrimPrefix(r.URL.Path, "/rules/"))
-		if key == "" {
-			w.Header().Set(contentTypeHeader, jsonContentType)
-			w.WriteHeader(http.StatusBadRequest)
-			if _, err := fmt.Fprint(w, `{"error":"missing rule key"}`); err != nil {
-				logger.Error("write rules error response", "error", err)
-			}
-			return
-		}
-		rule, ok := rules[key]
-		if !ok {
-			w.Header().Set(contentTypeHeader, jsonContentType)
-			w.WriteHeader(http.StatusNotFound)
-			if _, err := fmt.Fprint(w, `{"error":"rule not found"}`); err != nil {
-				logger.Error("write rules error response", "error", err)
-			}
-			return
-		}
-		w.Header().Set(contentTypeHeader, jsonContentType)
-		if err := json.NewEncoder(w).Encode(rule); err != nil {
-			logger.Error("encode rule response", "key", key, "error", err)
-		}
-	})
+	mux.HandleFunc("/rules/", handleRuleLookup(rules, logger))
 	mux.HandleFunc("/api/ai/agents", aiFixService.handleAgents)
 	mux.HandleFunc("/api/ai/providers", aiFixService.handleProviders)
 	mux.HandleFunc("/api/ai/fixes/preview", aiFixService.handlePreview)
@@ -216,6 +193,33 @@ func listenWithLocalFallback(bind string, port int) (net.Listener, error) {
 	}
 
 	return nil, fmt.Errorf("server: listen %s: address is in use and no free fallback port was found", addr)
+}
+
+func handleRuleLookup(rules map[string]*ollantarules.RuleMeta, logger *slog.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		key, _ := url.PathUnescape(strings.TrimPrefix(r.URL.Path, "/rules/"))
+		if key == "" {
+			writeRuleError(w, http.StatusBadRequest, `{"error":"missing rule key"}`)
+			return
+		}
+		rule, ok := rules[key]
+		if !ok {
+			writeRuleError(w, http.StatusNotFound, `{"error":"rule not found"}`)
+			return
+		}
+		w.Header().Set(contentTypeHeader, jsonContentType)
+		if err := json.NewEncoder(w).Encode(rule); err != nil {
+			logger.Error("encode rule response", "key", key, "error", err)
+		}
+	}
+}
+
+func writeRuleError(w http.ResponseWriter, status int, msg string) {
+	w.Header().Set(contentTypeHeader, jsonContentType)
+	w.WriteHeader(status)
+	if _, err := fmt.Fprint(w, msg); err != nil {
+		slog.Error("write rules error response", "error", err)
+	}
 }
 
 func isLocalBind(bind string) bool {

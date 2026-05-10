@@ -418,24 +418,20 @@ func applyServerFileConfig(cfg *Config, file serverFileConfig) error {
 	if file.CORSAllowUnsafeWildcard {
 		cfg.CORSAllowUnsafeWildcard = true
 	}
-	if file.HTTPMaxBodyBytes != 0 {
-		cfg.HTTPMaxBodyBytes = file.HTTPMaxBodyBytes
-	}
+	applyNonZeroInt64(&cfg.HTTPMaxBodyBytes, file.HTTPMaxBodyBytes)
 	if file.AutoMigrate != nil {
 		cfg.AutoMigrate = *file.AutoMigrate
 	}
-	if file.ScanQueueMaxAccepted != 0 {
-		cfg.ScanQueueMaxAccepted = file.ScanQueueMaxAccepted
-	}
-	if file.ScanQueueMaxRunning != 0 {
-		cfg.ScanQueueMaxRunning = file.ScanQueueMaxRunning
-	}
-	if err := applyDurationValue(&cfg.ScanQueueMaxOldestAcceptedAge, file.ScanQueueMaxAge, "server.scan_queue_max_oldest_accepted_age"); err != nil {
+	applyNonZeroInt(&cfg.ScanQueueMaxAccepted, file.ScanQueueMaxAccepted)
+	applyNonZeroInt(&cfg.ScanQueueMaxRunning, file.ScanQueueMaxRunning)
+
+	if err := applyDurationValues(
+		durationApply{&cfg.ScanQueueMaxOldestAcceptedAge, file.ScanQueueMaxAge, "server.scan_queue_max_oldest_accepted_age"},
+		durationApply{&cfg.ScanQueueRetryAfter, file.ScanQueueRetryAfter, "server.scan_queue_retry_after"},
+	); err != nil {
 		return err
 	}
-	if err := applyDurationValue(&cfg.ScanQueueRetryAfter, file.ScanQueueRetryAfter, "server.scan_queue_retry_after"); err != nil {
-		return err
-	}
+
 	if err := applyJobRecoveryFileConfig(&cfg.ScanJobRecovery, file.ScanJobStaleAfter, file.ScanJobMaxAttempts, file.ScanJobRecoveryInterval, "server.scan_job"); err != nil {
 		return err
 	}
@@ -445,69 +441,39 @@ func applyServerFileConfig(cfg *Config, file serverFileConfig) error {
 	if err := applyJobRecoveryFileConfig(&cfg.WebhookJobRecovery, file.WebhookJobStaleAfter, file.WebhookJobMaxAttempts, file.WebhookJobRecoveryInterval, "server.webhook_job"); err != nil {
 		return err
 	}
-	if err := applyDurationValue(&cfg.JWTExpiry, file.JWTExpiry, "server.jwt_expiry"); err != nil {
+
+	applyRetentionFromDays(&cfg.WorkerDataScanJobsRetention, file.WorkerDataScanJobsRetDays)
+	applyRetentionFromDays(&cfg.WorkerDataScansRetention, file.WorkerDataScansRetDays)
+	applyRetentionFromDays(&cfg.WorkerDataMeasuresRetention, file.WorkerDataMeasuresRetDays)
+
+	if err := applyDurationValues(
+		durationApply{&cfg.JWTExpiry, file.JWTExpiry, "server.jwt_expiry"},
+		durationApply{&cfg.RefreshExpiry, file.RefreshExpiry, "server.refresh_expiry"},
+		durationApply{&cfg.WorkerPollDelay, file.WorkerPollDelay, "server.worker_poll_delay"},
+		durationApply{&cfg.WorkerHeartbeatInterval, file.WorkerHeartbeatInterval, "server.worker_heartbeat_interval"},
+		durationApply{&cfg.WorkerDataCleanupInterval, file.WorkerDataCleanupInterval, "server.worker_data_cleanup_interval"},
+		durationApply{&cfg.IndexPollDelay, file.IndexPollDelay, "server.index_poll_delay"},
+		durationApply{&cfg.WebhookPollDelay, file.WebhookPollDelay, "server.webhook_poll_delay"},
+		durationApply{&cfg.WebhookClientTimeout, file.WebhookClientTimeout, "server.webhook_client_timeout"},
+		durationApply{&cfg.HTTPServerReadTimeout, file.HTTPServerReadTimeout, "server.http_read_timeout"},
+		durationApply{&cfg.HTTPServerWriteTimeout, file.HTTPServerWriteTimeout, "server.http_write_timeout"},
+		durationApply{&cfg.HTTPServerIdleTimeout, file.HTTPServerIdleTimeout, "server.http_idle_timeout"},
+		durationApply{&cfg.HTTPServerShutdownTimeout, file.HTTPServerShutdownTimeout, "server.http_shutdown_timeout"},
+		durationApply{&cfg.BackgroundTaskMetricsInterval, file.MetricsInterval, "server.metrics_interval"},
+		durationApply{&cfg.DatabaseMetricsInterval, file.MetricsInterval, "server.metrics_interval"},
+	); err != nil {
 		return err
 	}
-	if err := applyDurationValue(&cfg.RefreshExpiry, file.RefreshExpiry, "server.refresh_expiry"); err != nil {
-		return err
-	}
-	if err := applyDurationValue(&cfg.WorkerPollDelay, file.WorkerPollDelay, "server.worker_poll_delay"); err != nil {
-		return err
-	}
-	if err := applyDurationValue(&cfg.WorkerHeartbeatInterval, file.WorkerHeartbeatInterval, "server.worker_heartbeat_interval"); err != nil {
-		return err
-	}
-	if err := applyDurationValue(&cfg.WorkerDataCleanupInterval, file.WorkerDataCleanupInterval, "server.worker_data_cleanup_interval"); err != nil {
-		return err
-	}
-	if file.WorkerDataScanJobsRetDays != 0 {
-		cfg.WorkerDataScanJobsRetention = time.Duration(file.WorkerDataScanJobsRetDays) * 24 * time.Hour
-	}
-	if file.WorkerDataScansRetDays != 0 {
-		cfg.WorkerDataScansRetention = time.Duration(file.WorkerDataScansRetDays) * 24 * time.Hour
-	}
-	if file.WorkerDataMeasuresRetDays != 0 {
-		cfg.WorkerDataMeasuresRetention = time.Duration(file.WorkerDataMeasuresRetDays) * 24 * time.Hour
-	}
-	if err := applyDurationValue(&cfg.IndexPollDelay, file.IndexPollDelay, "server.index_poll_delay"); err != nil {
-		return err
-	}
-	if file.IndexMaxRetries != 0 {
-		cfg.IndexMaxRetries = file.IndexMaxRetries
-	}
-	if file.IndexBatchSize != 0 {
-		cfg.IndexBatchSize = file.IndexBatchSize
-	}
-	if err := applyDurationValue(&cfg.WebhookPollDelay, file.WebhookPollDelay, "server.webhook_poll_delay"); err != nil {
-		return err
-	}
-	if err := applyDurationValue(&cfg.WebhookClientTimeout, file.WebhookClientTimeout, "server.webhook_client_timeout"); err != nil {
-		return err
-	}
+
+	applyNonZeroInt(&cfg.IndexMaxRetries, file.IndexMaxRetries)
+	applyNonZeroInt(&cfg.IndexBatchSize, file.IndexBatchSize)
+
 	if file.WebhookRetryDelaysStr != "" {
 		delays, err := parseDurationList(file.WebhookRetryDelaysStr)
 		if err != nil {
 			return errors.New("invalid server.webhook_retry_delays: " + err.Error())
 		}
 		cfg.WebhookRetryDelays = delays
-	}
-	if err := applyDurationValue(&cfg.HTTPServerReadTimeout, file.HTTPServerReadTimeout, "server.http_read_timeout"); err != nil {
-		return err
-	}
-	if err := applyDurationValue(&cfg.HTTPServerWriteTimeout, file.HTTPServerWriteTimeout, "server.http_write_timeout"); err != nil {
-		return err
-	}
-	if err := applyDurationValue(&cfg.HTTPServerIdleTimeout, file.HTTPServerIdleTimeout, "server.http_idle_timeout"); err != nil {
-		return err
-	}
-	if err := applyDurationValue(&cfg.HTTPServerShutdownTimeout, file.HTTPServerShutdownTimeout, "server.http_shutdown_timeout"); err != nil {
-		return err
-	}
-	if err := applyDurationValue(&cfg.BackgroundTaskMetricsInterval, file.MetricsInterval, "server.metrics_interval"); err != nil {
-		return err
-	}
-	if err := applyDurationValue(&cfg.DatabaseMetricsInterval, file.MetricsInterval, "server.metrics_interval"); err != nil {
-		return err
 	}
 	return nil
 }
@@ -773,37 +739,29 @@ func applyTokenExpiryEnvOverrides(cfg *Config) error {
 }
 
 func applyWorkerEnvOverrides(cfg *Config) error {
-	if err := applyEnvDurationValue(&cfg.WorkerPollDelay, "OLLANTA_WORKER_POLL_DELAY"); err != nil {
+	if err := applyEnvDurationValues(
+		envDurationApply{&cfg.WorkerPollDelay, "OLLANTA_WORKER_POLL_DELAY"},
+		envDurationApply{&cfg.WorkerHeartbeatInterval, "OLLANTA_WORKER_HEARTBEAT_INTERVAL"},
+		envDurationApply{&cfg.WorkerDataCleanupInterval, "OLLANTA_WORKER_DATA_CLEANUP_INTERVAL"},
+		envDurationApply{&cfg.WorkerDataScanJobsRetention, "OLLANTA_WORKER_DATA_SCAN_JOBS_RETENTION"},
+		envDurationApply{&cfg.WorkerDataScansRetention, "OLLANTA_WORKER_DATA_SCANS_RETENTION"},
+		envDurationApply{&cfg.WorkerDataMeasuresRetention, "OLLANTA_WORKER_DATA_MEASURES_RETENTION"},
+		envDurationApply{&cfg.IndexPollDelay, "OLLANTA_INDEX_POLL_DELAY"},
+		envDurationApply{&cfg.WebhookPollDelay, "OLLANTA_WEBHOOK_POLL_DELAY"},
+		envDurationApply{&cfg.WebhookClientTimeout, "OLLANTA_WEBHOOK_CLIENT_TIMEOUT"},
+		envDurationApply{&cfg.HTTPServerReadTimeout, "OLLANTA_HTTP_READ_TIMEOUT"},
+		envDurationApply{&cfg.HTTPServerWriteTimeout, "OLLANTA_HTTP_WRITE_TIMEOUT"},
+		envDurationApply{&cfg.HTTPServerIdleTimeout, "OLLANTA_HTTP_IDLE_TIMEOUT"},
+		envDurationApply{&cfg.HTTPServerShutdownTimeout, "OLLANTA_HTTP_SHUTDOWN_TIMEOUT"},
+		envDurationApply{&cfg.BackgroundTaskMetricsInterval, "OLLANTA_METRICS_INTERVAL"},
+		envDurationApply{&cfg.DatabaseMetricsInterval, "OLLANTA_METRICS_INTERVAL"},
+	); err != nil {
 		return err
 	}
-	if err := applyEnvDurationValue(&cfg.WorkerHeartbeatInterval, "OLLANTA_WORKER_HEARTBEAT_INTERVAL"); err != nil {
-		return err
-	}
-	if err := applyEnvDurationValue(&cfg.WorkerDataCleanupInterval, "OLLANTA_WORKER_DATA_CLEANUP_INTERVAL"); err != nil {
-		return err
-	}
-	if err := applyEnvDurationValue(&cfg.WorkerDataScanJobsRetention, "OLLANTA_WORKER_DATA_SCAN_JOBS_RETENTION"); err != nil {
-		return err
-	}
-	if err := applyEnvDurationValue(&cfg.WorkerDataScansRetention, "OLLANTA_WORKER_DATA_SCANS_RETENTION"); err != nil {
-		return err
-	}
-	if err := applyEnvDurationValue(&cfg.WorkerDataMeasuresRetention, "OLLANTA_WORKER_DATA_MEASURES_RETENTION"); err != nil {
-		return err
-	}
-	if err := applyEnvDurationValue(&cfg.IndexPollDelay, "OLLANTA_INDEX_POLL_DELAY"); err != nil {
-		return err
-	}
-	if err := applyEnvIntValue(&cfg.IndexMaxRetries, "OLLANTA_INDEX_MAX_RETRIES"); err != nil {
-		return err
-	}
-	if err := applyEnvIntValue(&cfg.IndexBatchSize, "OLLANTA_INDEX_BATCH_SIZE"); err != nil {
-		return err
-	}
-	if err := applyEnvDurationValue(&cfg.WebhookPollDelay, "OLLANTA_WEBHOOK_POLL_DELAY"); err != nil {
-		return err
-	}
-	if err := applyEnvDurationValue(&cfg.WebhookClientTimeout, "OLLANTA_WEBHOOK_CLIENT_TIMEOUT"); err != nil {
+	if err := applyEnvIntValues(
+		envIntApply{&cfg.IndexMaxRetries, "OLLANTA_INDEX_MAX_RETRIES"},
+		envIntApply{&cfg.IndexBatchSize, "OLLANTA_INDEX_BATCH_SIZE"},
+	); err != nil {
 		return err
 	}
 	if value, ok := os.LookupEnv("OLLANTA_WEBHOOK_RETRY_DELAYS"); ok && value != "" {
@@ -812,24 +770,6 @@ func applyWorkerEnvOverrides(cfg *Config) error {
 			return errors.New("invalid OLLANTA_WEBHOOK_RETRY_DELAYS: " + err.Error())
 		}
 		cfg.WebhookRetryDelays = delays
-	}
-	if err := applyEnvDurationValue(&cfg.HTTPServerReadTimeout, "OLLANTA_HTTP_READ_TIMEOUT"); err != nil {
-		return err
-	}
-	if err := applyEnvDurationValue(&cfg.HTTPServerWriteTimeout, "OLLANTA_HTTP_WRITE_TIMEOUT"); err != nil {
-		return err
-	}
-	if err := applyEnvDurationValue(&cfg.HTTPServerIdleTimeout, "OLLANTA_HTTP_IDLE_TIMEOUT"); err != nil {
-		return err
-	}
-	if err := applyEnvDurationValue(&cfg.HTTPServerShutdownTimeout, "OLLANTA_HTTP_SHUTDOWN_TIMEOUT"); err != nil {
-		return err
-	}
-	if err := applyEnvDurationValue(&cfg.BackgroundTaskMetricsInterval, "OLLANTA_METRICS_INTERVAL"); err != nil {
-		return err
-	}
-	if err := applyEnvDurationValue(&cfg.DatabaseMetricsInterval, "OLLANTA_METRICS_INTERVAL"); err != nil {
-		return err
 	}
 	return nil
 }
@@ -1045,6 +985,39 @@ func applyDurationValue(dst *time.Duration, value, label string) error {
 	return nil
 }
 
+type durationApply struct {
+	target *time.Duration
+	source string
+	label  string
+}
+
+func applyDurationValues(applies ...durationApply) error {
+	for _, a := range applies {
+		if err := applyDurationValue(a.target, a.source, a.label); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func applyNonZeroInt(target *int, source int) {
+	if source != 0 {
+		*target = source
+	}
+}
+
+func applyNonZeroInt64(target *int64, source int64) {
+	if source != 0 {
+		*target = source
+	}
+}
+
+func applyRetentionFromDays(target *time.Duration, days int) {
+	if days != 0 {
+		*target = time.Duration(days) * 24 * time.Hour
+	}
+}
+
 func applyEnvStringValue(dst *string, key string) {
 	if value, ok := os.LookupEnv(key); ok && value != "" {
 		*dst = value
@@ -1147,4 +1120,32 @@ func containsWildcardOrigin(origins []string) bool {
 		}
 	}
 	return false
+}
+
+type envDurationApply struct {
+	target *time.Duration
+	key    string
+}
+
+func applyEnvDurationValues(applies ...envDurationApply) error {
+	for _, a := range applies {
+		if err := applyEnvDurationValue(a.target, a.key); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+type envIntApply struct {
+	target *int
+	key    string
+}
+
+func applyEnvIntValues(applies ...envIntApply) error {
+	for _, a := range applies {
+		if err := applyEnvIntValue(a.target, a.key); err != nil {
+			return err
+		}
+	}
+	return nil
 }

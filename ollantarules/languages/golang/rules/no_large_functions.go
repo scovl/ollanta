@@ -14,7 +14,7 @@ import (
 var NoLargeFunctions = ollantarules.Rule{
 	MetaKey: "go:no-large-functions",
 	Check: func(ctx *ollantarules.AnalysisContext) []*domain.Issue {
-		maxLines := ollantarules.ParamInt(ctx.Params, "max_lines", 40)
+		maxLines := ollantarules.ParamInt(ctx.Params, "max_lines", 60)
 		var issues []*domain.Issue
 
 		ast.Inspect(ctx.AST, func(n ast.Node) bool {
@@ -35,9 +35,9 @@ var NoLargeFunctions = ollantarules.Rule{
 				issues = append(issues, issue)
 			}
 			return true
-		})
-		return issues
-	},
+	})
+	return issues
+},
 }
 
 // lineOf returns the 1-based line number of a token.Pos.

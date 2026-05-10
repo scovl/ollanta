@@ -55,8 +55,6 @@ var RegexDosPY = ollantarules.Rule{
 }
 
 func hasNestedQuantifiers(pattern string) bool {
-	// Simple heuristic: look for patterns like (a+)+, (a*)*, (a+)*, etc.
-	// We look for a group that contains a quantifier and is itself quantified.
 	depth := 0
 	for i := 0; i < len(pattern); i++ {
 		c := pattern[i]
@@ -64,21 +62,25 @@ func hasNestedQuantifiers(pattern string) bool {
 		case '(':
 			depth++
 		case ')':
-			// Check if next char quantifies this group
-			if depth > 0 && i+1 < len(pattern) {
-				next := pattern[i+1]
-				if next == '*' || next == '+' || next == '?' || next == '{' {
-					// Check if inside the group there was a quantifier
-					groupStart := findMatchingOpen(pattern, i)
-					if groupStart >= 0 && strings.ContainsAny(pattern[groupStart:i], "*+?{") {
-						return true
-					}
-				}
+			if isGroupWithQuantifier(pattern, depth, i) {
+				return true
 			}
 			depth--
 		}
 	}
 	return false
+}
+
+func isGroupWithQuantifier(pattern string, depth int, i int) bool {
+	if depth <= 0 || i+1 >= len(pattern) {
+		return false
+	}
+	next := pattern[i+1]
+	if next != '*' && next != '+' && next != '?' && next != '{' {
+		return false
+	}
+	groupStart := findMatchingOpen(pattern, i)
+	return groupStart >= 0 && strings.ContainsAny(pattern[groupStart:i], "*+?{")
 }
 
 func findMatchingOpen(pattern string, closeIdx int) int {

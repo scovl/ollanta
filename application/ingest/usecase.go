@@ -685,19 +685,30 @@ func detectTestSignalEvidence(raw json.RawMessage) testSignalEvidence {
 		ChangedMutation: payload.Summary.ChangedMutationScore != nil || payload.Summary.ChangedMutantsTotal > 0 || payload.Summary.ChangedMutantsKilled > 0 || payload.Summary.ChangedMutantsSurvived > 0,
 	}
 	for _, module := range payload.Modules {
-		if len(module.Suites) > 0 {
+		evidence = applyModuleEvidence(evidence, module)
+	}
+	return evidence
+}
+
+func applyModuleEvidence(evidence testSignalEvidence, module struct {
+	Suites   []json.RawMessage `json:"suites"`
+	Mutation *json.RawMessage  `json:"mutation"`
+	Reports  []struct {
+		Kind string `json:"kind"`
+	} `json:"reports"`
+}) testSignalEvidence {
+	if len(module.Suites) > 0 {
+		evidence.Tests = true
+	}
+	if module.Mutation != nil {
+		evidence.Mutation = true
+	}
+	for _, report := range module.Reports {
+		switch report.Kind {
+		case "test", "native":
 			evidence.Tests = true
-		}
-		if module.Mutation != nil {
+		case "mutation", "native_mutation":
 			evidence.Mutation = true
-		}
-		for _, report := range module.Reports {
-			switch report.Kind {
-			case "test", "native":
-				evidence.Tests = true
-			case "mutation", "native_mutation":
-				evidence.Mutation = true
-			}
 		}
 	}
 	return evidence

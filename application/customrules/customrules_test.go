@@ -19,7 +19,7 @@ func TestValidateDocumentRejectsBundledKeyAndUnsupportedVersion(t *testing.T) {
 		Version: 99,
 		Pack:    model.CustomRulePack{Name: "Team", Namespace: "team"},
 		Rules: []model.CustomRuleDefinition{{
-			RuleKey:         "go:no-large-functions",
+			RuleKey:         "go:todo-comment",
 			Name:            "Collision",
 			Language:        model.LangGo,
 			Type:            model.TypeCodeSmell,

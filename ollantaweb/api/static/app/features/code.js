@@ -51,7 +51,7 @@ function renderCodeIssueChips(issues) {
 }
 
 function coverageClass(coverage) {
-  if (coverage == null) return 'card-neutral';
+  if (coverage === null || coverage === undefined) return 'card-neutral';
   if (coverage >= 80) return 'card-green';
   if (coverage >= 60) return 'card-yellow';
   return 'card-red';

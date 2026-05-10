@@ -44,6 +44,25 @@ func LargeFunction() string {
 	mm := "line39"
 	nn := "line40"
 	oo := "line41"
-	_ = a + b + c + d + e + f + g + h + i + j + k + l + m + n + o + p + q + r + s + t + u + v + w + x + y + z + aa + bb + cc + dd + ee + ff + gg + hh + ii + jj + kk + ll + mm + nn
-	return oo
+	pp := "line42"
+	qq := "line43"
+	rr := "line44"
+	ss := "line45"
+	tt := "line46"
+	uu := "line47"
+	vv := "line48"
+	ww := "line49"
+	xx := "line50"
+	yy := "line51"
+	zz := "line52"
+	aaa := "line53"
+	bbb := "line54"
+	ccc := "line55"
+	ddd := "line56"
+	eee := "line57"
+	fff := "line58"
+	ggg := "line59"
+	hhh := "line60"
+	_ = a + b + c + d + e + f + g + h + i + j + k + l + m + n + o + p + q + r + s + t + u + v + w + x + y + z + aa + bb + cc + dd + ee + ff + gg + hh + ii + jj + kk + ll + mm + nn + oo + pp + qq + rr + ss + tt + uu + vv + ww + xx + yy + zz + aaa + bbb + ccc + ddd + eee + fff + ggg
+	return hhh
 }

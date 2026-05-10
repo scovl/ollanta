@@ -23,7 +23,19 @@ const (
 func TestResolveSCMContextWithInputsUsesPullRequestEnvironment(t *testing.T) {
 	t.Parallel()
 
-	lookup := func(key string) (string, bool) {
+	ctx, err := resolveSCMContextWithInputs(
+		&ScanOptions{ProjectDir: "."},
+		pullRequestLookup(),
+		gitCommandMock(),
+	)
+	if err != nil {
+		t.Fatalf(resolvedContextError, err)
+	}
+	assertPRContext(t, ctx)
+}
+
+func pullRequestLookup() func(string) (string, bool) {
+	return func(key string) (string, bool) {
 		values := map[string]string{
 			"OLLANTA_PULL_REQUEST_KEY":    "42",
 			"OLLANTA_PULL_REQUEST_BRANCH": "feature/login",
@@ -32,7 +44,10 @@ func TestResolveSCMContextWithInputsUsesPullRequestEnvironment(t *testing.T) {
 		value, ok := values[key]
 		return value, ok
 	}
-	git := func(_ string, args ...string) (string, error) {
+}
+
+func gitCommandMock() func(string, ...string) (string, error) {
+	return func(_ string, args ...string) (string, error) {
 		switch strings.Join(args, " ") {
 		case gitInsideWorkTreeCmd:
 			return "true", nil
@@ -44,11 +59,10 @@ func TestResolveSCMContextWithInputsUsesPullRequestEnvironment(t *testing.T) {
 			return "", errors.New(unexpectedGitCommand)
 		}
 	}
+}
 
-	ctx, err := resolveSCMContextWithInputs(&ScanOptions{ProjectDir: "."}, lookup, git)
-	if err != nil {
-		t.Fatalf(resolvedContextError, err)
-	}
+func assertPRContext(t *testing.T, ctx *SCMContext) {
+	t.Helper()
 	if ctx.ScopeType != model.ScopeTypePullRequest {
 		t.Fatalf(scopeTypeMismatch, ctx.ScopeType, model.ScopeTypePullRequest)
 	}

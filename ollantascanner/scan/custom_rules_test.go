@@ -34,7 +34,33 @@ func TestRun_UsesServerCustomCatalogAndEffectiveProfile(t *testing.T) {
 	rule.VersionHash = model.HashCustomRuleDefinition(rule)
 	catalogHash := model.HashCustomRuleCatalog([]model.CustomRuleDefinition{rule})
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(customCatalogHandler(t, rule, catalogHash))
+	defer server.Close()
+
+	projectDir := t.TempDir()
+	writeFile(t, filepath.Join(projectDir, "main.go"), "package main\n\nfunc main() {\n\tprintln(\"SERVER_CUSTOM_RULE_MARKER\")\n}\n")
+
+	report, err := scanner.Run(context.Background(), &scanner.ScanOptions{
+		ProjectDir:  projectDir,
+		ProjectKey:  "demo",
+		Sources:     []string{"./..."},
+		Format:      "summary",
+		Server:      server.URL,
+		ServerToken: "token",
+		Profiles: appscan.ProfileOptions{
+			Source:       appscan.ProfileSourceServer,
+			Strict:       true,
+			FetchTimeout: time.Second,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	assertCustomCatalogRun(t, report, rule, catalogHash)
+}
+
+func customCatalogHandler(t *testing.T, rule model.CustomRuleDefinition, catalogHash string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "Bearer token" {
 			t.Fatalf("authorization = %q, want Bearer token", got)
 		}
@@ -57,28 +83,11 @@ func TestRun_UsesServerCustomCatalogAndEffectiveProfile(t *testing.T) {
 		default:
 			t.Fatalf("unexpected request path %q", r.URL.Path)
 		}
-	}))
-	defer server.Close()
-
-	projectDir := t.TempDir()
-	writeFile(t, filepath.Join(projectDir, "main.go"), "package main\n\nfunc main() {\n\tprintln(\"SERVER_CUSTOM_RULE_MARKER\")\n}\n")
-
-	report, err := scanner.Run(context.Background(), &scanner.ScanOptions{
-		ProjectDir:  projectDir,
-		ProjectKey:  "demo",
-		Sources:     []string{"./..."},
-		Format:      "summary",
-		Server:      server.URL,
-		ServerToken: "token",
-		Profiles: appscan.ProfileOptions{
-			Source:       appscan.ProfileSourceServer,
-			Strict:       true,
-			FetchTimeout: time.Second,
-		},
-	})
-	if err != nil {
-		t.Fatalf("Run() error = %v", err)
 	}
+}
+
+func assertCustomCatalogRun(t *testing.T, report *scanner.Report, rule model.CustomRuleDefinition, catalogHash string) {
+	t.Helper()
 	if report.ScannerOptions.CustomRules.CatalogHash != catalogHash {
 		t.Fatalf("catalog hash = %q, want %q", report.ScannerOptions.CustomRules.CatalogHash, catalogHash)
 	}

@@ -100,7 +100,6 @@ func ParseFlags(args []string) (*ScanOptions, error) {
 
 	switch *format {
 	case "summary", "json", "sarif", "all":
-		// valid
 	default:
 		return nil, fmt.Errorf("unknown format %q: expected summary, json, sarif, or all", *format)
 	}
@@ -155,31 +154,34 @@ func ParseFlags(args []string) (*ScanOptions, error) {
 		},
 	}
 
-	for _, s := range strings.Split(*sources, ",") {
-		if s := strings.TrimSpace(s); s != "" {
-			opts.Sources = append(opts.Sources, s)
-		}
-	}
-	for _, s := range strings.Split(*exclusions, ",") {
-		if s := strings.TrimSpace(s); s != "" {
-			opts.Exclusions = append(opts.Exclusions, s)
-		}
-	}
-
-	if *projectKey != "" {
-		opts.ProjectKey = *projectKey
-	} else {
-		abs, err := filepath.Abs(*projectDir)
-		if err != nil {
-			abs = *projectDir
-		}
-		opts.ProjectKey = filepath.Base(abs)
-	}
-
+	opts.Sources = splitTrim(*sources, ",")
+	opts.Exclusions = splitTrim(*exclusions, ",")
+	opts.ProjectKey = resolveProjectKey(*projectKey, *projectDir)
 	if err := ValidateOptions(opts); err != nil {
 		return nil, err
 	}
 	return opts, nil
+}
+
+func splitTrim(raw, sep string) []string {
+	var out []string
+	for _, s := range strings.Split(raw, sep) {
+		if s := strings.TrimSpace(s); s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+func resolveProjectKey(key, dir string) string {
+	if key != "" {
+		return key
+	}
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		abs = dir
+	}
+	return filepath.Base(abs)
 }
 
 // ScanUseCase orchestrates: discover → parse/analyse → report.

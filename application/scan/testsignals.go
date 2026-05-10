@@ -1051,26 +1051,31 @@ func inferArchitectureRole(root string) string {
 		return r == '/' || r == '-' || r == '_'
 	})
 	for _, part := range parts {
-		switch part {
-		case "domain":
-			return "domain"
-		case "application", "app":
-			return "application"
-		case "adapter", "adapters":
-			return "adapter"
-		case "infrastructure", "infra":
-			return "infrastructure"
-		case "api", "web":
-			return "web"
-		case "cmd", "service", "services":
-			return "service"
-		case "apps":
-			return "application"
-		case "lib", "libs", "packages", "pkg":
-			return "library"
+		if role, ok := architectureRoleMap[part]; ok {
+			return role
 		}
 	}
 	return "unknown"
+}
+
+var architectureRoleMap = map[string]string{
+	"domain":         "domain",
+	"application":    "application",
+	"app":            "application",
+	"adapter":        "adapter",
+	"adapters":       "adapter",
+	"infrastructure": "infrastructure",
+	"infra":          "infrastructure",
+	"api":            "web",
+	"web":            "web",
+	"cmd":            "service",
+	"service":        "service",
+	"services":       "service",
+	"apps":           "application",
+	"lib":            "library",
+	"libs":           "library",
+	"packages":       "library",
+	"pkg":            "library",
 }
 
 func collectConfiguredReports(projectDir string, module TestModuleSignal, cfg TestModuleConfig, opts TestOptions, scanStarted time.Time, diagnostics *[]TestSignalDiagnostic) []TestReportProvenance {

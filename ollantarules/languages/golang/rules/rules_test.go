@@ -115,7 +115,7 @@ func TestNoLargeFunctions_Method(t *testing.T) {
 	src := `package p
 type S struct{}
 func (s S) Big() {
-` + strings.Repeat("\t_ = 1\n", 41) + `}`
+	` + strings.Repeat("\t_ = 1\n", 61) + `}`
 	ctx := parseGoSource(t, src)
 	issues := rules.NoLargeFunctions.Check(ctx)
 	if len(issues) == 0 {
@@ -716,5 +716,54 @@ func f() int { return 1 }`
 	issues := rules.ZipTraversal.Check(ctx)
 	if len(issues) != 0 {
 		t.Errorf("expected no issues, got %d", len(issues))
+	}
+}
+
+// ── SwitchNoDefault ─────────────────────────────────────────────────────────
+
+func TestSwitchNoDefault_DetectsMissingDefault(t *testing.T) {
+	src := `package p
+func f(x int) {
+	switch x {
+	case 1:
+		println("one")
+	case 2:
+		println("two")
+	}
+}`
+	ctx := parseGoSource(t, src)
+	issues := rules.SwitchNoDefault.Check(ctx)
+	if len(issues) == 0 {
+		t.Error("expected issue for switch without default")
+	}
+}
+
+func TestSwitchNoDefault_NoIssueWhenDefaultPresent(t *testing.T) {
+	src := `package p
+func f(x int) {
+	switch x {
+	case 1:
+		println("one")
+	default:
+		println("other")
+	}
+}`
+	ctx := parseGoSource(t, src)
+	issues := rules.SwitchNoDefault.Check(ctx)
+	if len(issues) != 0 {
+		t.Errorf("expected no issue for switch with default, got %d", len(issues))
+	}
+}
+
+func TestSwitchNoDefault_NoIssueOnEmptySwitch(t *testing.T) {
+	src := `package p
+func f(x int) {
+	switch x {
+	}
+}`
+	ctx := parseGoSource(t, src)
+	issues := rules.SwitchNoDefault.Check(ctx)
+	if len(issues) != 0 {
+		t.Errorf("expected no issue for empty switch, got %d", len(issues))
 	}
 }

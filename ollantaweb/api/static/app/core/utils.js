@@ -10,19 +10,19 @@ export function fmtDate(d) {
 }
 
 export function fmtNum(n) {
-  return (n == null ? 0 : Number(n)).toLocaleString();
+  return (n ?? 0).toLocaleString();
 }
 
 export function fmtK(n) {
   let value = n;
-  if (value == null) value = 0;
+  value ??= 0;
   if (value >= 1_000_000) return (value / 1_000_000).toFixed(1) + 'M';
   if (value >= 1_000) return (value / 1_000).toFixed(1) + 'k';
   return String(value);
 }
 
 export function fmtPct(n) {
-  if (n == null) return '\u2014';
+  if (n === null || n === undefined) return '\u2014';
   return Number(n).toFixed(1) + '%';
 }
 
@@ -40,7 +40,7 @@ export function cardClassForGateStatus(status) {
 }
 
 export function escHtml(s) {
-  if (s == null) return '';
+  if (s === null || s === undefined) return '';
   return String(s)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')

@@ -411,25 +411,30 @@ func countLines(path string) (total, ncloc, comments int) {
 	for sc.Scan() {
 		line := strings.TrimSpace(sc.Text())
 		total++
-		switch {
-		case inBlock:
-			comments++
-			if strings.Contains(line, "*/") {
-				inBlock = false
-			}
-		case strings.HasPrefix(line, "/*"):
-			inBlock = true
-			comments++
-			if strings.Contains(line[2:], "*/") {
-				inBlock = false
-			}
-		case strings.HasPrefix(line, "//"), strings.HasPrefix(line, "#"):
-			comments++
-		case line == "":
-			// blank line — not counted in ncloc or comments
-		default:
-			ncloc++
-		}
+		c, nb := countLine(line, inBlock)
+		ncloc += c
+		comments += nb
+		inBlock = nb > 0 && !closedBlock(line)
 	}
 	return total, ncloc, comments
+}
+
+func countLine(line string, inBlock bool) (ncloc, comments int) {
+	if inBlock || strings.HasPrefix(line, "/*") {
+		return 0, 1
+	}
+	if strings.HasPrefix(line, "//") || strings.HasPrefix(line, "#") {
+		return 0, 1
+	}
+	if line != "" {
+		return 1, 0
+	}
+	return 0, 0
+}
+
+func closedBlock(line string) bool {
+	if strings.HasPrefix(line, "/*") {
+		return strings.Contains(line[2:], "*/")
+	}
+	return strings.Contains(line, "*/")
 }

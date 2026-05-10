@@ -259,6 +259,7 @@ func (h *AuthHandler) oauthRedirect(w http.ResponseWriter, r *http.Request, prov
 		Path:     "/",
 		MaxAge:   300,
 		HttpOnly: true,
+		Secure:   true,
 		SameSite: http.SameSiteLaxMode,
 	})
 	http.Redirect(w, r, provider.AuthURL(state), http.StatusFound)
@@ -277,7 +278,7 @@ func (h *AuthHandler) oauthCallback(w http.ResponseWriter, r *http.Request, prov
 		return
 	}
 	// Clear state cookie
-	http.SetCookie(w, &http.Cookie{Name: "oauth_state_" + name, MaxAge: -1, Path: "/"})
+	http.SetCookie(w, &http.Cookie{Name: "oauth_state_" + name, MaxAge: -1, Path: "/", HttpOnly: true, Secure: true})
 
 	code := r.URL.Query().Get("code")
 	if code == "" {

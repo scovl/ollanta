@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math/rand"
 	"net/http"
 	"os"
 	"os/exec"
@@ -38,7 +37,7 @@ func TestE2E_ScanPipeline(t *testing.T) {
 	repoRoot := findRepoRoot(t)
 	scannerBin := buildScannerOnce(t, repoRoot)
 
-	composeProject := fmt.Sprintf("ollantae2e%d", rand.Int())
+	composeProject := fmt.Sprintf("ollantae2e%d", time.Now().UnixNano())
 	baseURL, cleanup := startStack(t, repoRoot, composeProject)
 	defer cleanup()
 
@@ -46,135 +45,138 @@ func TestE2E_ScanPipeline(t *testing.T) {
 
 	adminJWT := loginAdmin(t, baseURL)
 
-	// ── Happy path ──────────────────────────────────────────────────────
 	t.Run("HappyPath", func(t *testing.T) {
-		projectKey := "e2e-happy"
-		createProject(t, baseURL, adminJWT, projectKey, "E2E Happy")
-
-		fixtureDir := createFixture(t)
-		reportJSON := runScanner(t, scannerBin, fixtureDir, projectKey)
-
-		// Push report (gzip)
-		body := pushReport(t, baseURL, scannerToken, reportJSON, "")
-		jobID := int64(body["id"].(float64))
-
-		job := pollScanJob(t, baseURL, scannerToken, jobID, 60*time.Second)
-		if job["status"] != "completed" {
-			t.Fatalf("scan job did not complete: %+v", job)
-		}
-
-		// Issues
-		issues := listIssues(t, baseURL, adminJWT, projectKey)
-		if len(issues) < 1 {
-			t.Fatalf("expected at least 1 issue, got %d", len(issues))
-		}
-
-		// Quality gate evaluated
-		overview := getOverview(t, baseURL, adminJWT, projectKey)
-		qg, ok := overview["quality_gate"].(map[string]interface{})
-		if !ok || qg["status"] == "" {
-			t.Fatal("quality gate not evaluated")
-		}
-
-		// Measures present
-		points := getMeasuresTrend(t, baseURL, adminJWT, projectKey, "bugs")
-		if len(points) < 1 {
-			t.Fatalf("expected measures trend points, got %d", len(points))
-		}
+		e2eHappyPath(t, baseURL, adminJWT, scannerBin)
 	})
-
-	// ── Duplicate push idempotency ──────────────────────────────────────
 	t.Run("DuplicatePush", func(t *testing.T) {
-		projectKey := "e2e-dup"
-		createProject(t, baseURL, adminJWT, projectKey, "E2E Dup")
-
-		fixtureDir := createFixture(t)
-		reportJSON := runScanner(t, scannerBin, fixtureDir, projectKey)
-
-		idempotencyKey := "e2e-dup-key-001"
-
-		// First push → accepted (202)
-		body1 := pushReport(t, baseURL, scannerToken, reportJSON, idempotencyKey)
-		if s := int(body1["status_code"].(float64)); s != http.StatusAccepted {
-			t.Fatalf("first push expected 202, got %d", s)
-		}
-		jobID1 := int64(body1["id"].(float64))
-		pollScanJob(t, baseURL, scannerToken, jobID1, 60*time.Second)
-
-		// Second push with same key → 200 duplicate
-		body2 := pushReport(t, baseURL, scannerToken, reportJSON, idempotencyKey)
-		if s := int(body2["status_code"].(float64)); s != http.StatusOK {
-			t.Fatalf("duplicate push expected 200, got %d", s)
-		}
-
-		scans := listScans(t, baseURL, adminJWT, projectKey)
-		if len(scans) != 1 {
-			t.Fatalf("expected 1 scan after duplicate push, got %d", len(scans))
-		}
+		e2eDuplicatePush(t, baseURL, adminJWT, scannerBin)
 	})
-
-	// ── Push without auth ──────────────────────────────────────────────
 	t.Run("NoAuth", func(t *testing.T) {
-		fixtureDir := createFixture(t)
-		reportJSON := runScanner(t, scannerBin, fixtureDir, "e2e-noauth")
-
-		req, _ := http.NewRequest(http.MethodPost, baseURL+"/api/v1/scans", bytes.NewReader(reportJSON))
-		req.Header.Set("Content-Type", "application/json")
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			t.Fatalf("push request failed: %v", err)
-		}
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusUnauthorized {
-			t.Fatalf("expected 401, got %d", resp.StatusCode)
-		}
+		e2eNoAuth(t, baseURL, scannerBin)
 	})
-
-	// ── Failed gate + webhook delivery ──────────────────────────────────
 	t.Run("FailedGate", func(t *testing.T) {
-		projectKey := "e2e-gate"
-		project := createProject(t, baseURL, adminJWT, projectKey, "E2E Gate")
-		projectID := int64(project["id"].(float64))
-
-		// Create a strict gate (default conditions already include bugs > 0)
-		gate := createQualityGate(t, baseURL, adminJWT, "E2E Strict Gate")
-		gateID := int64(gate["id"].(float64))
-		assignQualityGate(t, baseURL, adminJWT, projectKey, gateID)
-
-		// Register a webhook so delivery is attempted
-		wh := createWebhook(t, baseURL, adminJWT, projectID, "http://localhost:19999/noop")
-		whID := int64(wh["id"].(float64))
-
-		fixtureDir := createFixture(t)
-		reportJSON := runScanner(t, scannerBin, fixtureDir, projectKey)
-
-		body := pushReport(t, baseURL, scannerToken, reportJSON, "")
-		jobID := int64(body["id"].(float64))
-		job := pollScanJob(t, baseURL, scannerToken, jobID, 60*time.Second)
-
-		if job["status"] != "completed" {
-			t.Fatalf("scan job did not complete: %+v", job)
-		}
-
-		// Assert gate failed
-		overview := getOverview(t, baseURL, adminJWT, projectKey)
-		qg, ok := overview["quality_gate"].(map[string]interface{})
-		if !ok || qg["status"] != "ERROR" {
-			t.Fatalf("expected gate status ERROR, got %+v", qg)
-		}
-
-		// Wait for webhook delivery to be recorded
-		var deliveries []map[string]interface{}
-		for start := time.Now(); time.Since(start) < 30*time.Second; time.Sleep(1 * time.Second) {
-			deliveries = listDeliveries(t, baseURL, adminJWT, whID)
-			if len(deliveries) > 0 {
-				break
-			}
-		}
-		if len(deliveries) == 0 {
-			t.Fatal("expected at least 1 webhook delivery")
-		}
+		e2eFailedGate(t, baseURL, adminJWT, scannerBin)
 	})
+}
+
+func e2eHappyPath(t *testing.T, baseURL, adminJWT, scannerBin string) {
+	t.Helper()
+	projectKey := "e2e-happy"
+	createProject(t, baseURL, adminJWT, projectKey, "E2E Happy")
+
+	fixtureDir := createFixture(t)
+	reportJSON := runScanner(t, scannerBin, fixtureDir, projectKey)
+
+	body := pushReport(t, baseURL, scannerToken, reportJSON, "")
+	jobID := int64(body["id"].(float64))
+
+	job := pollScanJob(t, baseURL, scannerToken, jobID, 60*time.Second)
+	if job["status"] != "completed" {
+		t.Fatalf("scan job did not complete: %+v", job)
+	}
+
+	issues := listIssues(t, baseURL, adminJWT, projectKey)
+	if len(issues) < 1 {
+		t.Fatalf("expected at least 1 issue, got %d", len(issues))
+	}
+
+	overview := getOverview(t, baseURL, adminJWT, projectKey)
+	qg, ok := overview["quality_gate"].(map[string]interface{})
+	if !ok || qg["status"] == "" {
+		t.Fatal("quality gate not evaluated")
+	}
+
+	points := getMeasuresTrend(t, baseURL, adminJWT, projectKey, "bugs")
+	if len(points) < 1 {
+		t.Fatalf("expected measures trend points, got %d", len(points))
+	}
+}
+
+func e2eDuplicatePush(t *testing.T, baseURL, adminJWT, scannerBin string) {
+	t.Helper()
+	projectKey := "e2e-dup"
+	createProject(t, baseURL, adminJWT, projectKey, "E2E Dup")
+
+	fixtureDir := createFixture(t)
+	reportJSON := runScanner(t, scannerBin, fixtureDir, projectKey)
+
+	idempotencyKey := "e2e-dup-key-001"
+
+	body1 := pushReport(t, baseURL, scannerToken, reportJSON, idempotencyKey)
+	if s := int(body1["status_code"].(float64)); s != http.StatusAccepted {
+		t.Fatalf("first push expected 202, got %d", s)
+	}
+	jobID1 := int64(body1["id"].(float64))
+	pollScanJob(t, baseURL, scannerToken, jobID1, 60*time.Second)
+
+	body2 := pushReport(t, baseURL, scannerToken, reportJSON, idempotencyKey)
+	if s := int(body2["status_code"].(float64)); s != http.StatusOK {
+		t.Fatalf("duplicate push expected 200, got %d", s)
+	}
+
+	scans := listScans(t, baseURL, adminJWT, projectKey)
+	if len(scans) != 1 {
+		t.Fatalf("expected 1 scan after duplicate push, got %d", len(scans))
+	}
+}
+
+func e2eNoAuth(t *testing.T, baseURL, scannerBin string) {
+	t.Helper()
+	fixtureDir := createFixture(t)
+	reportJSON := runScanner(t, scannerBin, fixtureDir, "e2e-noauth")
+
+	req, _ := http.NewRequest(http.MethodPost, baseURL+"/api/v1/scans", bytes.NewReader(reportJSON))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("push request failed: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", resp.StatusCode)
+	}
+}
+
+func e2eFailedGate(t *testing.T, baseURL, adminJWT, scannerBin string) {
+	t.Helper()
+	projectKey := "e2e-gate"
+	project := createProject(t, baseURL, adminJWT, projectKey, "E2E Gate")
+	projectID := int64(project["id"].(float64))
+
+	gate := createQualityGate(t, baseURL, adminJWT, "E2E Strict Gate")
+	gateID := int64(gate["id"].(float64))
+	assignQualityGate(t, baseURL, adminJWT, projectKey, gateID)
+
+	wh := createWebhook(t, baseURL, adminJWT, projectID, "http://localhost:19999/noop")
+	whID := int64(wh["id"].(float64))
+
+	fixtureDir := createFixture(t)
+	reportJSON := runScanner(t, scannerBin, fixtureDir, projectKey)
+
+	body := pushReport(t, baseURL, scannerToken, reportJSON, "")
+	jobID := int64(body["id"].(float64))
+	job := pollScanJob(t, baseURL, scannerToken, jobID, 60*time.Second)
+
+	if job["status"] != "completed" {
+		t.Fatalf("scan job did not complete: %+v", job)
+	}
+
+	overview := getOverview(t, baseURL, adminJWT, projectKey)
+	qg, ok := overview["quality_gate"].(map[string]interface{})
+	if !ok || qg["status"] != "ERROR" {
+		t.Fatalf("expected gate status ERROR, got %+v", qg)
+	}
+
+	var deliveries []map[string]interface{}
+	for start := time.Now(); time.Since(start) < 30*time.Second; time.Sleep(1 * time.Second) {
+		deliveries = listDeliveries(t, baseURL, adminJWT, whID)
+		if len(deliveries) > 0 {
+			break
+		}
+	}
+	if len(deliveries) == 0 {
+		t.Fatal("expected at least 1 webhook delivery")
+	}
 }
 
 // ── Docker / stack helpers ──────────────────────────────────────────────

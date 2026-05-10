@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/scovl/ollanta/domain/port"
 	"github.com/scovl/ollanta/ollantacore/tracectx"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // ErrScanJobIdempotencyConflict is returned when a key is reused with a different payload.
@@ -89,7 +91,27 @@ func (s *ScanJobService) SubmitWithOptions(ctx context.Context, req *IngestReque
 	payloadHash := hashScanPayload(payload)
 	idempotencyKey := scanIdempotencyKey(opts.IdempotencyKey, payloadHash)
 
-	existing, err := s.jobs.FindByIdempotencyKey(ctx, req.Metadata.ProjectKey, idempotencyKey)
+	dup, err := s.checkIdempotency(ctx, req.Metadata.ProjectKey, idempotencyKey, payloadHash)
+	if err != nil {
+		return nil, err
+	}
+	if dup != nil {
+		return dup, nil
+	}
+
+	if err := s.checkBackpressure(ctx, req.Metadata.ProjectKey, opts); err != nil {
+		return nil, err
+	}
+
+	job, err := s.createJob(ctx, req, payload, idempotencyKey, payloadHash)
+	if err != nil {
+		return nil, err
+	}
+	return &ScanJobSubmitResult{Job: job}, nil
+}
+
+func (s *ScanJobService) checkIdempotency(ctx context.Context, projectKey, idempotencyKey, payloadHash string) (*ScanJobSubmitResult, error) {
+	existing, err := s.jobs.FindByIdempotencyKey(ctx, projectKey, idempotencyKey)
 	if err == nil {
 		if !payloadHashesEqual(existing.PayloadHash, payloadHash) {
 			return nil, ErrScanJobIdempotencyConflict
@@ -99,11 +121,10 @@ func (s *ScanJobService) SubmitWithOptions(ctx context.Context, req *IngestReque
 	if err != nil && !errors.Is(err, model.ErrNotFound) {
 		return nil, fmt.Errorf("find scan job by idempotency key: %w", err)
 	}
+	return nil, nil
+}
 
-	if err := s.checkBackpressure(ctx, req.Metadata.ProjectKey, opts); err != nil {
-		return nil, err
-	}
-
+func (s *ScanJobService) createJob(ctx context.Context, req *IngestRequest, payload []byte, idempotencyKey, payloadHash string) (*model.ScanJob, error) {
 	job := &model.ScanJob{
 		ProjectKey:     req.Metadata.ProjectKey,
 		Status:         model.ScanJobStatusAccepted,
@@ -115,7 +136,7 @@ func (s *ScanJobService) SubmitWithOptions(ctx context.Context, req *IngestReque
 	if err := s.jobs.Create(ctx, job); err != nil {
 		return nil, fmt.Errorf("create scan job: %w", err)
 	}
-	return &ScanJobSubmitResult{Job: job}, nil
+	return job, nil
 }
 
 func (s *ScanJobService) checkBackpressure(ctx context.Context, projectKey string, opts ScanJobSubmitOptions) error {
@@ -194,26 +215,12 @@ func (p *ScanJobProcessor) ProcessNext(ctx context.Context) (*model.ScanJob, err
 
 	var req IngestRequest
 	if err := json.Unmarshal(job.Payload, &req); err != nil {
-		span.RecordError(err)
-		markErr := p.jobs.MarkFailed(ctx, job.ID, "decode payload: "+err.Error())
-		if markErr != nil {
-			return job, fmt.Errorf("decode payload: %v; mark failed: %w", err, markErr)
-		}
-		job.Status = model.ScanJobStatusFailed
-		job.LastError = "decode payload: " + err.Error()
-		return job, err
+		return p.failJob(ctx, span, job, "decode payload: "+err.Error()), err
 	}
 
 	result, err := p.ingest.Ingest(ctx, &req)
 	if err != nil {
-		span.RecordError(err)
-		markErr := p.jobs.MarkFailed(ctx, job.ID, err.Error())
-		if markErr != nil {
-			return job, fmt.Errorf("ingest job: %v; mark failed: %w", err, markErr)
-		}
-		job.Status = model.ScanJobStatusFailed
-		job.LastError = err.Error()
-		return job, err
+		return p.failJob(ctx, span, job, err.Error()), err
 	}
 
 	if err := p.jobs.MarkCompleted(ctx, job.ID, result.ScanID); err != nil {
@@ -225,4 +232,15 @@ func (p *ScanJobProcessor) ProcessNext(ctx context.Context) (*model.ScanJob, err
 	job.ScanID = &result.ScanID
 	job.LastError = ""
 	return job, nil
+}
+
+func (p *ScanJobProcessor) failJob(ctx context.Context, span trace.Span, job *model.ScanJob, reason string) *model.ScanJob {
+	span.RecordError(errors.New(reason))
+	markErr := p.jobs.MarkFailed(ctx, job.ID, reason)
+	if markErr != nil {
+		slog.Error("mark job failed", "job_id", job.ID, "error", markErr)
+	}
+	job.Status = model.ScanJobStatusFailed
+	job.LastError = reason
+	return job
 }

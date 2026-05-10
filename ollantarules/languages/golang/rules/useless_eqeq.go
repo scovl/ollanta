@@ -56,20 +56,24 @@ func exprEqual(a, b ast.Expr) bool {
 		xb, ok := b.(*ast.IndexExpr)
 		return ok && exprEqual(xa.X, xb.X) && exprEqual(xa.Index, xb.Index)
 	case *ast.CallExpr:
-		xb, ok := b.(*ast.CallExpr)
-		if !ok || len(xa.Args) != len(xb.Args) {
-			return false
-		}
-		if !exprEqual(xa.Fun, xb.Fun) {
-			return false
-		}
-		for i := range xa.Args {
-			if !exprEqual(xa.Args[i], xb.Args[i]) {
-				return false
-			}
-		}
-		return true
+		return equalCallExpr(xa, b)
 	default:
 		return false
 	}
+}
+
+func equalCallExpr(a *ast.CallExpr, b ast.Expr) bool {
+	xb, ok := b.(*ast.CallExpr)
+	if !ok || len(a.Args) != len(xb.Args) {
+		return false
+	}
+	if !exprEqual(a.Fun, xb.Fun) {
+		return false
+	}
+	for i := range a.Args {
+		if !exprEqual(a.Args[i], xb.Args[i]) {
+			return false
+		}
+	}
+	return true
 }

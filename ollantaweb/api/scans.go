@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -12,6 +13,13 @@ import (
 	"github.com/scovl/ollanta/ollantastore/postgres"
 	"github.com/scovl/ollanta/ollantaweb/ingest"
 )
+
+const maxDecompressedBody = 200 << 20 // 200 MB limit for decompressed gzip payloads
+
+type readCloser struct {
+	io.Reader
+	io.Closer
+}
 
 type scanJobSubmitter interface {
 	SubmitWithOptions(ctx context.Context, req *ingest.IngestRequest, opts ingest.ScanJobSubmitOptions) (*ingest.ScanJobSubmitResult, error)
@@ -49,7 +57,7 @@ func (h *ScansHandler) Ingest(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		defer gr.Close()
-		body = gr
+		body = readCloser{Reader: io.LimitReader(gr, maxDecompressedBody), Closer: gr}
 	}
 	var req ingest.IngestRequest
 	if err := json.NewDecoder(body).Decode(&req); err != nil {
