@@ -684,3 +684,260 @@ func TestTreeSitterSensor_JS_IncompleteSanitization_escHtml(t *testing.T) {
 		t.Error("expected false positives: escHtml chain should trigger the heuristic")
 	}
 }
+
+// ─── Predicate negative tests (guardrail #13) ─────────────────────────────
+// Each test provides input where the structural pattern matches but the
+// predicate (#eq?, #match?) should reject it. These catch FilterPredicates
+// regressions and prove rules don't fire where they shouldn't.
+
+func TestTreeSitterSensor_JS_AssignedUndefined_NoFalsePositive(t *testing.T) {
+	src := []byte("const x = initializeValue('x');\n")
+	s := defaultSensor()
+	issues, err := s.Analyze("test.js", src, "javascript", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, iss := range issues {
+		if iss.RuleKey == "js:assigned-undefined" {
+			t.Errorf("false positive: %q at line %d", iss.Message, iss.Line)
+		}
+	}
+}
+
+func TestTreeSitterSensor_JS_DetectInsecureWebsocket_NoFalsePositive(t *testing.T) {
+	src := []byte("const ws = new MySocket('ws://example.com/socket');\n")
+	s := defaultSensor()
+	issues, err := s.Analyze("test.js", src, "javascript", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, iss := range issues {
+		if iss.RuleKey == "js:detect-insecure-websocket" {
+			t.Errorf("false positive: %q at line %d", iss.Message, iss.Line)
+		}
+	}
+}
+
+func TestTreeSitterSensor_JS_DetectRedos_NoFalsePositive(t *testing.T) {
+	src := []byte("const re = /^[a-z]+$/;\n")
+	s := defaultSensor()
+	issues, err := s.Analyze("test.js", src, "javascript", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, iss := range issues {
+		if iss.RuleKey == "js:detect-redos" {
+			t.Errorf("false positive: %q at line %d", iss.Message, iss.Line)
+		}
+	}
+}
+
+func TestTreeSitterSensor_JS_LeftoverDebugging_NoFalsePositive(t *testing.T) {
+	src := []byte("showAlert('hello');\n")
+	s := defaultSensor()
+	issues, err := s.Analyze("test.js", src, "javascript", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, iss := range issues {
+		if iss.RuleKey == "js:leftover-debugging" {
+			t.Errorf("false positive: %q at line %d", iss.Message, iss.Line)
+		}
+	}
+}
+
+func TestTreeSitterSensor_PY_AvoidPyyamlLoad_NoFalsePositive(t *testing.T) {
+	src := []byte("import yamllib\ndata = yamllib.load(stream)\n")
+	s := defaultSensor()
+	issues, err := s.Analyze("test.py", src, "python", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, iss := range issues {
+		if iss.RuleKey == "py:avoid-pyyaml-load" {
+			t.Errorf("false positive: %q at line %d", iss.Message, iss.Line)
+		}
+	}
+}
+
+func TestTreeSitterSensor_PY_DangerousOsExec_NoFalsePositive(t *testing.T) {
+	src := []byte("import myos\nmyos.system('echo hello')\n")
+	s := defaultSensor()
+	issues, err := s.Analyze("test.py", src, "python", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, iss := range issues {
+		if iss.RuleKey == "py:dangerous-os-exec" {
+			t.Errorf("false positive: %q at line %d", iss.Message, iss.Line)
+		}
+	}
+}
+
+func TestTreeSitterSensor_PY_InsecureHash_NoFalsePositive(t *testing.T) {
+	src := []byte("import hashlib\nh = hashlib.sha256(b'data').hexdigest()\n")
+	s := defaultSensor()
+	issues, err := s.Analyze("test.py", src, "python", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, iss := range issues {
+		if iss.RuleKey == "py:insecure-hash" {
+			t.Errorf("false positive: %q at line %d", iss.Message, iss.Line)
+		}
+	}
+}
+
+func TestTreeSitterSensor_PY_Marshal_NoFalsePositive(t *testing.T) {
+	src := []byte("import marshmallow\ndata = marshmallow.load(file)\n")
+	s := defaultSensor()
+	issues, err := s.Analyze("test.py", src, "python", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, iss := range issues {
+		if iss.RuleKey == "py:marshal" {
+			t.Errorf("false positive: %q at line %d", iss.Message, iss.Line)
+		}
+	}
+}
+
+func TestTreeSitterSensor_PY_Pickle_NoFalsePositive(t *testing.T) {
+	src := []byte("import pickles\njar = pickles.load(file)\n")
+	s := defaultSensor()
+	issues, err := s.Analyze("test.py", src, "python", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, iss := range issues {
+		if iss.RuleKey == "py:pickle" {
+			t.Errorf("false positive: %q at line %d", iss.Message, iss.Line)
+		}
+	}
+}
+
+func TestTreeSitterSensor_PY_RegexDos_NoFalsePositive(t *testing.T) {
+	src := []byte("import re\nre.compile(r'^[a-z]+$')\n")
+	s := defaultSensor()
+	issues, err := s.Analyze("test.py", src, "python", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, iss := range issues {
+		if iss.RuleKey == "py:regex-dos" {
+			t.Errorf("false positive: %q at line %d", iss.Message, iss.Line)
+		}
+	}
+}
+
+func TestTreeSitterSensor_PY_ReturnInInit_NoFalsePositive(t *testing.T) {
+	src := []byte("class User:\n    def helper(self):\n        return 42\n")
+	s := defaultSensor()
+	issues, err := s.Analyze("test.py", src, "python", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, iss := range issues {
+		if iss.RuleKey == "py:return-in-init" {
+			t.Errorf("false positive: %q at line %d", iss.Message, iss.Line)
+		}
+	}
+}
+
+func TestTreeSitterSensor_PY_UncheckedReturns_NoFalsePositive(t *testing.T) {
+	src := []byte("import myos\nmyos.remove('file.txt')\n")
+	s := defaultSensor()
+	issues, err := s.Analyze("test.py", src, "python", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, iss := range issues {
+		if iss.RuleKey == "py:unchecked-returns" {
+			t.Errorf("false positive: %q at line %d", iss.Message, iss.Line)
+		}
+	}
+}
+
+func TestTreeSitterSensor_PY_UseDefusedXml_NoFalsePositive(t *testing.T) {
+	src := []byte("import mylxml as ET\nET.parse('data.xml')\n")
+	s := defaultSensor()
+	issues, err := s.Analyze("test.py", src, "python", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, iss := range issues {
+		if iss.RuleKey == "py:use-defused-xml" {
+			t.Errorf("false positive: %q at line %d", iss.Message, iss.Line)
+		}
+	}
+}
+
+func TestTreeSitterSensor_PY_UnverifiedSSLContext_NoFalsePositive(t *testing.T) {
+	src := []byte("import ssl\nctx = ssl.SSLContext()\n")
+	s := defaultSensor()
+	issues, err := s.Analyze("test.py", src, "python", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, iss := range issues {
+		if iss.RuleKey == "py:unverified-ssl-context" {
+			t.Errorf("false positive: %q at line %d", iss.Message, iss.Line)
+		}
+	}
+}
+
+func TestTreeSitterSensor_TS_MomentDeprecated_NoFalsePositive(t *testing.T) {
+	src := []byte("import dayjs from 'time';\n")
+	s := defaultSensor()
+	issues, err := s.Analyze("test.ts", src, "typescript", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, iss := range issues {
+		if iss.RuleKey == "ts:moment-deprecated" {
+			t.Errorf("false positive: %q at line %d", iss.Message, iss.Line)
+		}
+	}
+}
+
+func TestTreeSitterSensor_PY_OpenNeverClosed_NoFalsePositive(t *testing.T) {
+	src := []byte("from mylib import open as copen\nf = copen('data.txt')\n")
+	s := defaultSensor()
+	issues, err := s.Analyze("test.py", src, "python", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, iss := range issues {
+		if iss.RuleKey == "py:open-never-closed" {
+			t.Errorf("false positive: %q at line %d", iss.Message, iss.Line)
+		}
+	}
+}
+
+func TestTreeSitterSensor_PY_ListModifyIterating_NoFalsePositive(t *testing.T) {
+	src := []byte("items = [1,2,3]\nfor item in items:\n    cleaned.append(item)\n")
+	s := defaultSensor()
+	issues, err := s.Analyze("test.py", src, "python", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, iss := range issues {
+		if iss.RuleKey == "py:list-modify-iterating" {
+			t.Errorf("false positive: %q at line %d", iss.Message, iss.Line)
+		}
+	}
+}
+
+func TestTreeSitterSensor_PY_UnspecifiedOpenEncoding_NoFalsePositive(t *testing.T) {
+	src := []byte("f = custom_open('data.txt', encoding='utf-8')\n")
+	s := defaultSensor()
+	issues, err := s.Analyze("test.py", src, "python", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, iss := range issues {
+		if iss.RuleKey == "py:unspecified-open-encoding" {
+			t.Errorf("false positive: %q at line %d", iss.Message, iss.Line)
+		}
+	}
+}

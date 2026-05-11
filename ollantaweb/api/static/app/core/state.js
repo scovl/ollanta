@@ -70,6 +70,7 @@ export function createInitialState() {
     scope: emptyScope(),
     overviewData: null,
     issues: [],
+    issuesViewMode: 'flat',
     issueFacets: null,
     issuesTotal: 0,
     issueOffset: 0,
@@ -147,6 +148,7 @@ export function resetProjectState() {
   state.scope = emptyScope();
   state.overviewData = null;
   state.issues = [];
+  state.issuesViewMode = 'flat';
   state.issueFacets = null;
   state.issuesTotal = 0;
   state.issueOffset = 0;

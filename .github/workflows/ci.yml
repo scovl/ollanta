@@ -121,6 +121,16 @@ jobs:
         with:
           go-version: "1.21"
 
+      - name: Check formatting
+        run: |
+          DIRS="domain application ollantacore ollantaengine ollantaparser ollantarules ollantascanner ollantastore ollantaweb"
+          UNFORMATTED=$(gofmt -l $DIRS)
+          if [ -n "$UNFORMATTED" ]; then
+            echo "Unformatted files:"
+            echo "$UNFORMATTED"
+            exit 1
+          fi
+
       - uses: golangci/golangci-lint-action@v7
         with:
           version: v2.11.4

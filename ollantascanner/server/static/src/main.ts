@@ -17,6 +17,8 @@ let coverageSourceError = "";
 let coverageSourceCache = new Map<string, CoverageSourceFile>();
 let selectedIssue: Issue | null = null;
 let selectedIndex = -1;
+const ISSUE_PAGE_SIZE = 50;
+let issueDisplayLimit = ISSUE_PAGE_SIZE;
 let activeTab = "overview";
 let lastFocusedElement: HTMLElement | null = null;
 let detailTab: "details" | "rule" | "ai-fix" = "details";
@@ -63,7 +65,7 @@ let filterRule = "all";
 let filterQuality = "all";
 let filterTag = "all";
 let searchText = "";
-let issuesViewMode: "flat" | "grouped" = "flat";
+let issuesViewMode: "flat" | "file" | "rule" = "flat";
 
 let mutantFilterModule = "all";
 let mutantSortField: "file" | "line" | "module" = "file";
@@ -969,9 +971,12 @@ function setupTabs(): void {
   const viewToggle = document.getElementById("view-mode-toggle");
   if (viewToggle) {
     viewToggle.addEventListener("click", () => {
-      issuesViewMode = issuesViewMode === "flat" ? "grouped" : "flat";
-      viewToggle.textContent = issuesViewMode === "grouped" ? "List view" : "Group by file";
-      viewToggle.setAttribute("aria-pressed", String(issuesViewMode === "grouped"));
+      if (issuesViewMode === "flat") issuesViewMode = "file";
+      else if (issuesViewMode === "file") issuesViewMode = "rule";
+      else issuesViewMode = "flat";
+      const labels: Record<string,string> = {flat: "Group by file", file: "Group by rule", rule: "List view"};
+      viewToggle.textContent = labels[issuesViewMode];
+      viewToggle.setAttribute("aria-pressed", String(issuesViewMode !== "flat"));
       applyFilters();
     });
   }
@@ -1113,6 +1118,7 @@ function applyFilters(): void {
   });
 
   selectedIndex = -1;
+  issueDisplayLimit = ISSUE_PAGE_SIZE;
   renderIssueList();
 
   const count = filteredIssues.length;
@@ -1134,21 +1140,29 @@ function renderIssueList(): void {
     return;
   }
 
-  if (issuesViewMode === "grouped") {
+  if (issuesViewMode === "file") {
     flatContainer.classList.add("hidden");
     groupedContainer.classList.remove("hidden");
     renderGroupedIssues();
     return;
   }
 
+  if (issuesViewMode === "rule") {
+    flatContainer.classList.add("hidden");
+    groupedContainer.classList.remove("hidden");
+    renderRuleGroupedIssues();
+    return;
+  }
+
   flatContainer.classList.remove("hidden");
   groupedContainer.classList.add("hidden");
 
-  flatContainer.innerHTML = filteredIssues.map((issue, idx) => {
+  const shown = filteredIssues.slice(0, issueDisplayLimit);
+  flatContainer.innerHTML = shown.map((issue, idx) => {
     const color = SEV_COLORS[issue.severity] ?? "#64748b";
     const file = shortenPath(issue.component_path);
     const loc = issue.end_line && issue.end_line !== issue.line
-      ? `L${issue.line}–${issue.end_line}` : `L${issue.line}`;
+      ? `L${issue.line}\u2013${issue.end_line}` : `L${issue.line}`;
     const typeLabel = TYPE_LABELS[issue.type] ?? issue.type;
     const qualityBadge = issue.quality ? `<span class="quality-badge quality-${esc(issue.quality)}">${esc(QUALITY_LABELS[issue.quality] ?? issue.quality)}</span>` : "";
     return `<div class="issue-row" role="button" tabindex="0" aria-label="${esc(issue.severity)} issue: ${esc(issue.message)}" data-idx="${idx}">
@@ -1166,6 +1180,11 @@ function renderIssueList(): void {
     </div>`;
   }).join("");
 
+  if (issueDisplayLimit < filteredIssues.length) {
+    const remaining = filteredIssues.length - issueDisplayLimit;
+    flatContainer.innerHTML += `<button class="btn-sm btn-outline load-more-btn" id="loadMoreBtn">Show ${Math.min(ISSUE_PAGE_SIZE, remaining)} more (${remaining} remaining)</button>`;
+  }
+
   // Click / keyboard handlers
   flatContainer.querySelectorAll(".issue-row").forEach(row => {
     row.addEventListener("click", () => {
@@ -1180,6 +1199,11 @@ function renderIssueList(): void {
         selectIssue(idx);
       }
     });
+  });
+
+  document.getElementById("loadMoreBtn")?.addEventListener("click", () => {
+    issueDisplayLimit += ISSUE_PAGE_SIZE;
+    renderIssueList();
   });
 }
 
@@ -1211,7 +1235,8 @@ function renderGroupedIssues(): void {
     return;
   }
 
-  container.innerHTML = fileGroups.map((fg, gi) =>
+  const shown = fileGroups.slice(0, issueDisplayLimit);
+  container.innerHTML = shown.map((fg, gi) =>
     `<div class="file-group${fg.expanded ? " expanded" : ""}" data-gi="${gi}">
       <div class="file-group-header">
         <span class="file-group-chevron icon-chevron" role="img" aria-label="Expand"></span>
@@ -1234,6 +1259,11 @@ function renderGroupedIssues(): void {
     </div>`
   ).join("");
 
+  if (issueDisplayLimit < fileGroups.length) {
+    const remaining = fileGroups.length - issueDisplayLimit;
+    container.innerHTML += `<button class="btn-sm btn-outline load-more-btn" id="loadMoreGroupedBtn">Show ${Math.min(ISSUE_PAGE_SIZE, remaining)} more files (${remaining} remaining)</button>`;
+  }
+
   // Expand/collapse handlers
   container.querySelectorAll(".file-group-header").forEach(hdr => {
     hdr.addEventListener("click", () => {
@@ -1255,6 +1285,86 @@ function renderGroupedIssues(): void {
       const issue = fileGroups[gi].issues[ii];
       openDetail(issue);
     });
+  });
+
+  document.getElementById("loadMoreGroupedBtn")?.addEventListener("click", () => {
+    issueDisplayLimit += ISSUE_PAGE_SIZE;
+    renderGroupedIssues();
+  });
+}
+
+function renderRuleGroupedIssues(): void {
+  const container = el("issue-grouped");
+  if (!filteredIssues.length) {
+    container.innerHTML = `<div class="empty-state">No issues found</div>`;
+    return;
+  }
+
+  // Group by rule_key
+  const groups = new Map<string, Issue[]>();
+  for (const issue of filteredIssues) {
+    if (!groups.has(issue.rule_key)) groups.set(issue.rule_key, []);
+    groups.get(issue.rule_key)!.push(issue);
+  }
+  const ruleGroups = [...groups.entries()]
+    .sort((a, b) => b[1].length - a[1].length);
+
+  const shown = ruleGroups.slice(0, issueDisplayLimit);
+  container.innerHTML = shown.map(([ruleKey, issues], ri) => {
+    const sevs = new Set(issues.map(i => i.severity));
+    const topSev = [...sevs].sort((a,b) => (SEV_ORDER[a]??99) - (SEV_ORDER[b]??99))[0];
+    const color = SEV_COLORS[topSev] ?? "#64748b";
+    return `<div class="file-group" data-ri="${ri}">
+      <div class="file-group-header">
+        <span class="file-group-chevron icon-chevron" role="img" aria-label="Expand"></span>
+        <span class="file-group-name">${esc(ruleKey)}</span>
+        <span class="file-group-count">${issues.length}</span>
+      </div>
+      <div class="file-group-issues" style="display:none">
+        ${issues.map((issue, ii) => {
+          const file = shortenPath(issue.component_path);
+          return `<div class="file-issue" data-ri="${ri}" data-ii="${ii}">
+            <span class="issue-sev">
+              <span class="issue-sev-dot" style="background:${SEV_COLORS[issue.severity]??"#64748b"}"></span>
+              ${esc(issue.severity)}
+            </span>
+            <span class="issue-msg">${esc(issue.message)}</span>
+            <span class="file-issue-line">${esc(file)}:L${issue.line}</span>
+          </div>`;
+        }).join("")}
+      </div>
+    </div>`;
+  }).join("");
+
+  if (issueDisplayLimit < ruleGroups.length) {
+    const remaining = ruleGroups.length - issueDisplayLimit;
+    container.innerHTML += `<button class="btn-sm btn-outline load-more-btn" id="loadMoreRuleBtn">Show ${Math.min(ISSUE_PAGE_SIZE, remaining)} more rules (${remaining} remaining)</button>`;
+  }
+
+  // Expand/collapse
+  container.querySelectorAll(".file-group-header").forEach(hdr => {
+    hdr.addEventListener("click", () => {
+      const group = hdr.closest(".file-group") as HTMLElement;
+      group.classList.toggle("expanded");
+      const issues = group.querySelector(".file-group-issues") as HTMLElement;
+      issues.style.display = group.classList.contains("expanded") ? "" : "none";
+    });
+  });
+
+  // Issue click → open detail
+  container.querySelectorAll(".file-issue").forEach(row => {
+    row.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const ri = Number.parseInt((row as HTMLElement).dataset["ri"]!, 10);
+      const ii = Number.parseInt((row as HTMLElement).dataset["ii"]!, 10);
+      const issue = groups.get(ruleGroups[ri][0])![ii];
+      openDetail(issue);
+    });
+  });
+
+  document.getElementById("loadMoreRuleBtn")?.addEventListener("click", () => {
+    issueDisplayLimit += ISSUE_PAGE_SIZE;
+    renderRuleGroupedIssues();
   });
 }
 

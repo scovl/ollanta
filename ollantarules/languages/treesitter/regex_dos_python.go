@@ -66,6 +66,8 @@ func hasNestedQuantifiers(pattern string) bool {
 				return true
 			}
 			depth--
+		default:
+			// other characters are not grouping tokens
 		}
 	}
 	return false

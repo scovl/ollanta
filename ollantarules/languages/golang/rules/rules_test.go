@@ -520,6 +520,27 @@ func f() int { return 1 }`
 	}
 }
 
+// TestDecompressionBomb_StillFlagsWhenLimitReaderWraps documents a known
+// rule limitation: the check does not analyze whether io.LimitReader follows
+// the gzip.NewReader call. Properly wrapped code is still flagged because
+// the rule only looks at the call expression node, not the surrounding
+// statements for size-limit mitigation.
+func TestDecompressionBomb_StillFlagsWhenLimitReaderWraps(t *testing.T) {
+	src := `package p
+import "compress/gzip"
+func f(r io.Reader) {
+	gr, _ := gzip.NewReader(r)
+	defer gr.Close()
+	_ = io.LimitReader(gr, 200<<20)
+}`
+	ctx := parseGoSource(t, src)
+	issues := rules.DecompressionBomb.Check(ctx)
+	if len(issues) == 0 {
+		t.Error("known limitation: rule does not detect io.LimitReader mitigation")
+	}
+	t.Log("rule flags gzip.NewReader even when io.LimitReader wraps it — mitigation must be verified manually")
+}
+
 // ── FilepathCleanMisuse ─────────────────────────────────────────────────────
 
 func TestFilepathCleanMisuse_DetectsCleanInOpen(t *testing.T) {

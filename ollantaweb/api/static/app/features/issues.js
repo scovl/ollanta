@@ -130,6 +130,7 @@ function buildIssuesHtml() {
         ${filter.scanId ? `<button type="button" class="filter-chip filter-chip-removable" id="clearScanFilterChip" title="Clear scan filter">Scan #${escHtml(filter.scanId)} \u00D7</button>` : ''}
         <input id="filterSearch" class="filter-input" type="text" placeholder="Search file or message\u2026" value="${escAttr(filter.search)}">
         <button class="btn-sm btn-outline" id="saveCurrentIssueFilterBtn">Save filter</button>
+        <button class="btn-sm btn-outline" id="viewModeBtn">${state.issuesViewMode === 'flat' ? 'Group by rule' : state.issuesViewMode === 'rule' ? 'Group by file' : 'Flat view'}</button>
       </div>
     </div>`;
 
@@ -186,6 +187,13 @@ function buildIssuesHtml() {
        </div>`
     : '';
 
+  let bodyHtml;
+  if (state.issuesViewMode === 'flat') {
+    bodyHtml = flatIssuesHtml(issues);
+  } else {
+    bodyHtml = groupedIssuesHtml(issues, state.issuesViewMode);
+  }
+
   return `<div class="issues-layout">
     ${facetSidebar}
     <section class="issues-results">
@@ -195,12 +203,71 @@ function buildIssuesHtml() {
         <thead><tr>
           <th>Severity</th><th>Type</th><th>Lifecycle</th><th>Rule</th><th>File</th><th>Message</th><th></th>
         </tr></thead>
-        <tbody>${rows}</tbody>
+        <tbody>${bodyHtml}</tbody>
       </table>
     </div>
     ${moreBtn}
     </section>
   </div>`;
+}
+
+function flatIssuesHtml(issues) {
+  return issues.map((issue, idx) => issueRowHtml(issue, idx)).join('');
+}
+
+function groupedIssuesHtml(issues, mode) {
+  const groups = {};
+  for (const issue of issues) {
+    const key = mode === 'rule' ? issue.rule_key : (issue.component_path || 'unknown');
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(issue);
+  }
+  const sorted = Object.entries(groups).sort((a, b) => b[1].length - a[1].length);
+  const expanded = state.issueFacetExpanded || {};
+  return sorted.map(([key, items]) => {
+    const groupId = 'gg-' + key.replace(/[^a-zA-Z0-9]/g, '-');
+    const isExpanded = expanded[groupId];
+    return `<tr class="group-header" data-group-id="${groupId}">
+      <td colspan="7" style="padding:0">
+        <div class="group-toggle" style="display:flex;align-items:center;gap:8px;padding:6px 10px;cursor:pointer;background:var(--surface2);border-bottom:1px solid var(--border);user-select:none">
+          <span style="font-size:12px;color:var(--text-muted)">${isExpanded ? '\u25BE' : '\u25B8'}</span>
+          <span style="font-weight:600;font-size:13px">${escHtml(key)}</span>
+          <span class="badge">${items.length}</span>
+        </div>
+      </td>
+    </tr>${isExpanded ? items.map((issue, idx) => issueRowHtml(issue, idx, key)).join('') : ''}`;
+  }).join('');
+}
+
+function issueRowHtml(issue, idx, groupKey) {
+  const color = SEV_COLOR[issue.severity] || '#64748b';
+  const bg = SEV_BG[issue.severity] || 'transparent';
+  const icon = TYPE_ICON[issue.type] || '?';
+  const file = (issue.component_path || '').replaceAll('\\', '/').split('/').slice(-3).join('/');
+  const loc = issue.end_line && issue.end_line !== issue.line ? `${issue.line}\u2013${issue.end_line}` : `${issue.line}`;
+  const status = issue.status || 'open';
+  const trackingState = issue.tracking_state || 'unknown';
+  const trackingLabel = TRACKING_LABEL[trackingState] || 'Current';
+  const trackingClass = TRACKING_CLASS[trackingState] || 'track-unknown';
+  const isClosed = status === 'closed';
+  let actionBtns = '';
+  if (isClosed) {
+    actionBtns = `<button class="itbtn re-btn" data-id="${issue.id}" data-res="" title="Reopen">\u21A9</button>`;
+  } else {
+    actionBtns = `
+      <button class="itbtn fp-btn" data-id="${issue.id}" data-res="false_positive" title="False positive">FP</button>
+      <button class="itbtn wf-btn" data-id="${issue.id}" data-res="wont_fix" title="Won\u2019t fix">WF</button>
+      <button class="itbtn ok-btn" data-id="${issue.id}" data-res="fixed" title="Mark as fixed">\u2713</button>`;
+  }
+  return `<tr style="--row-sev-color:${color};--row-sev-bg:${bg}" class="sev-row${isClosed ? ' row-closed' : ''}" data-issue-id="${issue.id}">${groupKey ? '' : ''}
+    <td><span class="sev-badge" style="background:${color};color:${SEV_TEXT[issue.severity] || '#fff'}">${escHtml(issue.severity)}</span></td>
+    <td>${icon} ${escHtml((issue.type || '').replace('_', ' '))}</td>
+    <td><span class="issue-track ${trackingClass}">${escHtml(trackingLabel)}</span></td>
+    <td class="mono" style="font-size:11px">${escHtml(issue.rule_key || '')}</td>
+    <td class="file-cell" title="${escAttr(issue.component_path || '')}"><span class="mono">${escHtml(file)}<span style="color:var(--text-muted)">:${loc}</span></span></td>
+    <td>${escHtml(issue.message || '')}</td>
+    <td class="actions-cell" onclick="event.stopPropagation()">${actionBtns}</td>
+  </tr>`;
 }
 
 function renderFacetSidebar(facets, filter) {
@@ -288,10 +355,11 @@ function bindIssueControls() {
     loadIssues();
   });
 
-  document.querySelectorAll('.issues-table tbody tr[data-issue-idx]').forEach(row => {
+  document.querySelectorAll('.issues-table tbody tr[data-issue-id]').forEach(row => {
     row.addEventListener('click', () => {
-      const idx = Number.parseInt(row.dataset.issueIdx, 10);
-      if (state.issues[idx]) openIssueDetail(state.issues[idx]);
+      const id = Number.parseInt(row.dataset.issueId, 10);
+      const issue = state.issues.find(i => i.id === id);
+      if (issue) openIssueDetail(issue);
     });
   });
 
@@ -322,6 +390,22 @@ function bindIssueControls() {
         showToastMessage(err.message, 'error');
         btn.disabled = false;
       }
+    });
+  });
+
+  document.getElementById('viewModeBtn')?.addEventListener('click', () => {
+    const modes = ['flat', 'rule', 'file'];
+    const cur = modes.indexOf(state.issuesViewMode);
+    state.issuesViewMode = modes[(cur + 1) % 3];
+    renderIssuesSection();
+  });
+
+  document.querySelectorAll('.group-toggle').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const groupId = btn.closest('tr').dataset.groupId;
+      if (!state.issueFacetExpanded) state.issueFacetExpanded = {};
+      state.issueFacetExpanded[groupId] = !state.issueFacetExpanded[groupId];
+      renderIssuesSection();
     });
   });
 }
