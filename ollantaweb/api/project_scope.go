@@ -162,9 +162,9 @@ func (h *ProjectScopeHandler) CodeTree(w http.ResponseWriter, r *http.Request) {
 	snapshot, err := h.snapshots.GetScope(r.Context(), resolved.Project.ID, resolved.Scope.Type, resolved.Scope.Key())
 	if errors.Is(err, postgres.ErrNotFound) {
 		jsonOK(w, http.StatusOK, map[string]any{
-			"scope":        toScopeResponse(resolved),
+			"scope":         toScopeResponse(resolved),
 			"code_snapshot": nil,
-			"items":        []any{},
+			"items":         []any{},
 		})
 		return
 	}
@@ -256,8 +256,8 @@ func (h *ProjectScopeHandler) CodeFile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	jsonOK(w, http.StatusOK, map[string]any{
-		"scope": toScopeResponse(resolved),
-		"file":  file,
+		"scope":  toScopeResponse(resolved),
+		"file":   file,
 		"issues": issues,
 	})
 }

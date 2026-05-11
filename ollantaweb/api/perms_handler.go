@@ -20,7 +20,7 @@ func NewPermsHandler(perms *postgres.PermissionRepository, projects *postgres.Pr
 
 // permRequest is the JSON body for grant/revoke operations.
 type permRequest struct {
-	Target     string `json:"target"`     // "user" or "group"
+	Target     string `json:"target"` // "user" or "group"
 	TargetID   int64  `json:"target_id"`
 	Permission string `json:"permission"`
 }

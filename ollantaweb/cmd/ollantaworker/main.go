@@ -129,17 +129,17 @@ func wireServices(db *postgres.DB, workerID string, appMetrics *telemetry.Metric
 }
 
 type workerRepositories struct {
-	Projects  *postgres.ProjectRepository
-	Scans     *postgres.ScanRepository
-	ScanJobs  *postgres.ScanJobRepository
-	IndexJobs *postgres.IndexJobRepository
-	Issues    *postgres.IssueRepository
-	Measures  *postgres.MeasureRepository
-	Snapshots *postgres.CodeSnapshotRepository
-	Profiles  *postgres.ProfileSnapshotRepository
-	Tags      *postgres.TagRepository
-	Gates     *postgres.GateRepository
-	Webhooks  *postgres.WebhookRepository
+	Projects    *postgres.ProjectRepository
+	Scans       *postgres.ScanRepository
+	ScanJobs    *postgres.ScanJobRepository
+	IndexJobs   *postgres.IndexJobRepository
+	Issues      *postgres.IssueRepository
+	Measures    *postgres.MeasureRepository
+	Snapshots   *postgres.CodeSnapshotRepository
+	Profiles    *postgres.ProfileSnapshotRepository
+	Tags        *postgres.TagRepository
+	Gates       *postgres.GateRepository
+	Webhooks    *postgres.WebhookRepository
 	WebhookJobs *postgres.WebhookJobRepository
 }
 

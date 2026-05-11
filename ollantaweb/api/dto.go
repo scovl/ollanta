@@ -16,10 +16,10 @@ type paginatedItemsResponse struct {
 }
 
 type paginatedItemsWithScopeResponse struct {
-	Items  interface{}  `json:"items"`
-	Total  int          `json:"total"`
-	Limit  int          `json:"limit"`
-	Offset int          `json:"offset"`
+	Items  interface{}    `json:"items"`
+	Total  int            `json:"total"`
+	Limit  int            `json:"limit"`
+	Offset int            `json:"offset"`
 	Scope  *scopeResponse `json:"scope,omitempty"`
 }
 
@@ -151,7 +151,7 @@ type customRuleAISuggestResponse struct {
 // ── Quality gates ───────────────────────────────────────────────────────
 
 type gateDetailResponse struct {
-	Gate       *postgres.QualityGate      `json:"gate"`
+	Gate       *postgres.QualityGate     `json:"gate"`
 	Conditions []*postgres.GateCondition `json:"conditions"`
 }
 
@@ -179,12 +179,12 @@ type newCodePeriodInheritedResponse struct {
 // ── Measures ────────────────────────────────────────────────────────────
 
 type measureTrendResponse struct {
-	Project   string             `json:"project"`
-	Metric    string             `json:"metric"`
-	From      string             `json:"from"`
-	To        string             `json:"to"`
+	Project   string                `json:"project"`
+	Metric    string                `json:"metric"`
+	From      string                `json:"from"`
+	To        string                `json:"to"`
 	Points    []postgres.TrendPoint `json:"points"`
-	Component string             `json:"component,omitempty"`
+	Component string                `json:"component,omitempty"`
 }
 
 // ── Search ──────────────────────────────────────────────────────────────
@@ -195,13 +195,13 @@ type searchResponse search.SearchResult
 // ── System ──────────────────────────────────────────────────────────────
 
 type systemInfoResponse struct {
-	Version        string         `json:"version"`
-	GoVersion      string         `json:"go_version"`
-	OS             string         `json:"os"`
-	Arch           string         `json:"arch"`
-	NumGoroutines  int            `json:"num_goroutines"`
-	SearchBackend  string         `json:"search_backend"`
-	Stats          systemStats    `json:"stats"`
+	Version       string      `json:"version"`
+	GoVersion     string      `json:"go_version"`
+	OS            string      `json:"os"`
+	Arch          string      `json:"arch"`
+	NumGoroutines int         `json:"num_goroutines"`
+	SearchBackend string      `json:"search_backend"`
+	Stats         systemStats `json:"stats"`
 }
 
 type systemStats struct {
@@ -261,23 +261,23 @@ type pullRequestsResponse struct {
 }
 
 type projectInformationResponse struct {
-	Project      *postgres.Project          `json:"project"`
-	Scope        *scopeResponse             `json:"scope"`
-	LatestScan   *postgres.Scan             `json:"latest_scan"`
+	Project      *postgres.Project           `json:"project"`
+	Scope        *scopeResponse              `json:"scope"`
+	LatestScan   *postgres.Scan              `json:"latest_scan"`
 	CodeSnapshot *postgres.CodeSnapshotScope `json:"code_snapshot"`
-	Measures     map[string]interface{}     `json:"measures"`
+	Measures     map[string]interface{}      `json:"measures"`
 }
 
 type codeTreeResponse struct {
-	Scope        *scopeResponse             `json:"scope"`
-	CodeSnapshot *postgres.CodeSnapshotScope `json:"code_snapshot"`
+	Scope        *scopeResponse               `json:"scope"`
+	CodeSnapshot *postgres.CodeSnapshotScope  `json:"code_snapshot"`
 	Items        []*postgres.CodeSnapshotFile `json:"items"`
 }
 
 type codeFileResponse struct {
-	Scope  *scopeResponse       `json:"scope"`
+	Scope  *scopeResponse             `json:"scope"`
 	File   *postgres.CodeSnapshotFile `json:"file"`
-	Issues []*postgres.IssueRow `json:"issues"`
+	Issues []*postgres.IssueRow       `json:"issues"`
 }
 
 // ── Activity ────────────────────────────────────────────────────────────

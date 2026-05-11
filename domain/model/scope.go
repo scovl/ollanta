@@ -9,9 +9,9 @@ const (
 
 // AnalysisScope identifies the logical branch or pull request a scan belongs to.
 type AnalysisScope struct {
-	Type           string `json:"type"`
-	Branch         string `json:"branch,omitempty"`
-	PullRequestKey string `json:"pull_request_key,omitempty"`
+	Type            string `json:"type"`
+	Branch          string `json:"branch,omitempty"`
+	PullRequestKey  string `json:"pull_request_key,omitempty"`
 	PullRequestBase string `json:"pull_request_base,omitempty"`
 }
 

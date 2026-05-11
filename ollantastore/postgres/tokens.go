@@ -10,15 +10,15 @@ import (
 
 // Token represents an API token stored in PostgreSQL.
 type Token struct {
-	ID          int64
-	UserID      int64
-	Name        string
-	TokenHash   string
-	TokenType   string // user | project_analysis | global_analysis
-	ProjectID   *int64
-	LastUsedAt  *time.Time
-	ExpiresAt   *time.Time
-	CreatedAt   time.Time
+	ID         int64
+	UserID     int64
+	Name       string
+	TokenHash  string
+	TokenType  string // user | project_analysis | global_analysis
+	ProjectID  *int64
+	LastUsedAt *time.Time
+	ExpiresAt  *time.Time
+	CreatedAt  time.Time
 }
 
 // TokenRepository provides CRUD access to the tokens table.

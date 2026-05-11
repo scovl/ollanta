@@ -180,9 +180,9 @@ func (h *ScansHandler) SurvivedMutants(w http.ResponseWriter, r *http.Request) {
 	}
 	mutants := h.fetchSurvivedMutants(r.Context(), id)
 	jsonOK(w, http.StatusOK, map[string]interface{}{
-		"scan_id":  id,
-		"mutants":  mutants,
-		"total":    len(mutants),
+		"scan_id": id,
+		"mutants": mutants,
+		"total":   len(mutants),
 	})
 }
 

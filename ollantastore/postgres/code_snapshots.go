@@ -44,7 +44,7 @@ type CodeSnapshotFile struct {
 
 // CodeSnapshotManifest is the full latest snapshot payload returned by the API layer.
 type CodeSnapshotManifest struct {
-	Scope *CodeSnapshotScope `json:"scope"`
+	Scope *CodeSnapshotScope  `json:"scope"`
 	Files []*CodeSnapshotFile `json:"files"`
 }
 

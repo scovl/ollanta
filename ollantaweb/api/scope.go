@@ -14,11 +14,11 @@ import (
 const projectNotFoundMessage = "project not found"
 
 type scopeResponse struct {
-	Type           string `json:"type"`
-	Branch         string `json:"branch,omitempty"`
-	PullRequestKey string `json:"pull_request_key,omitempty"`
+	Type            string `json:"type"`
+	Branch          string `json:"branch,omitempty"`
+	PullRequestKey  string `json:"pull_request_key,omitempty"`
 	PullRequestBase string `json:"pull_request_base,omitempty"`
-	DefaultBranch  string `json:"default_branch,omitempty"`
+	DefaultBranch   string `json:"default_branch,omitempty"`
 }
 
 type resolvedProjectScope struct {

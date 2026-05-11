@@ -11,10 +11,10 @@ import (
 // NewCodePeriod represents a new code period setting at global, project, or branch scope.
 type NewCodePeriod struct {
 	ID        int64     `json:"id"`
-	Scope     string    `json:"scope"`     // global | project | branch
+	Scope     string    `json:"scope"` // global | project | branch
 	ProjectID *int64    `json:"project_id,omitempty"`
 	Branch    *string   `json:"branch,omitempty"`
-	Strategy  string    `json:"strategy"`  // auto | previous_version | number_of_days | specific_analysis | reference_branch
+	Strategy  string    `json:"strategy"` // auto | previous_version | number_of_days | specific_analysis | reference_branch
 	Value     string    `json:"value"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`

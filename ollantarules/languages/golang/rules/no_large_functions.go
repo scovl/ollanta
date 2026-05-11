@@ -35,9 +35,9 @@ var NoLargeFunctions = ollantarules.Rule{
 				issues = append(issues, issue)
 			}
 			return true
-	})
-	return issues
-},
+		})
+		return issues
+	},
 }
 
 // lineOf returns the 1-based line number of a token.Pos.

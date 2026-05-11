@@ -44,9 +44,9 @@ type ScanRepository struct {
 
 // BranchSummary describes the latest branch-scoped analysis known for a project.
 type BranchSummary struct {
-	Name      string `json:"name"`
-	IsDefault bool   `json:"is_default"`
-	LatestScan *Scan `json:"latest_scan,omitempty"`
+	Name       string `json:"name"`
+	IsDefault  bool   `json:"is_default"`
+	LatestScan *Scan  `json:"latest_scan,omitempty"`
 }
 
 // PullRequestSummary describes the latest pull request analysis known for a project.
