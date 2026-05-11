@@ -76,6 +76,134 @@ A UI local do scanner vem embutida no binário do scanner. Ela serve um visualiz
 | "Quero histórico centralizado" | `ollanta -project-dir . -server http://host:8080` | Scanner envia relatório ao servidor |
 | "Quero acessar resultados via API" | `curl http://host:8080/api/v1/issues` | Servidor expõe dados via REST |
 
+### Componentes: totalmente separados
+
+> **Conceito fundamental:** Ollanta **não é um monólito**. São componentes independentes — cada um com sua responsabilidade, seu binário ou biblioteca, e seu ciclo de vida.
+
+| Componente | Tipo | Responsabilidade | Conecta-se com |
+|---|---|---|---|
+| **Scanner** | Binário `ollanta` | Analisa código local e gera relatório | Rules, Parser (mesmo processo), Servidor (HTTP) |
+| **Servidor** | Binário `ollantaweb` | Centraliza histórico, API REST, quality gates | Banco (PostgreSQL), Busca (ZincSearch/PG) |
+| **Parser** | Biblioteca `ollantaparser` | Parseia código em AST — **único módulo com CGo** | Scanner (via import Go) |
+| **Rules** | Biblioteca `ollantarules` | Detecta problemas via regras de análise | Scanner (via registry global), Parser (consome AST) |
+| **Engine** | Biblioteca `ollantaengine` | Tracking de issues, quality gates, new code | Servidor (via import Go) |
+| **Store** | Biblioteca `ollantastore` | Persistência PostgreSQL + busca text | Servidor (via import Go) |
+
+#### Regra de ouro: Scanner e Servidor são processos SEPARADOS
+
+```mermaid
+%%{init: {"theme": "base", "themeVariables": {"primaryColor": "#fef9c3", "primaryTextColor": "#1c1917", "primaryBorderColor": "#d97706", "lineColor": "#92400e", "secondaryColor": "#dbeafe", "tertiaryColor": "#f0fdf4", "edgeLabelBackground": "#fffbeb", "fontFamily": "ui-monospace, monospace", "fontSize": "14px", "clusterBkg": "#fffbeb", "clusterBorder": "#fbbf24"}}}%%
+graph LR
+    subgraph SCANNER_BOX ["  🔍  Scanner (binário ollanta)  "]
+        PARSER["🌳 ollantaparser\n(CGo: tree-sitter)"]:::parser
+        RULES["📏 ollantarules\n(regras + sensors)"]:::rules
+        SCAN_CODE["📁 Seu código"]:::src
+        SCAN_CODE --> PARSER --> RULES
+    end
+
+    RULES -- "📤 report.json" --> SERVER
+
+    subgraph SERVER_BOX ["  🏢  Servidor (binário ollantaweb)  "]
+        STORE_PG["🐘 ollantastore\nPostgreSQL"]:::store
+        STORE_SEARCH["🔎 ollantastore\nZincSearch / PG FTS"]:::store
+        ENGINE["⚙️ ollantaengine\ntracking, quality gates"]:::engine
+        STORE_PG --- ENGINE
+        STORE_SEARCH --- ENGINE
+    end
+
+    SERVER --> DB[( "🗄️ PostgreSQL" )]:::db
+    SERVER --> SEARCH[( "🔍 ZincSearch" )]:::search
+
+    classDef src    fill:#dbeafe,stroke:#3b82f6,stroke-width:2px,color:#1e3a5f
+    classDef parser fill:#ede9fe,stroke:#7c3aed,stroke-width:2px,color:#3b0764
+    classDef rules  fill:#fef9c3,stroke:#d97706,stroke-width:2px,color:#1c1917
+    classDef store  fill:#d1fae5,stroke:#059669,stroke-width:2px,color:#064e3b
+    classDef engine fill:#fce7f3,stroke:#db2777,stroke-width:2px,color:#831843
+    classDef db     fill:#dbeafe,stroke:#3b82f6,stroke-width:2px,color:#1e3a5f
+    classDef search fill:#ede9fe,stroke:#7c3aed,stroke-width:2px,color:#3b0764
+
+    style SCANNER_BOX fill:#fffbeb,stroke:#fbbf24,stroke-width:2px,stroke-dasharray:6 3,rx:16
+    style SERVER_BOX  fill:#f0f9ff,stroke:#7dd3fc,stroke-width:2px,stroke-dasharray:6 3,rx:16
+```
+
+**O Scanner funciona COMPLETAMENTE SEM o Servidor.** No modo local (`-local-ui`), ele analisa código, gera relatório e exibe resultados sem banco de dados, sem servidor, sem infraestrutura externa.
+
+**O Servidor funciona SEM o Scanner.** Ele serve dados históricos e API mesmo sem novos scans — a conexão entre eles acontece **APENAS** quando o Scanner envia o relatório via HTTP POST.
+
+**Parser e Rules são bibliotecas — não serviços.** Elas rodam DENTRO do processo do Scanner, conectadas em tempo de compilação via import Go. Não há comunicação por rede entre elas.
+
+#### Conexões: quando, como, onde e por quê
+
+| Conexão | Quando acontece | Como acontece | Onde (endpoint/interface) | Por quê |
+|---|---|---|---|---|
+| **Scanner → Rules** | A cada scan, para cada arquivo | Scanner importa `ollantarules` → `MustRegister()` → `Check(ctx)` | Mesmo processo — chamada de função direta | Separar regras do scanner permite adicionar novas sem modificar o scanner |
+| **Rules → Parser** | Antes de aplicar regras em cada arquivo | Parser produz AST (Go nativo ou tree-sitter) → Rules consomem via `AnalysisContext` | Mesmo processo — `IParser` interface | Desacoplar parsing da análise permite trocar de parser sem afetar regras |
+| **Scanner → Servidor** | Ao final de cada scan (modo push/server) | Scanner faz HTTP POST do `report.json` → `POST /api/v1/scans` | Rede TCP — porta configurável (ex: `:8080`) | Centralizar histórico, permitir tracking entre scans e quality gates |
+| **Servidor → Banco** | A cada requisição da API | Interface `IProjectRepo`, `IScanRepo`, etc. → implementação `pgx/v5` | Conexão TCP com PostgreSQL | Hexagonal: trocar de banco sem alterar lógica de negócio |
+| **Servidor → Busca** | Após ingestão de scan | Interface `IIndexer` → ZincSearch (HTTP) ou PostgreSQL FTS | Conexão TCP — URL configurável | Busca é uma projeção rebuildável; PostgreSQL é a fonte da verdade |
+
+#### Exemplo prático: como Scanner executa Rules?
+
+```mermaid
+%%{init: {"theme": "base", "themeVariables": {"primaryColor": "#fef9c3", "primaryTextColor": "#1c1917", "primaryBorderColor": "#d97706", "lineColor": "#92400e", "fontFamily": "ui-monospace, monospace", "fontSize": "14px", "clusterBkg": "#fffbeb", "clusterBorder": "#fbbf24"}}}%%
+graph TB
+    DISCOVERY["📂 Scanner descobre arquivos"]:::step
+
+    DISCOVERY --> GO_FILE
+    DISCOVERY --> PY_FILE
+
+    subgraph GO_FILE ["🐹 Arquivo Go (handler.go)"]
+        GO_PARSE["go/parser.ParseFile()"]:::gostep
+        GO_AST["AST nativa (ast.File)"]:::gostep
+        GO_RULES["GoSensor aplica regras:"]:::gostep
+        GO_R1["go:no-large-functions → Check(ctx) → Issue"]:::grun
+        GO_R2["go:magic-number → Check(ctx) → Issue"]:::grun
+        GO_R3["go:cognitive-complexity → Check(ctx) → Issue"]:::grun
+
+        GO_PARSE --> GO_AST --> GO_RULES
+        GO_RULES --> GO_R1
+        GO_RULES --> GO_R2
+        GO_RULES --> GO_R3
+    end
+
+    subgraph PY_FILE ["🐍 Arquivo Python (utils.py)"]
+        PY_PARSE["tree-sitter.Parse()"]:::pystep
+        PY_AST["AST tree-sitter (ParsedFile)"]:::pystep
+        PY_RULES["TreeSitterSensor aplica queries:"]:::pystep
+        PY_R1["py:broad-except → Query → Issue"]:::prun
+        PY_R2["py:return-in-init → Query → Issue"]:::prun
+
+        PY_PARSE --> PY_AST --> PY_RULES
+        PY_RULES --> PY_R1
+        PY_RULES --> PY_R2
+    end
+
+    GO_R1 --> COLLECTOR
+    GO_R2 --> COLLECTOR
+    GO_R3 --> COLLECTOR
+    PY_R1 --> COLLECTOR
+    PY_R2 --> COLLECTOR
+
+    COLLECTOR["🗃️ Coletor de Issues"]:::agg --> REPORT["📄 report.json"]:::out
+
+    classDef step  fill:#fef9c3,stroke:#d97706,stroke-width:2px,color:#1c1917
+    classDef gostep fill:#d1fae5,stroke:#059669,stroke-width:2px,color:#064e3b
+    classDef pystep fill:#ede9fe,stroke:#7c3aed,stroke-width:2px,color:#3b0764
+    classDef grun  fill:#d1fae5,stroke:#059669,stroke-width:1px,color:#064e3b
+    classDef prun  fill:#ede9fe,stroke:#7c3aed,stroke-width:1px,color:#3b0764
+    classDef agg   fill:#fef9c3,stroke:#d97706,stroke-width:2px,color:#1c1917
+    classDef out   fill:#d1fae5,stroke:#059669,stroke-width:2px,color:#064e3b
+```
+
+**Quando?** Em cada scan, para cada arquivo descoberto.
+
+**Como?** O Scanner itera os arquivos, o Parser produz a AST, e o Rules Registry seleciona quais regras aplicar baseado no Quality Profile vigente.
+
+**Por quê?** A separação Scanner–Rules permite:
+- Adicionar novas regras sem modificar o scanner
+- O Quality Profile filtrar regras por linguagem e severidade
+- Reaproveitar as mesmas regras em diferentes contextos (CLI, CI/CD, IDE)
+
 ---
 
 ## Parte 2: Como o Scanner funciona
@@ -152,6 +280,14 @@ graph TD
 > **Detalhe técnico importante:** O tree-sitter é escrito em C/Rust, então o módulo `ollantaparser` é o **único** que precisa de CGo (compilador C). Todos os outros módulos do Ollanta funcionam sem CGo, o que simplifica builds e deploys.
 
 > **Código relevante:** `ollantaparser/` (tree-sitter) e `ollantarules/languages/golang/sensor/` (Go nativo)
+
+---
+
+⚡ **Ponto de conexão: Parser → Rules**
+
+| Quando | Como | Por quê |
+|---|---|---|
+| Antes de aplicar cada regra em cada arquivo | Parser produz `ast.File` (Go) ou `ParsedFile` (tree-sitter) → Rules recebem via `AnalysisContext.AST` | A AST é a ponte entre "texto bruto" e "código compreensível". Separar parsing de análise permite trocar o parser sem reescrever regras |
 
 ---
 
@@ -233,6 +369,16 @@ graph LR
 ```
 
 > **Código relevante:** `application/scan/executor.go`
+
+---
+
+⚡ **Ponto de conexão: Scanner → Rules**
+
+| Quando | Como | Por quê |
+|---|---|---|
+| Durante a fase de análise, após o Quality Profile resolver as regras ativas | Scanner itera arquivos → Worker pool distribui arquivos → Cada worker chama `ollantarules.Rule.Check(ctx)` no sensor apropriado (GoSensor ou TreeSitterSensor) | O Quality Profile decide QUAIS regras rodam; o Scanner decide QUANDO e EM QUAIS arquivos. A interface `IAnalyzer` é o contrato entre eles |
+
+---
 
 ### Etapa 4: Relatório
 
@@ -344,7 +490,15 @@ Exemplo:
 
 O servidor (`ollantaweb`) é onde a mágica de **acompanhamento ao longo do tempo** acontece. Enquanto o scanner é "stateless" (roda e esquece), o servidor mantém o histórico completo.
 
-Quando o scanner envia um relatório para o servidor via `POST /api/v1/scans`, um pipeline de 8 passos é executado. Cada passo tem timeout individual e estratégia de erro (abort ou skip):
+Quando o scanner envia um relatório para o servidor via `POST /api/v1/scans`, um pipeline de 8 passos é executado.
+
+⚡ **Ponto de conexão: Scanner → Servidor**
+
+| Quando | Como | Onde | Por quê |
+|---|---|---|---|
+| Ao final de cada scan (modo push) | Scanner serializa `report.json` → HTTP POST com `Content-Type: application/json` | `POST /api/v1/scans` (porta configurável, ex: `:8080`) | O Scanner é stateless (roda e esquece). O Servidor mantém o histórico. O relatório JSON é o contrato entre eles |
+
+Cada passo tem timeout individual e estratégia de erro (abort ou skip):
 
 1. **Registrar o projeto** — cria o projeto no banco se ainda não existir (abort on fail).
 2. **Buscar scan anterior** — carrega o último scan do mesmo projeto para tracking (skip on fail).
