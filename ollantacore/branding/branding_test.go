@@ -1,8 +1,8 @@
 package branding
 
 import (
-	"image/png"
 	"bytes"
+	"image/png"
 	"testing"
 )
 

@@ -6,7 +6,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
-	httpSwagger "github.com/swaggo/http-swagger"
 	telemetry "github.com/scovl/ollanta/adapter/secondary/telemetry"
 	"github.com/scovl/ollanta/application/tagging"
 	"github.com/scovl/ollanta/ollantacore/branding"
@@ -16,6 +15,7 @@ import (
 	_ "github.com/scovl/ollanta/ollantaweb/docs"
 	"github.com/scovl/ollanta/ollantaweb/ingest"
 	"github.com/scovl/ollanta/ollantaweb/webhook"
+	httpSwagger "github.com/swaggo/http-swagger"
 )
 
 // @title Ollanta API
@@ -379,7 +379,7 @@ func NewRouter(d *RouterDeps) http.Handler {
 	r.Group(func(r chi.Router) {
 		r.Use(authMW.Authenticate)
 		r.Use(RequirePermission(d.Perms, "admin"))
-			// @Summary Trigger reindex
+		// @Summary Trigger reindex
 		// @Description Triggers a background full reindex
 		// @Tags admin
 		// @Produce json
