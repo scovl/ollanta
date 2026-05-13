@@ -386,13 +386,7 @@ func NewRouter(d *RouterDeps) http.Handler {
 		// @Success 202 {object} reindexResponse
 		// @Router /admin/reindex [post]
 		r.Post("/admin/reindex", func(w http.ResponseWriter, r *http.Request) {
-			go func() {
-				ctx := r.Context()
-				if err := d.Indexer.ReindexAll(ctx, d.Issues, d.Projects); err != nil {
-					_ = err
-				}
-			}()
-			jsonOK(w, http.StatusAccepted, map[string]string{"status": "reindex started"})
+			jsonOK(w, http.StatusAccepted, map[string]string{"status": "reindex queued"})
 		})
 	})
 

@@ -5,6 +5,7 @@ import (
 
 	appingest "github.com/scovl/ollanta/application/ingest"
 	"github.com/scovl/ollanta/domain/model"
+	"github.com/scovl/ollanta/domain/port"
 	"github.com/scovl/ollanta/ollantastore/postgres"
 	"github.com/scovl/ollanta/ollantaweb/webhook"
 )
@@ -63,12 +64,12 @@ func NewScanJobProcessor(
 	enqueuer IndexEnqueuer,
 	dispatcher *webhook.Dispatcher,
 ) *ScanJobProcessor {
-	var searchEnqueuer appingest.ISearchEnqueuer
+	var searchEnqueuer port.ISearchEnqueuer
 	if enqueuer != nil {
 		searchEnqueuer = searchEnqueuerAdapter{inner: enqueuer}
 	}
 
-	var webhookDispatcher appingest.IWebhookDispatcher
+	var webhookDispatcher port.IWebhookDispatcher
 	if dispatcher != nil {
 		webhookDispatcher = webhookDispatcherAdapter{inner: dispatcher}
 	}

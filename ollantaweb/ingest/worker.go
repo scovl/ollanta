@@ -212,9 +212,27 @@ func (w *Worker) doIndex(ctx context.Context, job *postgres.IndexJob) error {
 			return nil
 		}
 
-		rows := make([]postgres.IssueRow, len(issues))
+		rows := make([]search.IndexIssue, len(issues))
 		for i, iss := range issues {
-			rows[i] = *iss
+			tags := iss.Tags
+			if tags == nil {
+				tags = []string{}
+			}
+			rows[i] = search.IndexIssue{
+				ID:            iss.ID,
+				ScanID:        iss.ScanID,
+				ProjectID:     iss.ProjectID,
+				ProjectKey:    job.ProjectKey,
+				RuleKey:       iss.RuleKey,
+				ComponentPath: iss.ComponentPath,
+				Message:       iss.Message,
+				Type:          iss.Type,
+				Severity:      iss.Severity,
+				Status:        iss.Status,
+				Line:          iss.Line,
+				Tags:          tags,
+				CreatedAt:     iss.CreatedAt.Format(time.RFC3339),
+			}
 		}
 		if err := w.indexer.IndexIssues(ctx, job.ProjectKey, rows); err != nil {
 			return err

@@ -171,7 +171,7 @@ func (q *fakeIssueQueryer) Query(_ context.Context, _ postgres.IssueFilter) ([]*
 }
 
 type fakeIndexer struct {
-	batches  [][]postgres.IssueRow
+	batches  [][]search.IndexIssue
 	indexErr error
 	traceID  string
 }
@@ -180,29 +180,25 @@ func (f *fakeIndexer) Health(context.Context) error { return nil }
 
 func (f *fakeIndexer) ConfigureIndexes(context.Context) error { return nil }
 
-func (f *fakeIndexer) indexIssues(ctx context.Context, issues []postgres.IssueRow) error {
+func (f *fakeIndexer) indexIssues(ctx context.Context, issues []search.IndexIssue) error {
 	if f.indexErr != nil {
 		return f.indexErr
 	}
 	if spanContext := trace.SpanContextFromContext(ctx); spanContext.IsValid() {
 		f.traceID = spanContext.TraceID().String()
 	}
-	copyBatch := append([]postgres.IssueRow(nil), issues...)
+	copyBatch := append([]search.IndexIssue(nil), issues...)
 	f.batches = append(f.batches, copyBatch)
 	return nil
 }
 
-func (f *fakeIndexer) IndexIssues(ctx context.Context, _ string, issues []postgres.IssueRow) error {
+func (f *fakeIndexer) IndexIssues(ctx context.Context, _ string, issues []search.IndexIssue) error {
 	return f.indexIssues(ctx, issues)
 }
 
-func (f *fakeIndexer) IndexProject(context.Context, *postgres.Project) error { return nil }
+func (f *fakeIndexer) IndexProject(context.Context, search.IndexProject) error { return nil }
 
 func (f *fakeIndexer) DeleteScanIssues(context.Context, int64) error { return nil }
-
-func (f *fakeIndexer) ReindexAll(context.Context, *postgres.IssueRepository, *postgres.ProjectRepository) error {
-	return nil
-}
 
 var _ search.IIndexer = (*fakeIndexer)(nil)
 

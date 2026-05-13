@@ -9,6 +9,7 @@ import (
 	"github.com/scovl/ollanta/application/analysis"
 	appingest "github.com/scovl/ollanta/application/ingest"
 	"github.com/scovl/ollanta/domain/model"
+	"github.com/scovl/ollanta/domain/port"
 	"github.com/scovl/ollanta/ollantastore/postgres"
 )
 
@@ -56,7 +57,7 @@ func NewPipeline(
 	repos IngestRepositories,
 	enqueuer IndexEnqueuer,
 ) *Pipeline {
-	var searchEnqueuer appingest.ISearchEnqueuer
+	var searchEnqueuer port.ISearchEnqueuer
 	if enqueuer != nil {
 		searchEnqueuer = searchEnqueuerAdapter{inner: enqueuer}
 	}
