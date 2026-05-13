@@ -3,25 +3,24 @@ package parser
 import (
 	"path/filepath"
 	"sync"
+
+	"github.com/scovl/ollanta/ollantaparser"
 )
 
-// LanguageRegistry maps file extensions and language names to tree-sitter grammars.
 type LanguageRegistry struct {
 	mu     sync.RWMutex
-	byExt  map[string]Language
-	byName map[string]Language
+	byExt  map[string]ollantaparser.Language
+	byName map[string]ollantaparser.Language
 }
 
-// NewRegistry creates an empty LanguageRegistry.
 func NewRegistry() *LanguageRegistry {
 	return &LanguageRegistry{
-		byExt:  make(map[string]Language),
-		byName: make(map[string]Language),
+		byExt:  make(map[string]ollantaparser.Language),
+		byName: make(map[string]ollantaparser.Language),
 	}
 }
 
-// Register adds lang for all its declared extensions and name.
-func (r *LanguageRegistry) Register(lang Language) {
+func (r *LanguageRegistry) Register(lang ollantaparser.Language) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.byName[lang.Name()] = lang
@@ -30,23 +29,20 @@ func (r *LanguageRegistry) Register(lang Language) {
 	}
 }
 
-// ForExtension returns the Language registered for the given file extension.
-func (r *LanguageRegistry) ForExtension(ext string) (Language, bool) {
+func (r *LanguageRegistry) ForExtension(ext string) (ollantaparser.Language, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	l, ok := r.byExt[ext]
 	return l, ok
 }
 
-// ForName returns the Language registered under the given canonical name.
-func (r *LanguageRegistry) ForName(name string) (Language, bool) {
+func (r *LanguageRegistry) ForName(name string) (ollantaparser.Language, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	l, ok := r.byName[name]
 	return l, ok
 }
 
-// ForFile looks up language by file extension.
-func (r *LanguageRegistry) ForFile(path string) (Language, bool) {
+func (r *LanguageRegistry) ForFile(path string) (ollantaparser.Language, bool) {
 	return r.ForExtension(filepath.Ext(path))
 }

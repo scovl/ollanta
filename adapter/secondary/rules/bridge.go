@@ -55,6 +55,7 @@ func (b *AnalyzerBridge) Check(ctx context.Context, ac port.AnalysisContext, iss
 		Path:     ac.Path,
 		Source:   ac.Source,
 		Language: ac.Language,
+		Params:   ac.Params,
 	}
 
 	if ac.GoFile != nil {
@@ -76,25 +77,57 @@ func (b *AnalyzerBridge) Check(ctx context.Context, ac port.AnalysisContext, iss
 
 	ruleCtx.Query = ollantaparser.NewQueryRunner()
 
-	coreIssues := b.inner.Check(ruleCtx)
-	for _, ci := range coreIssues {
-		*issues = append(*issues, convertIssue(ci))
+	ruleTags := b.inner.Meta.Tags
+	for _, ci := range b.inner.Check(ruleCtx) {
+		di := convertIssue(ci)
+		if di == nil {
+			continue
+		}
+		if di.Language == "" {
+			di.Language = ac.Language
+		}
+		if len(di.Tags) == 0 && len(ruleTags) > 0 {
+			di.Tags = append([]string(nil), ruleTags...)
+		}
+		if di.QualityDomain == "" {
+			di.QualityDomain = model.DeriveIssueQualityDomain(di.Type, di.Tags)
+		}
+		*issues = append(*issues, di)
 	}
-	return nil
+	return ctx.Err()
 }
 
 func convertIssue(ci *coredomain.Issue) *model.Issue {
+	if ci == nil {
+		return nil
+	}
+	secondary := make([]model.SecondaryLocation, len(ci.SecondaryLocations))
+	for i, loc := range ci.SecondaryLocations {
+		secondary[i] = model.SecondaryLocation{
+			FilePath:    loc.FilePath,
+			Message:     loc.Message,
+			StartLine:   loc.StartLine,
+			StartColumn: loc.StartColumn,
+			EndLine:     loc.EndLine,
+			EndColumn:   loc.EndColumn,
+		}
+	}
 	return &model.Issue{
-		RuleKey:       ci.RuleKey,
-		ComponentPath: ci.ComponentPath,
-		Line:          ci.Line,
-		Column:        ci.Column,
-		EndLine:       ci.EndLine,
-		EndColumn:     ci.EndColumn,
-		Message:       ci.Message,
-		Severity:      model.Severity(ci.Severity),
-		Type:          model.IssueType(ci.Type),
-		Tags:          ci.Tags,
-		LineHash:      ci.LineHash,
+		RuleKey:            ci.RuleKey,
+		ComponentPath:      ci.ComponentPath,
+		Line:               ci.Line,
+		Column:             ci.Column,
+		EndLine:            ci.EndLine,
+		EndColumn:          ci.EndColumn,
+		Message:            ci.Message,
+		Severity:           model.Severity(ci.Severity),
+		Type:               model.IssueType(ci.Type),
+		Status:             model.Status(ci.Status),
+		Resolution:         ci.Resolution,
+		EffortMinutes:      ci.EffortMinutes,
+		EngineID:           ci.EngineID,
+		LineHash:           ci.LineHash,
+		Tags:               ci.Tags,
+		SecondaryLocations: secondary,
 	}
 }
