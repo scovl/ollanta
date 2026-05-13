@@ -104,12 +104,7 @@ func (b *analyzerBridge) Tags() []string {
 func (b *analyzerBridge) Params() map[string]model.ParamDef {
 	out := make(map[string]model.ParamDef, len(b.inner.Meta.Params))
 	for _, param := range b.inner.Meta.Params {
-		out[param.Key] = model.ParamDef{
-			Key:          param.Key,
-			Description:  param.Description,
-			DefaultValue: param.DefaultValue,
-			Type:         param.Type,
-		}
+		out[param.Key] = model.ParamDef(param)
 	}
 	return out
 }
@@ -163,14 +158,7 @@ func toDomainIssue(issue *coredomain.Issue) *model.Issue {
 	}
 	secondary := make([]model.SecondaryLocation, len(issue.SecondaryLocations))
 	for i, location := range issue.SecondaryLocations {
-		secondary[i] = model.SecondaryLocation{
-			FilePath:    location.FilePath,
-			Message:     location.Message,
-			StartLine:   location.StartLine,
-			StartColumn: location.StartColumn,
-			EndLine:     location.EndLine,
-			EndColumn:   location.EndColumn,
-		}
+		secondary[i] = model.SecondaryLocation(location)
 	}
 	return &model.Issue{
 		RuleKey:            issue.RuleKey,
