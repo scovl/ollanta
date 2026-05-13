@@ -44,6 +44,23 @@ func parseGoSource(t *testing.T, src string) *ollantarules.AnalysisContext {
 	}
 }
 
+func parseGoSourceWithComments(t *testing.T, src string) *ollantarules.AnalysisContext {
+	t.Helper()
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, "test.go", src, parser.ParseComments)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	return &ollantarules.AnalysisContext{
+		Path:     "test.go",
+		Source:   []byte(src),
+		Language: constants.LangGo,
+		Params:   map[string]string{},
+		AST:      f,
+		FileSet:  fset,
+	}
+}
+
 func parseGoFile(t *testing.T, path string) *ollantarules.AnalysisContext {
 	t.Helper()
 	src, err := os.ReadFile(path)
@@ -786,5 +803,194 @@ func f(x int) {
 	issues := rules.SwitchNoDefault.Check(ctx)
 	if len(issues) != 0 {
 		t.Errorf("expected no issue for empty switch, got %d", len(issues))
+	}
+}
+
+// ── CognitiveComplexity ──────────────────────────────────────────────────────
+
+func TestCognitiveComplexity_DetectsComplexFunction(t *testing.T) {
+	src := `package p
+func Complex(x int) int {
+	if x > 0 {
+		for i := 0; i < x; i++ {
+			if i%2 == 0 {
+				switch i {
+				case 1:
+					return 1
+				case 2:
+					if x > 10 && i < 5 {
+						return 2
+					}
+				}
+			}
+		}
+	}
+	return 0
+}`
+	ctx := parseGoSource(t, src)
+	issues := rules.CognitiveComplexity.Check(ctx)
+	if len(issues) == 0 {
+		t.Error("expected at least one issue for high cognitive complexity")
+	}
+}
+
+func TestCognitiveComplexity_Clean(t *testing.T) {
+	src := `package p
+func Simple(x int) int {
+	return x + 1
+}`
+	ctx := parseGoSource(t, src)
+	issues := rules.CognitiveComplexity.Check(ctx)
+	if len(issues) != 0 {
+		t.Errorf("expected no issues in simple function, got %d", len(issues))
+	}
+}
+
+// ── FunctionNestingDepth ─────────────────────────────────────────────────────
+
+func TestFunctionNestingDepth_DetectsDeepNesting(t *testing.T) {
+	src := `package p
+func Deep(x int) int {
+	if x > 0 {
+		if x > 1 {
+			for i := 0; i < x; i++ {
+				if i%2 == 0 {
+					switch i {
+					case 1:
+						return 1
+					}
+				}
+			}
+		}
+	}
+	return 0
+}`
+	ctx := parseGoSource(t, src)
+	issues := rules.FunctionNestingDepth.Check(ctx)
+	if len(issues) == 0 {
+		t.Error("expected at least one issue for deep nesting")
+	}
+}
+
+func TestFunctionNestingDepth_Clean(t *testing.T) {
+	src := `package p
+func Flat(x int) int {
+	return x + 1
+}`
+	ctx := parseGoSource(t, src)
+	issues := rules.FunctionNestingDepth.Check(ctx)
+	if len(issues) != 0 {
+		t.Errorf("expected no issues in flat function, got %d", len(issues))
+	}
+}
+
+// ── MagicNumber ──────────────────────────────────────────────────────────────
+
+func TestMagicNumber_DetectsMagicNumbers(t *testing.T) {
+	src := `package p
+func f() int {
+	x := 42
+	return x + 99
+}`
+	ctx := parseGoSource(t, src)
+	issues := rules.MagicNumber.Check(ctx)
+	if len(issues) == 0 {
+		t.Error("expected at least one issue for magic numbers")
+	}
+}
+
+func TestMagicNumber_NoIssueOnCommonValues(t *testing.T) {
+	src := `package p
+func f() int {
+	x := 0
+	y := 1
+	z := -1
+	return x + y + z
+}`
+	ctx := parseGoSource(t, src)
+	issues := rules.MagicNumber.Check(ctx)
+	if len(issues) != 0 {
+		t.Errorf("expected no issues for authorized values (0, 1, -1), got %d", len(issues))
+	}
+}
+
+func TestMagicNumber_NoIssueOnConst(t *testing.T) {
+	src := `package p
+const answer = 42
+func f() int {
+	return answer
+}`
+	ctx := parseGoSource(t, src)
+	issues := rules.MagicNumber.Check(ctx)
+	if len(issues) != 0 {
+		t.Errorf("expected no issues for const declaration, got %d", len(issues))
+	}
+}
+
+// ── TooManyParameters ────────────────────────────────────────────────────────
+
+func TestTooManyParameters_Detects(t *testing.T) {
+	src := `package p
+func Many(a, b, c int, d, e, f string) {}
+func Few(x int) {}
+`
+	ctx := parseGoSource(t, src)
+	issues := rules.TooManyParameters.Check(ctx)
+	if len(issues) == 0 {
+		t.Error("expected at least one issue for too many parameters")
+	}
+}
+
+func TestTooManyParameters_Clean(t *testing.T) {
+	src := `package p
+func Few(a, b int) {}
+func AlsoOK(x, y, z string) {}
+`
+	ctx := parseGoSource(t, src)
+	issues := rules.TooManyParameters.Check(ctx)
+	if len(issues) != 0 {
+		t.Errorf("expected no issues for functions with few params, got %d", len(issues))
+	}
+}
+
+// ── TodoComment ──────────────────────────────────────────────────────────────
+
+func TestTodoComment_DetectsTODO(t *testing.T) {
+	src := `package p
+// TODO: implement this
+func f() {}
+`
+	ctx := parseGoSourceWithComments(t, src)
+	issues := rules.TodoComment.Check(ctx)
+	if len(issues) == 0 {
+		t.Error("expected at least one issue for TODO comment")
+	}
+}
+
+func TestTodoComment_DetectsFIXME(t *testing.T) {
+	src := `package p
+// FIXME: this is broken
+func f() {}
+`
+	ctx := parseGoSourceWithComments(t, src)
+	issues := rules.TodoComment.Check(ctx)
+	if len(issues) == 0 {
+		t.Error("expected at least one issue for FIXME comment")
+	}
+}
+
+func TestTodoComment_NoIssueOnCleanComment(t *testing.T) {
+	src := `package p
+// This is a normal comment describing the function.
+func f() {
+	// Another normal comment
+	x := 1
+	_ = x
+}
+`
+	ctx := parseGoSourceWithComments(t, src)
+	issues := rules.TodoComment.Check(ctx)
+	if len(issues) != 0 {
+		t.Errorf("expected no issues for clean comments, got %d", len(issues))
 	}
 }
