@@ -376,7 +376,7 @@ func customRulesByKey(rules []model.CustomRuleDefinition) map[string]model.Custo
 func customRuleCatalogRule(rule model.CustomRuleDefinition) *coredomain.Rule {
 	params := make(map[string]coredomain.ParamDef, len(rule.ParamsSchema))
 	for key, param := range rule.ParamsSchema {
-		params[key] = coredomain.ParamDef{Key: param.Key, Description: param.Description, DefaultValue: param.DefaultValue, Type: param.Type}
+		params[key] = coredomain.ParamDef(param)
 	}
 	return &coredomain.Rule{
 		Key:             rule.RuleKey,

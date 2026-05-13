@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -82,19 +83,6 @@ type IngestResult struct {
 	Tracking     *service.TrackingResult `json:"tracking"`
 }
 
-// ISearchEnqueuer is an optional outbound port for async search indexing.
-// Implementations live in the outer layer chosen by the active runtime.
-type ISearchEnqueuer interface {
-	// Enqueue submits an index job without blocking. Dropping is acceptable.
-	Enqueue(ctx context.Context, scanID, projectID int64, projectKey string)
-}
-
-// IWebhookDispatcher is an optional outbound port for firing webhooks.
-type IWebhookDispatcher interface {
-	// Dispatch sends webhook notifications for the given scan event.
-	Dispatch(ctx context.Context, projectID, scanID int64, event string) error
-}
-
 // IngestUseCase orchestrates the full ingest workflow using domain port interfaces.
 type IngestUseCase struct {
 	projects      port.IProjectRepo
@@ -105,8 +93,8 @@ type IngestUseCase struct {
 	profiles      port.IProfileSnapshotRepo
 	tags          port.ITagCatalogRepo
 	gateEvaluator *analysis.EvaluateGateUseCase
-	indexer       ISearchEnqueuer    // optional — nil disables search indexing
-	webhooks      IWebhookDispatcher // optional — nil disables webhook dispatch
+	indexer       port.ISearchEnqueuer    // optional — nil disables search indexing
+	webhooks      port.IWebhookDispatcher // optional — nil disables webhook dispatch
 }
 
 // NewIngestUseCase creates an IngestUseCase with all required dependencies.
@@ -117,8 +105,8 @@ func NewIngestUseCase(
 	issues port.IIssueRepo,
 	measures port.IMeasureRepo,
 	snapshots port.ICodeSnapshotRepo,
-	indexer ISearchEnqueuer,
-	webhooks IWebhookDispatcher,
+	indexer port.ISearchEnqueuer,
+	webhooks port.IWebhookDispatcher,
 ) *IngestUseCase {
 	return &IngestUseCase{
 		projects:  projects,
@@ -253,11 +241,14 @@ func (uc *IngestUseCase) Ingest(ctx context.Context, req *IngestRequest) (*Inges
 	var gateStatus *service.GateStatus
 	var gateResult *model.GateResult
 	if uc.gateEvaluator != nil {
-		gateStatus, _ = uc.gateEvaluator.EvaluateForProject(
+		gateStatus, err = uc.gateEvaluator.EvaluateForProject(
 			ctx, project.ID,
 			measures, newMeasures,
 			changedLines, 0, // smallChangesetLines comes from the gate
 		)
+		if err != nil {
+			slog.Warn("gate evaluation failed, falling back to defaults", "project_id", project.ID, "error", err)
+		}
 		if gateStatus != nil {
 			gateResult = serviceGateToGateResult(gateStatus)
 		}
@@ -422,12 +413,16 @@ func (uc *IngestUseCase) dispatchScanWebhook(ctx context.Context, projectID, sca
 }
 
 func (uc *IngestUseCase) upsertLiveMeasures(ctx context.Context, projectID, scanID int64, measures map[string]float64) {
-	_ = uc.measures.UpsertLiveBatch(ctx, projectID, scanID, measures)
+	if err := uc.measures.UpsertLiveBatch(ctx, projectID, scanID, measures); err != nil {
+		slog.Warn("upsert live measures failed", "project_id", projectID, "scan_id", scanID, "error", err)
+	}
 }
 
 func (uc *IngestUseCase) upsertDailyRollup(ctx context.Context, projectID int64, measures map[string]float64) {
 	today := time.Now().UTC().Format("2006-01-02")
-	_ = uc.measures.UpsertDailyAggregateBatch(ctx, projectID, today, measures)
+	if err := uc.measures.UpsertDailyAggregateBatch(ctx, projectID, today, measures); err != nil {
+		slog.Warn("upsert daily rollup failed", "project_id", projectID, "date", today, "error", err)
+	}
 }
 
 func issueRowToDomain(r *model.IssueRow) *model.Issue {

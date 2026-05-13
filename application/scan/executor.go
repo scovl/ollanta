@@ -56,7 +56,11 @@ func (e *Executor) analyzeFile(ctx context.Context, f DiscoveredFile, policy *Pr
 
 	var parsedFile any
 	if e.parser != nil {
-		parsedFile, _ = e.parser.ParseSource(f.Path, src, f.Language)
+		var err error
+		parsedFile, err = e.parser.ParseSource(f.Path, src, f.Language)
+		if err != nil {
+			slog.Warn("parse error", "file", f.Path, "lang", f.Language, "error", err)
+		}
 	}
 
 	var goFile *goast.File
