@@ -1,6 +1,6 @@
-// Package service contains pure domain logic with zero external dependencies.
-// Issue tracking is inspired by the genealogy/clone tracking from OpenStaticAnalyzer
-// and the "leak period" concept from SonarQube.
+// Package service contains pure domain logic with no external dependencies
+// beyond the domain model. Issue tracking is inspired by the genealogy/clone
+// tracking from OpenStaticAnalyzer and the "leak period" concept from SonarQube.
 package service
 
 import (

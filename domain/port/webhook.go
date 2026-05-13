@@ -17,3 +17,8 @@ type IWebhookRepo interface {
 	RecordDelivery(ctx context.Context, d *model.WebhookDelivery) error
 	ListDeliveries(ctx context.Context, webhookID int64, limit int) ([]*model.WebhookDelivery, error)
 }
+
+// IWebhookDispatcher is an optional outbound port for firing webhooks.
+type IWebhookDispatcher interface {
+	Dispatch(ctx context.Context, projectID, scanID int64, event string) error
+}

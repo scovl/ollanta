@@ -1,8 +1,7 @@
-// Package service contains pure domain logic with zero external dependencies.
-// Gate evaluation is inspired by the MetricHunter threshold system from OpenStaticAnalyzer.
+// Package service contains pure domain logic with no external dependencies
+// beyond the domain model. Gate evaluation is inspired by the MetricHunter
+// threshold system from OpenStaticAnalyzer.
 package service
-
-import "github.com/scovl/ollanta/ollantacore"
 
 // Operator is a comparison operator used in a gate Condition.
 type Operator string
@@ -87,6 +86,24 @@ func (g *GateStatus) FailedConditions() []ConditionResult {
 	return out
 }
 
+// violated reports whether actual satisfies the failing side of the comparison
+// operator. relation must be one of "gt", "lt", "eq", "gte", or "lte".
+func violated(actual float64, relation string, threshold float64) bool {
+	switch relation {
+	case "gt":
+		return actual > threshold
+	case "lt":
+		return actual < threshold
+	case "eq":
+		return actual == threshold
+	case "gte":
+		return actual >= threshold
+	case "lte":
+		return actual <= threshold
+	}
+	return false
+}
+
 // Evaluate assesses all conditions against the provided measures map and returns
 // the aggregated GateStatus. A missing metric does not cause a failure (HasValue=false).
 func Evaluate(conditions []Condition, measures map[string]float64) *GateStatus {
@@ -100,7 +117,7 @@ func Evaluate(conditions []Condition, measures map[string]float64) *GateStatus {
 			ActualValue: actual,
 			HasValue:    ok,
 		}
-		if ok && ollantacore.Violated(actual, string(c.Operator), c.ErrorThreshold) {
+		if ok && violated(actual, string(c.Operator), c.ErrorThreshold) {
 			cr.Status = ConditionError
 			anyError = true
 		} else {
@@ -229,9 +246,9 @@ func evalPersistentCondition(cond Condition, pc PersistentCondition, measures ma
 	}
 	if !ok {
 		cr.Status = ConditionOK
-	} else if ollantacore.Violated(actual, string(pc.Op), pc.Threshold) {
+	} else if violated(actual, string(pc.Op), pc.Threshold) {
 		cr.Status = ConditionError
-	} else if pc.WarningThreshold != nil && ollantacore.Violated(actual, string(pc.Op), *pc.WarningThreshold) {
+	} else if pc.WarningThreshold != nil && violated(actual, string(pc.Op), *pc.WarningThreshold) {
 		cr.Status = ConditionWarn
 	} else {
 		cr.Status = ConditionOK
