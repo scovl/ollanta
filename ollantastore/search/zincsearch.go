@@ -18,8 +18,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/scovl/ollanta/ollantastore/postgres"
 )
 
 // ZincConfig holds connection parameters for ZincSearch.
@@ -123,7 +121,10 @@ func (z *ZincBackend) ConfigureIndexes(ctx context.Context) error {
 
 // putIndex creates or updates a ZincSearch index via PUT /api/index/:target.
 func (z *ZincBackend) putIndex(ctx context.Context, name string, body map[string]interface{}) error {
-	data, _ := json.Marshal(body)
+	data, err := json.Marshal(body)
+	if err != nil {
+		return fmt.Errorf("zincsearch: marshal index body for %s: %w", name, err)
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPut, z.cfg.Host+"/api/index/"+name, bytes.NewReader(data))
 	if err != nil {
 		return err
@@ -145,7 +146,7 @@ func (z *ZincBackend) putIndex(ctx context.Context, name string, body map[string
 }
 
 // IndexIssues bulk-inserts issues into the issues index using the v2 bulk API.
-func (z *ZincBackend) IndexIssues(ctx context.Context, projectKey string, issues []postgres.IssueRow) error {
+func (z *ZincBackend) IndexIssues(ctx context.Context, projectKey string, issues []IndexIssue) error {
 	if len(issues) == 0 {
 		return nil
 	}
@@ -169,9 +170,8 @@ func (z *ZincBackend) IndexIssues(ctx context.Context, projectKey string, issues
 			"type":           iss.Type,
 			"severity":       iss.Severity,
 			"status":         iss.Status,
-			"engine_id":      iss.EngineID,
 			"tags":           tags,
-			"created_at":     iss.CreatedAt.Format(time.RFC3339),
+			"created_at":     iss.CreatedAt,
 		}
 	}
 
@@ -179,15 +179,13 @@ func (z *ZincBackend) IndexIssues(ctx context.Context, projectKey string, issues
 }
 
 // IndexProject upserts a project document.
-func (z *ZincBackend) IndexProject(ctx context.Context, p *postgres.Project) error {
+func (z *ZincBackend) IndexProject(ctx context.Context, p IndexProject) error {
 	doc := map[string]interface{}{
-		"_id":         strconv.FormatInt(p.ID, 10),
-		"id":          p.ID,
-		"key":         p.Key,
-		"name":        p.Name,
-		"description": p.Description,
-		"tags":        p.Tags,
-		"created_at":  p.CreatedAt.Format(time.RFC3339),
+		"_id":        strconv.FormatInt(p.ID, 10),
+		"id":         p.ID,
+		"key":        p.Key,
+		"name":       p.Name,
+		"created_at": p.CreatedAt,
 	}
 	return z.bulkV2(ctx, indexProjects, []map[string]interface{}{doc})
 }
@@ -205,7 +203,10 @@ func (z *ZincBackend) DeleteScanIssues(ctx context.Context, scanID int64) error 
 		"_source":     []string{"id"},
 	}
 
-	data, _ := json.Marshal(query)
+	data, err := json.Marshal(query)
+	if err != nil {
+		return fmt.Errorf("zincsearch: marshal delete query: %w", err)
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, z.cfg.Host+"/api/"+indexIssues+"/_search", bytes.NewReader(data))
 	if err != nil {
 		return err
@@ -241,92 +242,6 @@ func (z *ZincBackend) DeleteScanIssues(ctx context.Context, scanID int64) error 
 	return nil
 }
 
-// ReindexAll rebuilds the entire search index from the database.
-func (z *ZincBackend) ReindexAll(ctx context.Context, issueRepo *postgres.IssueRepository, projectRepo *postgres.ProjectRepository) error {
-	if err := z.resetIndexes(ctx); err != nil {
-		return err
-	}
-
-	offset := 0
-	const batch = 200
-	for {
-		projects, _, err := projectRepo.List(ctx, batch, offset)
-		if err != nil {
-			return fmt.Errorf("list projects for reindex: %w", err)
-		}
-		if len(projects) == 0 {
-			break
-		}
-		for _, p := range projects {
-			if err := z.reindexProject(ctx, issueRepo, p); err != nil {
-				return err
-			}
-		}
-		offset += len(projects)
-		if len(projects) < batch {
-			break
-		}
-	}
-	return nil
-}
-
-// resetIndexes deletes and recreates all search indexes.
-func (z *ZincBackend) resetIndexes(ctx context.Context) error {
-	for _, idx := range []string{indexIssues, indexProjects} {
-		delReq, err := http.NewRequestWithContext(ctx, http.MethodDelete,
-			z.cfg.Host+"/api/index/"+idx, nil)
-		if err != nil {
-			return err
-		}
-		z.setAuth(delReq)
-		delResp, err := z.client.Do(delReq)
-		if err != nil {
-			return fmt.Errorf("zincsearch delete index %s: %w", idx, err)
-		}
-		delResp.Body.Close()
-	}
-	if err := z.ConfigureIndexes(ctx); err != nil {
-		return fmt.Errorf("zincsearch reconfigure indexes: %w", err)
-	}
-	return nil
-}
-
-// reindexProject indexes a single project and all its issues in batches.
-func (z *ZincBackend) reindexProject(ctx context.Context, issueRepo *postgres.IssueRepository, p *postgres.Project) error {
-	if err := z.IndexProject(ctx, p); err != nil {
-		return fmt.Errorf("index project %s: %w", p.Key, err)
-	}
-
-	const issueBatch = 1000
-	pid := p.ID
-	issOffset := 0
-	for {
-		issues, _, err := issueRepo.Query(ctx, postgres.IssueFilter{
-			ProjectID: &pid,
-			Limit:     issueBatch,
-			Offset:    issOffset,
-		})
-		if err != nil {
-			return fmt.Errorf("query issues for reindex project %s: %w", p.Key, err)
-		}
-		if len(issues) == 0 {
-			break
-		}
-		rows := make([]postgres.IssueRow, len(issues))
-		for i, iss := range issues {
-			rows[i] = *iss
-		}
-		if err := z.IndexIssues(ctx, p.Key, rows); err != nil {
-			return fmt.Errorf("index issues for project %s: %w", p.Key, err)
-		}
-		issOffset += len(issues)
-		if len(issues) < issueBatch {
-			break
-		}
-	}
-	return nil
-}
-
 // ─── ISearcher ─────────────────────────────────────────────────────────────────
 
 // SearchIssues executes a full-text query against the issues index.
@@ -347,7 +262,10 @@ func (z *ZincBackend) search(ctx context.Context, index string, req SearchReques
 
 	body := z.buildSearchBody(req, limit)
 
-	data, _ := json.Marshal(body)
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("zincsearch: marshal search body: %w", err)
+	}
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
 		z.cfg.Host+"/es/"+index+"/_search", bytes.NewReader(data))
 	if err != nil {
@@ -484,7 +402,10 @@ func (z *ZincBackend) bulkV2(ctx context.Context, index string, records []map[st
 		"index":   index,
 		"records": records,
 	}
-	data, _ := json.Marshal(body)
+	data, err := json.Marshal(body)
+	if err != nil {
+		return fmt.Errorf("zincsearch: marshal bulkv2 body for %s: %w", index, err)
+	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
 		z.cfg.Host+"/api/"+index+"/_bulkv2", bytes.NewReader(data))

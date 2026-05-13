@@ -18,7 +18,6 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/scovl/ollanta/ollantastore/postgres"
 )
 
 // PgFTSBackend implements ISearcher and IIndexer using PostgreSQL FTS.
@@ -63,22 +62,17 @@ func (b *PgFTSBackend) ConfigureIndexes(ctx context.Context) error {
 }
 
 // IndexIssues is a no-op — Postgres queries live data directly.
-func (b *PgFTSBackend) IndexIssues(_ context.Context, _ string, _ []postgres.IssueRow) error {
+func (b *PgFTSBackend) IndexIssues(_ context.Context, _ string, _ []IndexIssue) error {
 	return nil
 }
 
 // IndexProject is a no-op — Postgres queries live data directly.
-func (b *PgFTSBackend) IndexProject(_ context.Context, _ *postgres.Project) error {
+func (b *PgFTSBackend) IndexProject(_ context.Context, _ IndexProject) error {
 	return nil
 }
 
 // DeleteScanIssues is a no-op — issues are deleted via CASCADE or direct SQL.
 func (b *PgFTSBackend) DeleteScanIssues(_ context.Context, _ int64) error {
-	return nil
-}
-
-// ReindexAll is a no-op — Postgres FTS reads directly from the tables.
-func (b *PgFTSBackend) ReindexAll(_ context.Context, _ *postgres.IssueRepository, _ *postgres.ProjectRepository) error {
 	return nil
 }
 

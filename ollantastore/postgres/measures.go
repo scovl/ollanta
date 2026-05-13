@@ -73,6 +73,9 @@ func (r *MeasureRepository) GetLatest(ctx context.Context, projectID int64, metr
 		ORDER BY s.analysis_date DESC
 		LIMIT 1`, projectID, metricKey,
 	).Scan(&m.ID, &m.ScanID, &m.ProjectID, &m.MetricKey, &m.ComponentPath, &m.Value, &m.CreatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
 	return m, err
 }
 

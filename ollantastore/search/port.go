@@ -1,19 +1,9 @@
-// port.go defines the search port interfaces that decouple the rest of the
+// Package search defines the search port interfaces and types that decouple the
 // application from any concrete search backend (ZincSearch, Postgres FTS, etc.).
-//
-// Every search adapter must implement ISearcher and/or IIndexer.
-// The Pipeline, Worker, Router, and Health checks depend only on these
-// interfaces — never on a concrete struct — so backends can be swapped
-// at startup via configuration.
 package search
 
-import (
-	"context"
+import "context"
 
-	"github.com/scovl/ollanta/ollantastore/postgres"
-)
-
-// Index names shared by all backends.
 const (
 	indexIssues   = "issues"
 	indexProjects = "projects"
@@ -22,7 +12,7 @@ const (
 // SearchRequest describes a full-text search query with optional filters and facets.
 type SearchRequest struct {
 	Query  string
-	Filter map[string]string // field → value; joined as AND filters
+	Filter map[string]string
 	Facets []string
 	Sort   []string
 	Limit  int
@@ -37,6 +27,31 @@ type SearchResult struct {
 	ProcessingTimeMs  int64                     `json:"processing_time_ms"`
 }
 
+// IndexIssue is the search-index representation of an issue.
+type IndexIssue struct {
+	ID            int64    `json:"id"`
+	ScanID        int64    `json:"scan_id"`
+	ProjectID     int64    `json:"project_id"`
+	ProjectKey    string   `json:"project_key"`
+	RuleKey       string   `json:"rule_key"`
+	ComponentPath string   `json:"component_path"`
+	Message       string   `json:"message"`
+	Type          string   `json:"type"`
+	Severity      string   `json:"severity"`
+	Status        string   `json:"status"`
+	Line          int      `json:"line"`
+	Tags          []string `json:"tags,omitempty"`
+	CreatedAt     string   `json:"created_at"`
+}
+
+// IndexProject is the search-index representation of a project.
+type IndexProject struct {
+	ID        int64  `json:"id"`
+	Key       string `json:"key"`
+	Name      string `json:"name"`
+	CreatedAt string `json:"created_at"`
+}
+
 // ISearcher executes full-text queries against the search index.
 type ISearcher interface {
 	SearchIssues(ctx context.Context, req SearchRequest) (*SearchResult, error)
@@ -45,22 +60,9 @@ type ISearcher interface {
 
 // IIndexer writes data into the search index and manages its lifecycle.
 type IIndexer interface {
-	// Health returns nil when the search backend is reachable.
 	Health(ctx context.Context) error
-
-	// ConfigureIndexes ensures filterable/sortable attributes are set.
-	// Implementations must be idempotent.
 	ConfigureIndexes(ctx context.Context) error
-
-	// IndexIssues upserts a batch of issues into the search index.
-	IndexIssues(ctx context.Context, projectKey string, issues []postgres.IssueRow) error
-
-	// IndexProject upserts a project document.
-	IndexProject(ctx context.Context, p *postgres.Project) error
-
-	// DeleteScanIssues removes all indexed documents for a given scan.
+	IndexIssues(ctx context.Context, projectKey string, issues []IndexIssue) error
+	IndexProject(ctx context.Context, p IndexProject) error
 	DeleteScanIssues(ctx context.Context, scanID int64) error
-
-	// ReindexAll rebuilds the entire search index from the database.
-	ReindexAll(ctx context.Context, issueRepo *postgres.IssueRepository, projectRepo *postgres.ProjectRepository) error
 }
