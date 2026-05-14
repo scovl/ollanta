@@ -24,12 +24,12 @@ jobs:
       - name: Build scanner modules
         env:
           CGO_ENABLED: "1"
-        run: go build ./ollantacore/... ./ollantaparser/... ./ollantarules/... ./ollantascanner/... ./ollantaengine/...
+        run: go build ./ollantacore/... ./ollantaparser/... ./ollantarules/... ./ollantascanner/...
 
       - name: Test scanner modules
         env:
           CGO_ENABLED: "1"
-        run: go test -race -count=1 ./ollantacore/... ./ollantaparser/... ./ollantarules/... ./ollantascanner/... ./ollantaengine/...
+        run: go test -race -count=1 ./ollantacore/... ./ollantaparser/... ./ollantarules/... ./ollantascanner/...
 
   # ── Web / API modules (pure Go, no CGO) ────────────────────────────
   test-web:
@@ -123,7 +123,7 @@ jobs:
 
       - name: Check formatting
         run: |
-          DIRS="domain application ollantacore ollantaengine ollantaparser ollantarules ollantascanner ollantastore ollantaweb"
+          DIRS="domain application ollantacore ollantaparser ollantarules ollantascanner ollantastore ollantaweb"
           UNFORMATTED=$(gofmt -l $DIRS)
           if [ -n "$UNFORMATTED" ]; then
             echo "Unformatted files:"
@@ -155,11 +155,6 @@ jobs:
           args: --timeout 5m
           working-directory: ollantascanner
 
-      - uses: golangci/golangci-lint-action@v7
-        with:
-          version: v2.11.4
-          args: --timeout 5m
-          working-directory: ollantaengine
 
   # ── Docker build smoke test ─────────────────────────────────────────
   docker-build:
